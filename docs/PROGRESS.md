@@ -100,17 +100,27 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 - Backend defaults: `APP_LINK_ANDROID_PACKAGE`, `IAP_ANDROID_PACKAGE`, `APPLE_IAP_BUNDLE_ID`
 - Caps still off; fingerprints / Team ID still env-only
 
+### Phase 8d — Android release readiness + deployment docs
+- Release signing via `mobile/android/key.properties` (example committed; secrets gitignored)
+- App label **QuizVerse**; `INTERNET` on main manifest; `API_BASE_URL` dart-define documented
+- `docs/DEPLOYMENT.md` (local + prod + Play) and `docs/ENV_PROVIDERS.md` (provider checklist)
+- `docker-compose.prod.yml` overlay (no reload / no bind mounts)
+- iOS kept configured; first public launch = Play Store
+
 ## In progress / next
 
-**Later:** Store Console products + RTDN/ASN webhooks; set signing fingerprints / Team ID; enable caps when monetizing.
+**Next:** Create upload keystore → build signed AAB → Play Internal testing → fill fingerprints + Play service account → `BILLING_VERIFY_MODE=apple_google` → production track. Later: RTDN webhooks, enable caps, App Store.
 
 ## Release checklist (store launch)
 
-1. Set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + `APP_LINK_IOS_APP_ID=TEAMID.com.quizverse.app`
+1. Set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + (later) `APP_LINK_IOS_APP_ID=TEAMID.com.quizverse.app`
 2. Point `quizverse.app` DNS at the API; `SHARE_PUBLIC_BASE_URL=https://quizverse.app`
 3. Create Play / App Store products matching `IAP_PREMIUM_PRODUCT_ID`
-4. Fill Apple/Google verify secrets; `BILLING_VERIFY_MODE=apple_google`
-5. Only then consider `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true`
+4. Fill Google (and later Apple) verify secrets; `BILLING_VERIFY_MODE=apple_google`
+5. Build: `flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app`
+6. Only then consider `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true`
+
+See also [DEPLOYMENT.md](DEPLOYMENT.md) and [ENV_PROVIDERS.md](ENV_PROVIDERS.md).
 
 ## Architecture reminders
 

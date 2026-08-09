@@ -15,11 +15,12 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 
 ## Stack
 
-- `mobile/` — Flutter, Riverpod, GoRouter, Dio, dark-first UI
+- `mobile/` — Flutter, Riverpod, GoRouter, Dio, dark-first UI; package **`com.quizverse.app`**
 - `backend/` — FastAPI, SQLAlchemy async, Alembic, JWT guest/email auth
 - `workers/` — background generation / bank top-ups
-- `docker-compose.yml` — Postgres 16, Redis 7, API, worker
-- Emulator API base: `http://10.0.2.2:8000`
+- `docker-compose.yml` (+ `docker-compose.prod.yml`) — Postgres 16, Redis 7, API, worker
+- Emulator API base: `http://10.0.2.2:8000`; any-device testing via Cloudflare tunnel (`scripts/dev_tunnel.ps1`); prod via `--dart-define=API_BASE_URL=https://...`
+- Ops docs: `docs/OPEN_AND_RUN.md` (cheat sheet), `docs/HOSTING.md` (domain/VPS), `docs/DEPLOYMENT.md`, `docs/ENV_PROVIDERS.md`
 
 ## Overall goals / phases
 
@@ -40,7 +41,8 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 | 8a | App Links / Universal Links foundation | **Done** |
 | 8b | Store verification adapters (Apple/Google) | **Done** |
 | 8c | Production app identity (`com.quizverse.app`) | **Done** |
-| Later | Store Console products + RTDN webhooks + enable caps | Next |
+| 8d | Android release readiness + deployment docs | **Done** |
+| Next | Play Console AAB + internal test → production | **Next** |
 
 ## Done so far (keep in mind)
 
@@ -62,6 +64,7 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Phase 8a: `/.well-known/assetlinks.json` + `apple-app-site-association`; Android HTTPS `/r` autoVerify; iOS Associated Domains stub (`quizverse.app`)
 - Phase 8b: `BILLING_VERIFY_MODE=apple_google` → App Store Server API + Play Developer API adapters (503 until credentials set); stub remains default
 - Phase 8c: native + backend package/bundle id `com.quizverse.app`; App Link / IAP defaults aligned
+- Phase 8d: Android release signing (`key.properties.example`), QuizVerse label, prod compose overlay, deployment + provider env docs; iOS kept configured for later
 
 ## Engineering invariants
 
@@ -73,24 +76,33 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 
 ## Next work
 
-Store Console products + signing fingerprints / Team ID in env; RTDN/ASN webhooks; turn caps on when monetization ships.
+1. Create upload keystore + `mobile/android/key.properties`
+2. Deploy prod API (TLS + DNS for `quizverse.app`)
+3. `flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app`
+4. Play Internal testing → set SHA-256 fingerprints + Play service account → `BILLING_VERIFY_MODE=apple_google`
+5. Promote to production; later RTDN webhooks, enable caps, App Store
 
 ## Ops notes
 
-- `docker compose up` — API `:8000`, docs `/docs`
+- Local: `docker compose up` — API `:8000`, docs `/docs`
+- Prod overlay: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d`
 - Migrations: `0001_initial`, `0002_quiz_question_reuse`, `0003_analytics_events`
 - Android Kotlin incremental issue historically: `kotlin.incremental=false` in `mobile/android/gradle.properties`
 - Daily: `GET/POST /api/v1/daily-challenge`; boards: `GET /api/v1/leaderboards?scope=weekly|daily`
 - Analytics: `ANALYTICS_PROVIDER=postgres|null`
 - Entitlements: `ENTITLEMENTS_ENFORCE_QUESTION_CAPS`, `FREE_UNIQUE_QUESTIONS_PER_TOPIC`, `ENTITLEMENTS_DEV_TOGGLE`; `GET /api/v1/entitlements/me`
 - Share: `GET /api/v1/share/results/{session_id}` (public); scheme `quizverse://results/{id}`; landing `GET /r/{id}`; `SHARE_PUBLIC_BASE_URL`
-- App Links: `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.quizverse.app`; `APP_LINK_ANDROID_*`, `APP_LINK_IOS_APP_ID=TEAMID.com.quizverse.app` (empty → 503); point domain at API
-- IAP: `IAP_PREMIUM_PRODUCT_ID`, `IAP_ANDROID_PACKAGE=com.quizverse.app`, `BILLING_VERIFY_MODE=stub|apple_google`; Apple (`APPLE_IAP_*`) / Google (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) — empty → 503; `POST /entitlements/purchases/verify`
+- App Links: `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.quizverse.app`; `APP_LINK_ANDROID_*`, `APP_LINK_IOS_APP_ID` (empty → 503)
+- IAP: `IAP_PREMIUM_PRODUCT_ID`, `IAP_ANDROID_PACKAGE=com.quizverse.app`, `BILLING_VERIFY_MODE=stub|apple_google`; Google `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`; Apple `APPLE_IAP_*` (later)
+- Flutter API: `--dart-define=API_BASE_URL=...`; signing: `mobile/android/key.properties`
+- Docs: `docs/DEPLOYMENT.md`, `docs/ENV_PROVIDERS.md`
 
-### Release checklist (before store launch)
+### Release checklist (Android-first)
 
-1. Set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + `APP_LINK_IOS_APP_ID` (Team ID)
-2. Point `quizverse.app` DNS at the API; set `SHARE_PUBLIC_BASE_URL=https://quizverse.app`
-3. Create Play / App Store products matching `IAP_PREMIUM_PRODUCT_ID`
-4. Fill Apple/Google verify secrets; set `BILLING_VERIFY_MODE=apple_google`
-5. Only then consider `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true`
+1. Upload keystore + `key.properties`; build signed AAB with prod `API_BASE_URL`
+2. Play listing + privacy policy + Data safety; Internal testing track
+3. Set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` from Play App Signing
+4. Point `quizverse.app` DNS at API; `SHARE_PUBLIC_BASE_URL=https://quizverse.app`
+5. Create Play product matching `IAP_PREMIUM_PRODUCT_ID`; set `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`; `BILLING_VERIFY_MODE=apple_google`
+6. License-tester purchase/restore; then production track
+7. Later: iOS Team ID / AASA; caps when monetizing

@@ -1,0 +1,11 @@
+# Replace quizverse.app with your real domain before first deploy.
+# Caddy obtains and renews Let's Encrypt certificates automatically.
+
+quizverse.app {
+	encode gzip
+	reverse_proxy api:8000
+}
+
+www.quizverse.app {
+	redir https://quizverse.app{uri} permanent
+}

@@ -1,0 +1,24 @@
+# Production-oriented Compose overlay (no hot-reload; bind API only as needed).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+#
+# Still expects a root `.env` with production secrets (see docs/DEPLOYMENT.md).
+
+services:
+  api:
+    restart: always
+    volumes: []
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
+  worker:
+    restart: always
+    volumes: []
+
+  postgres:
+    restart: always
+    # Prefer not exposing DB publicly in real prod (remove ports via host firewall / cloud networking).
+
+  redis:
+    restart: always

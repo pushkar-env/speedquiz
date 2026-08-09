@@ -1,17 +1,34 @@
-# mobile
+# QuizVerse mobile (Flutter)
 
-A new Flutter project.
+Application id / bundle id: **`com.quizverse.app`**
 
-## Getting Started
+## Local run (Android)
 
-This project is a starting point for a Flutter application.
+```bash
+# From repo root
+docker compose up --build   # API on :8000
 
-A few resources to get you started if this is your first Flutter project:
+cd mobile
+flutter pub get
+flutter run -d emulator-5554
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Emulator API default: `http://10.0.2.2:8000`  
+Override: `flutter run --dart-define=API_BASE_URL=http://<host>:8000`
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Release App Bundle (Play Store)
+
+1. Create `android/key.properties` from `android/key.properties.example` + upload keystore.
+2. Build:
+
+```bash
+flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
+```
+
+3. Upload `build/app/outputs/bundle/release/app-release.aab` in Play Console.
+
+Day-to-day: [docs/OPEN_AND_RUN.md](../docs/OPEN_AND_RUN.md). Full Play steps: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
+
+## iOS
+
+Associated Domains + bundle id are configured for a later App Store launch. Prefer Android Play first; see deployment docs when you are ready for TestFlight.

@@ -1,0 +1,26 @@
+# Adds Caddy reverse proxy with automatic HTTPS.
+# Usage on a VPS (after DNS A record points here):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.caddy.yml up --build -d
+#
+# Edit infrastructure/Caddyfile to match your domain.
+# Publishes 80/443; keep Postgres/Redis firewalled from the public internet.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: quizverse-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infrastructure/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

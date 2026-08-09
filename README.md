@@ -17,6 +17,10 @@ scripts/         Dev utilities
 
 ## Quick start
 
+Day-to-day open/run/build: **[docs/OPEN_AND_RUN.md](docs/OPEN_AND_RUN.md)**.  
+Full local + Play launch: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.  
+Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.
+
 ### Prerequisites
 
 - Docker Desktop
@@ -29,6 +33,16 @@ scripts/         Dev utilities
 cp .env.example .env
 docker compose up --build
 ```
+
+Production-style (no reload / no source mounts):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+```
+
+Full local + Play launch steps: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.  
+Host API on a real domain: **[docs/HOSTING.md](docs/HOSTING.md)**.  
+Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.
 
 Services:
 
@@ -57,8 +71,15 @@ flutter run
 Point the app at your machine:
 
 - Android emulator: `http://10.0.2.2:8000`
-- iOS simulator: `http://localhost:8000`
-- Physical device: your LAN IP
+- Physical device (any network): public HTTPS tunnel — see [docs/OPEN_AND_RUN.md](docs/OPEN_AND_RUN.md) (`scripts/dev_tunnel.ps1`)
+- Production / Play: `--dart-define=API_BASE_URL=https://quizverse.app`
+
+Play Store App Bundle:
+
+```bash
+# After creating mobile/android/key.properties from key.properties.example
+flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
+```
 
 ### Backend tests
 
@@ -85,9 +106,10 @@ pytest
 13. **Phase 8a** — App Links / Universal Links foundation ✅
 14. **Phase 8b** — Store verification adapters (Apple/Google) ✅
 15. **Phase 8c** — Production app identity (`com.quizverse.app`) ✅
-16. **Later** — Store Console products + RTDN webhooks + enable caps
+16. **Phase 8d** — Android release readiness + deployment docs ✅
+17. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
-See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
+See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md).
 
 ## Progression & engagement
 
