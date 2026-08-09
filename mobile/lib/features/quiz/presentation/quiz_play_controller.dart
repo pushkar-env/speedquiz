@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:quizverse/core/network/api_errors.dart';
 import 'package:quizverse/features/quiz/data/quiz_repository.dart';
 import 'package:quizverse/features/quiz/domain/quiz_models.dart';
 
@@ -84,40 +85,16 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
   }
 
   String _friendlyError(Object error) {
-    if (error is DioException) {
-      final code = error.response?.statusCode;
-      if (code == 401) {
-        return 'Session expired. Go home and reopen the app to sign in again.';
-      }
-      if (code == 429) {
-        return 'Too many requests. Please wait a moment and try again.';
-      }
-      final detail = error.response?.data;
-      if (detail is Map) {
-        final nested = detail['detail'];
-        if (nested is Map) {
-          final errCode = nested['code'] as String?;
-          if (errCode == 'entitlement_unique_cap') {
-            return 'Free unique-question limit reached for this topic. '
-                'Go Premium (Profile) to keep playing.';
-          }
-          if (nested['message'] is String) {
-            return nested['message'] as String;
-          }
-        }
-        if (nested is String) {
-          return nested;
-        }
-      }
-      if (error.type == DioExceptionType.connectionTimeout ||
-          error.type == DioExceptionType.receiveTimeout) {
-        return 'Request timed out. Check your connection and try again.';
-      }
-      if (error.type == DioExceptionType.connectionError) {
-        return 'Cannot reach the server. Is the API running?';
-      }
+    if (isEntitlementUniqueCap(error)) {
+      return 'Free unique-question limit reached for this topic. '
+          'Go Premium (Profile) to keep playing.';
     }
-    return error.toString();
+    return apiErrorMessage(
+      error,
+      fallback: error is DioException
+          ? (error.message ?? error.toString())
+          : error.toString(),
+    );
   }
 
   void _cancelTimers() {

@@ -22,16 +22,18 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    # Keep FastAPI-style `detail` for clients, plus structured `error` envelope.
     return JSONResponse(
         status_code=exc.status_code,
         content={
+            "detail": exc.detail,
             "error": {
                 "message": exc.detail,
                 "status_code": exc.status_code,
                 "path": str(request.url.path),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "request_id": request_id_ctx.get(),
-            }
+            },
         },
     )
 

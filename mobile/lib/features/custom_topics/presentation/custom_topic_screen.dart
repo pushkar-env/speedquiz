@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:quizverse/core/network/api_errors.dart';
 import 'package:quizverse/core/theme/app_theme.dart';
 import 'package:quizverse/features/custom_topics/data/custom_topics_repository.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
@@ -88,14 +89,12 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
       );
     } on DioException catch (e) {
       if (!mounted) return;
-      final detail = e.response?.data;
-      String message = "Couldn't prepare your challenge. Please try again.";
-      if (detail is Map && detail['detail'] is String) {
-        message = detail['detail'] as String;
-      }
       setState(() {
         _preparing = false;
-        _error = message;
+        _error = apiErrorMessage(
+          e,
+          fallback: "Couldn't prepare your challenge. Please try again.",
+        );
       });
     } catch (_) {
       if (!mounted) return;

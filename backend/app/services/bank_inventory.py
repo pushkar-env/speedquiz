@@ -78,6 +78,10 @@ async def ensure_minimum_bank(
     from app.ai.pipeline import run_generation_pipeline
     from app.ai.providers import get_llm_provider
 
+    # Custom topics are one-shot generated banks — never grow toward curated target.
+    if topic.is_custom:
+        return await count_active_questions(db, topic.id)
+
     minimum = minimum or max(settings.topic_bank_session_batch + 10, 30)
     active = await count_active_questions(db, topic.id)
     if active >= minimum:
@@ -132,6 +136,9 @@ async def enqueue_bank_topup(
     force: bool = False,
 ) -> Optional[GenerationJob]:
     """Queue a chunk generation job if the topic bank needs refill."""
+    if topic.is_custom:
+        return None
+
     active = await count_active_questions(db, topic.id)
     target = settings.topic_bank_target_unique
     low = settings.topic_bank_low_watermark

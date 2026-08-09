@@ -40,15 +40,22 @@ def cache_key_for(prompt: str, difficulty: DifficultyLabel, style: Optional[str]
 
 
 async def _enforce_daily_quota(db: AsyncSession, user: User) -> None:
+    """Limit fresh generations per UTC day for free users (cache hits exempt)."""
     if user.is_premium:
         return
     start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    used = await db.scalar(
-        select(func.count())
-        .select_from(CustomTopic)
-        .where(CustomTopic.user_id == user.id, CustomTopic.created_at >= start)
-    )
-    if (used or 0) >= settings.custom_topic_daily_limit_free:
+    # Count completed fresh generations only (payload.cache_hit != true).
+    rows = (
+        await db.execute(
+            select(GenerationJob.payload).where(
+                GenerationJob.requested_by_user_id == user.id,
+                GenerationJob.created_at >= start,
+                GenerationJob.status == GenerationJobStatus.COMPLETED,
+            )
+        )
+    ).scalars().all()
+    used = sum(1 for payload in rows if not (payload or {}).get("cache_hit"))
+    if used >= settings.custom_topic_daily_limit_free:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Daily custom quiz limit reached. Upgrade for unlimited custom topics.",
@@ -82,13 +89,28 @@ async def _find_cached_topic(db: AsyncSession, key: str) -> Optional[Topic]:
     return topic
 
 
+async def _start_session_for_topic(
+    db: AsyncSession,
+    user: User,
+    topic: Topic,
+    payload: CreateCustomTopicRequest,
+) -> object:
+    return await quiz_service.create_session(
+        db,
+        user,
+        CreateQuizSessionRequest(
+            topic_id=topic.id,
+            mode=payload.mode,
+            difficulty=payload.difficulty,
+        ),
+    )
+
+
 async def create_custom_topic_quiz(
     db: AsyncSession,
     user: User,
     payload: CreateCustomTopicRequest,
 ) -> CustomTopicResponse:
-    await _enforce_daily_quota(db, user)
-
     sanitized = sanitize_topic_prompt(payload.prompt)
     if len(sanitized) < 3:
         raise HTTPException(status_code=400, detail="Please describe what you want to be quizzed on")
@@ -97,6 +119,60 @@ async def create_custom_topic_quiz(
     classification = await llm.classify_topic(sanitized)
     subject = str(classification.get("subject") or sanitized)[:120]
     key = cache_key_for(sanitized, payload.difficulty, payload.style)
+
+    # Cache reuse first — does not burn the daily free quota.
+    cached_topic = await _find_cached_topic(db, key)
+    if cached_topic:
+        custom = CustomTopic(
+            id=uuid4(),
+            user_id=user.id,
+            prompt=payload.prompt.strip(),
+            sanitized_prompt=sanitized,
+            classified_subject=subject,
+            difficulty=payload.difficulty,
+            style=payload.style,
+            requested_count=payload.requested_count,
+            cache_key=key,
+            status="ready",
+            topic_id=cached_topic.id,
+        )
+        db.add(custom)
+        job = GenerationJob(
+            id=uuid4(),
+            custom_topic_id=custom.id,
+            requested_by_user_id=user.id,
+            status=GenerationJobStatus.COMPLETED,
+            requested_count=payload.requested_count,
+            approved_count=cached_topic.question_count,
+            payload={
+                "prompt": sanitized,
+                "subject": subject,
+                "difficulty": payload.difficulty.value,
+                "style": payload.style,
+                "cache_hit": True,
+                "reused_topic_id": str(cached_topic.id),
+                # Mark so quota accounting can ignore pure cache replays if needed later.
+                "quota_exempt": True,
+            },
+        )
+        db.add(job)
+        await db.flush()
+        session = await _start_session_for_topic(db, user, cached_topic, payload)
+        return CustomTopicResponse(
+            id=custom.id,
+            status=custom.status,
+            classified_subject=subject,
+            topic_id=cached_topic.id,
+            topic_name=cached_topic.name,
+            cache_hit=True,
+            job_id=job.id,
+            approved_count=cached_topic.question_count,
+            rejected_count=0,
+            session=session,
+        )
+
+    # Fresh generation burns a daily slot for free users.
+    await _enforce_daily_quota(db, user)
 
     custom = CustomTopic(
         id=uuid4(),
@@ -113,7 +189,6 @@ async def create_custom_topic_quiz(
     db.add(custom)
     await db.flush()
 
-    cached_topic = await _find_cached_topic(db, key)
     job = GenerationJob(
         id=uuid4(),
         custom_topic_id=custom.id,
@@ -125,40 +200,12 @@ async def create_custom_topic_quiz(
             "subject": subject,
             "difficulty": payload.difficulty.value,
             "style": payload.style,
-            "cache_hit": cached_topic is not None,
+            "cache_hit": False,
+            "quota_exempt": False,
         },
     )
     db.add(job)
     await db.flush()
-
-    if cached_topic:
-        custom.topic_id = cached_topic.id
-        custom.status = "ready"
-        job.status = GenerationJobStatus.COMPLETED
-        job.approved_count = cached_topic.question_count
-        job.payload = {**job.payload, "reused_topic_id": str(cached_topic.id)}
-        await db.flush()
-        session = await quiz_service.create_session(
-            db,
-            user,
-            CreateQuizSessionRequest(
-                topic_id=cached_topic.id,
-                mode=payload.mode,
-                difficulty=payload.difficulty,
-            ),
-        )
-        return CustomTopicResponse(
-            id=custom.id,
-            status=custom.status,
-            classified_subject=subject,
-            topic_id=cached_topic.id,
-            topic_name=cached_topic.name,
-            cache_hit=True,
-            job_id=job.id,
-            approved_count=cached_topic.question_count,
-            rejected_count=0,
-            session=session,
-        )
 
     # Fresh generation — run pipeline inline for mock/dev; jobs keep the async contract.
     job.status = GenerationJobStatus.RUNNING
@@ -198,6 +245,7 @@ async def create_custom_topic_quiz(
                 detail="Couldn't prepare enough good questions. Try a clearer topic.",
             )
 
+        topic.question_count = len(outcome.approved)
         custom.topic_id = topic.id
         custom.status = "ready"
         job.status = GenerationJobStatus.COMPLETED
@@ -211,15 +259,7 @@ async def create_custom_topic_quiz(
         except Exception:  # noqa: BLE001
             pass
 
-        session = await quiz_service.create_session(
-            db,
-            user,
-            CreateQuizSessionRequest(
-                topic_id=topic.id,
-                mode=payload.mode,
-                difficulty=payload.difficulty,
-            ),
-        )
+        session = await _start_session_for_topic(db, user, topic, payload)
         return CustomTopicResponse(
             id=custom.id,
             status=custom.status,
