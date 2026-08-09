@@ -1,0 +1,63 @@
+---
+description: QuizVerse project memory — goals, architecture, and progress
+alwaysApply: true
+---
+
+# QuizVerse — project memory
+
+## Product
+
+Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobile game, not an AI wrapper.
+
+**Core rule:** gameplay must **never** call an LLM per question. Flow is:
+
+`generate → validate → quality → dedupe → Postgres bank → gameplay API → Flutter`
+
+## Stack
+
+- `mobile/` — Flutter, Riverpod, GoRouter, Dio, dark-first UI
+- `backend/` — FastAPI, SQLAlchemy async, Alembic, JWT guest/email auth
+- `workers/` — background generation / bank top-ups
+- `docker-compose.yml` — Postgres 16, Redis 7, API, worker
+- Emulator API base: `http://10.0.2.2:8000`
+
+## Overall goals / phases
+
+| Phase | Focus | Status |
+|-------|--------|--------|
+| 1 | Monorepo, Docker, models, auth, seed | Done |
+| 2 | Server-authoritative quiz sessions + modes | Done |
+| 3 | Polished quiz UX (inline feedback, speedrun auto-advance) | Done |
+| 4 | AI pipeline, custom topics, Teach Me, reports | Done |
+| Bank growth | Watermark top-ups toward ~1000 unique/topic | Done (ongoing refill) |
+| 5 | XP/streaks polish, achievements, leaderboards, daily | **Next** |
+| 6 | Adaptive difficulty, analytics, subscriptions, sharing | Later |
+
+## Done so far (keep in mind)
+
+- Guest JWT auth + refresh rotation; Dio 401 retry
+- Curated bank (~12+/topic seeded) + OpenAI provider when `LLM_PROVIDER=openai`
+- Custom topics: classify → generate → validate → session (cached by prompt key)
+- Teach Me + question report (rate-limited)
+- Scoring bugfix: do not stamp `served_at` early; honor taps (no false timeouts)
+- Session no-repeat while unused bank items exist; sync fill when topic is thin
+- Async bank top-up (`bank_topup` jobs), target 1000, chunk ~20, low watermark ~40
+- Entitlements stub: free unlimited now; roadmap soft-cap ~30 + premium/diamonds (`ENTITLEMENTS_ENFORCE_QUESTION_CAPS`)
+
+## Engineering invariants
+
+1. Never put LLM on answer/play hot path.
+2. Server is source of truth for score, entitlements, and question correctness.
+3. Correct answers hidden until after submit; option order shuffled per serve.
+4. Keys only in `.env` (gitignored); use `.env.example` for templates.
+5. Prefer incremental, production-quality changes; keep stack runnable.
+
+## Next work (Phase 5)
+
+Streaks/XP surface, achievements unlock flow, real leaderboards, daily challenge.
+
+## Ops notes
+
+- `docker compose up` — API `:8000`, docs `/docs`
+- Migrations: `0001_initial`, `0002_quiz_question_reuse`
+- Android Kotlin incremental issue historically: `kotlin.incremental=false` in `mobile/android/gradle.properties`

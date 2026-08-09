@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: quizverse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quizverse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quizverse_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-quizverse}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quizverse} -d ${POSTGRES_DB:-quizverse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: quizverse-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: quizverse-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
+      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: quizverse-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
+      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./workers:/app/workers
+    command: python -m workers.main
+
+volumes:
+  postgres_data:
+  redis_data:

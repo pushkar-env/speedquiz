@@ -1,0 +1,100 @@
+# QuizVerse
+
+Production-grade AI-powered quiz game for Android and iOS.
+
+Gameplay is served from a validated question bank — not live LLM calls per question.
+
+## Architecture
+
+```text
+mobile/          Flutter client (Riverpod, GoRouter, Dio)
+backend/         FastAPI + SQLAlchemy + Alembic
+workers/         Background AI generation / validation jobs
+infrastructure/  Docker and deployment assets
+docs/            Product and engineering docs
+scripts/         Dev utilities
+```
+
+## Quick start
+
+### Prerequisites
+
+- Docker Desktop
+- Flutter 3.44+
+- Python 3.12+ (optional for local non-Docker backend)
+
+### Start infrastructure + API
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Services:
+
+| Service  | URL                    |
+|----------|------------------------|
+| API      | http://localhost:8000  |
+| Docs     | http://localhost:8000/docs |
+| Postgres | localhost:5432         |
+| Redis    | localhost:6379         |
+
+Health:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/ready
+```
+
+### Run Flutter
+
+```bash
+cd mobile
+flutter pub get
+flutter run
+```
+
+Point the app at your machine:
+
+- Android emulator: `http://10.0.2.2:8000`
+- iOS simulator: `http://localhost:8000`
+- Physical device: your LAN IP
+
+### Backend tests
+
+```bash
+cd backend
+pip install -r requirements/dev.txt
+pytest
+```
+
+## Phases
+
+1. **Phase 1** — Monorepo, Docker, auth, models, API skeleton ✅
+2. **Phase 2** — Topics, sessions, scoring, game modes ✅
+3. **Phase 3** — Polished Flutter gameplay UI ✅
+4. **Phase 4** — AI generation, custom topics, Teach Me ✅
+5. **Bank scale** — Watermark top-ups toward ~1000 unique/topic ✅ (ongoing refill)
+6. **Phase 5** — XP/achievements UX, leaderboards, daily challenge ← **next**
+7. **Phase 6** — Adaptive difficulty, analytics, subscriptions, sharing
+
+See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
+
+## Question bank (endless unique)
+
+Gameplay never waits on an LLM. Questions are served from Postgres.
+
+- Target unique bank size per topic: **1000** (then reshuffle-reuse is OK)
+- When a topic falls below a **low watermark**, the worker generates the next **chunk** (~20) in the background
+- Sessions prefer questions the player has not seen yet
+- Free play is **unlimited** today
+
+### Monetization roadmap
+
+- Soft-gate free users after ~**30 unique questions / topic**
+- Unlock more via **premium** or **diamonds**
+- Flip `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true` when ready (server-side entitlements)
+
+## License
+
+Proprietary — all rights reserved.

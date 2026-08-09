@@ -1,0 +1,64 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:quizverse/core/config/app_config.dart';
+import 'package:quizverse/core/network/dio_client.dart';
+import 'package:quizverse/features/quiz/domain/quiz_models.dart';
+
+class QuizRepository {
+  QuizRepository(this._dio);
+
+  final Dio _dio;
+
+  Future<QuizSession> createSession({
+    required String topicId,
+    required String mode,
+    required String difficulty,
+  }) async {
+    final response = await _dio.post(
+      '${AppConfig.apiPrefix}/quiz/sessions',
+      data: {
+        'topic_id': topicId,
+        'mode': mode,
+        'difficulty': difficulty,
+      },
+    );
+    return QuizSession.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<AnswerFeedback> submitAnswer({
+    required String sessionId,
+    required String quizQuestionId,
+    int? selectedOptionIndex,
+    int? clientElapsedMs,
+    bool timedOut = false,
+  }) async {
+    final response = await _dio.post(
+      '${AppConfig.apiPrefix}/quiz/sessions/$sessionId/answer',
+      data: {
+        'quiz_question_id': quizQuestionId,
+        'selected_option_index': selectedOptionIndex,
+        'client_elapsed_ms': clientElapsedMs,
+        'timed_out': timedOut,
+      },
+    );
+    return AnswerFeedback.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<QuizResult> finishSession(String sessionId) async {
+    final response = await _dio.post(
+      '${AppConfig.apiPrefix}/quiz/sessions/$sessionId/finish',
+    );
+    return QuizResult.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  Future<QuizResult> getResult(String sessionId) async {
+    final response = await _dio.get(
+      '${AppConfig.apiPrefix}/quiz/sessions/$sessionId/result',
+    );
+    return QuizResult.fromJson(response.data as Map<String, dynamic>);
+  }
+}
+
+final quizRepositoryProvider = Provider<QuizRepository>((ref) {
+  return QuizRepository(ref.watch(dioProvider));
+});
