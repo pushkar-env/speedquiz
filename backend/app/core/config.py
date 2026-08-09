@@ -61,18 +61,29 @@ class Settings(BaseSettings):
     free_unique_questions_per_topic: int = 30
     entitlements_dev_toggle: bool = False
 
-    # IAP — stub verify by default; real Apple/Google later
+    # IAP — stub verify by default; apple_google uses store adapters
     iap_premium_product_id: str = "quizverse_premium"
+    iap_android_package: str = "com.quizverse.app"
     billing_verify_mode: str = "stub"  # stub | apple_google
     billing_allow_stub_in_production: bool = False
+
+    # Google Play Developer API (empty JSON = not configured → 503 in apple_google)
+    google_play_service_account_json: str = ""
+
+    # Apple App Store Server API (empty key fields = not configured → 503)
+    apple_iap_issuer_id: str = ""
+    apple_iap_key_id: str = ""
+    apple_iap_private_key: str = ""  # PEM body; use \n for newlines in .env
+    apple_iap_bundle_id: str = "com.quizverse.app"
+    apple_iap_environment: str = "Sandbox"  # Sandbox | Production
 
     # Public share landing (empty = omit web_url from share text)
     share_public_base_url: str = ""
 
     # HTTPS App Links / Universal Links association (empty = 503 on well-known)
-    app_link_android_package: str = "com.example.mobile"
+    app_link_android_package: str = "com.quizverse.app"
     app_link_android_sha256_cert_fingerprints: str = ""
-    app_link_ios_app_id: str = ""  # TEAMID.com.example.mobile
+    app_link_ios_app_id: str = ""  # TEAMID.com.quizverse.app
 
     # Analytics: postgres | null
     analytics_provider: str = "postgres"

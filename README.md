@@ -83,7 +83,9 @@ pytest
 11. **Phase 7b** — IAP foundation (verify + buy path) ✅
 12. **Phase 7c** — HTTPS share landing foundation ✅
 13. **Phase 8a** — App Links / Universal Links foundation ✅
-14. **Later** — Real Apple/Google receipt APIs + prod signing / package rename
+14. **Phase 8b** — Store verification adapters (Apple/Google) ✅
+15. **Phase 8c** — Production app identity (`com.quizverse.app`) ✅
+16. **Later** — Store Console products + RTDN webhooks + enable caps
 
 See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
 
@@ -97,9 +99,9 @@ See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architect
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
 - **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
-- **IAP:** `POST /api/v1/entitlements/purchases/verify` (stub in non-prod); Flutter store buy/restore when products exist
+- **IAP:** `POST /api/v1/entitlements/purchases/verify` (`stub` default; `apple_google` with `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Flutter store buy/restore when products exist
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `quizverse://` + optional `SHARE_PUBLIC_BASE_URL`
-- **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready (package id still `com.example.mobile`)
+- **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.quizverse.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready
 
 
 ## Question bank (endless unique)

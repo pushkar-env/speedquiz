@@ -136,18 +136,27 @@ async def test_production_stub_refused():
 
 
 @pytest.mark.asyncio
-async def test_apple_google_mode_not_implemented():
+async def test_apple_google_mode_missing_creds_503():
     db = MagicMock()
     with patch("app.payments.billing.settings") as settings:
         settings.iap_premium_product_id = "quizverse_premium"
         settings.billing_verify_mode = "apple_google"
         settings.is_production = False
-        with pytest.raises(HTTPException) as exc:
-            await verify_and_grant(
-                db,
-                _user(),
-                platform="ios",
-                product_id="quizverse_premium",
-                purchase_token="tok",
-            )
-    assert exc.value.status_code == 501
+        with patch(
+            "app.payments.billing.verify_apple_purchase",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=503,
+                    detail="Apple IAP not configured",
+                )
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await verify_and_grant(
+                    db,
+                    _user(),
+                    platform="ios",
+                    product_id="quizverse_premium",
+                    purchase_token="tok",
+                )
+    assert exc.value.status_code == 503

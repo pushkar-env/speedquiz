@@ -77,7 +77,7 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 
 ### Phase 7b — IAP foundation
 - `POST /entitlements/purchases/verify` + `/restore`; upserts `subscriptions`, sets `user.is_premium`
-- `BILLING_VERIFY_MODE=stub` (non-prod); `apple_google` returns 501 until store APIs wired
+- `BILLING_VERIFY_MODE=stub` (non-prod); `apple_google` uses store adapters (503 until credentials set)
 - Flutter `in_app_purchase` BillingService; paywall Buy / Restore / stub-dev path
 
 ### Phase 7c — HTTPS share landing foundation
@@ -89,11 +89,28 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 - `GET /.well-known/assetlinks.json` + `apple-app-site-association` (503 until fingerprints / iOS app id set)
 - Android HTTPS intent-filter `/r` with `autoVerify` (host `quizverse.app` placeholder)
 - iOS `Runner.entitlements` Associated Domains `applinks:quizverse.app`
-- Package id stays `com.example.mobile` until release rename
+
+### Phase 8b — Store verification adapters
+- `BILLING_VERIFY_MODE=apple_google` calls App Store Server API + Play Developer API adapters
+- Missing `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` → **503** (no fake grants)
+- Stub mode remains default for local/CI; Flutter buy path unchanged
+
+### Phase 8c — Production app identity
+- Native application/bundle id → `com.quizverse.app` (Android, iOS, macOS, Linux)
+- Backend defaults: `APP_LINK_ANDROID_PACKAGE`, `IAP_ANDROID_PACKAGE`, `APPLE_IAP_BUNDLE_ID`
+- Caps still off; fingerprints / Team ID still env-only
 
 ## In progress / next
 
-**Later:** Real Apple/Google receipt verification, production package rename + real signing fingerprints / Team ID, enable caps in production when ready.
+**Later:** Store Console products + RTDN/ASN webhooks; set signing fingerprints / Team ID; enable caps when monetizing.
+
+## Release checklist (store launch)
+
+1. Set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + `APP_LINK_IOS_APP_ID=TEAMID.com.quizverse.app`
+2. Point `quizverse.app` DNS at the API; `SHARE_PUBLIC_BASE_URL=https://quizverse.app`
+3. Create Play / App Store products matching `IAP_PREMIUM_PRODUCT_ID`
+4. Fill Apple/Google verify secrets; `BILLING_VERIFY_MODE=apple_google`
+5. Only then consider `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true`
 
 ## Architecture reminders
 

@@ -12,7 +12,7 @@ from app.main import create_app
 
 def _settings(**overrides):
     base = SimpleNamespace(
-        app_link_android_package="com.example.mobile",
+        app_link_android_package="com.quizverse.app",
         app_link_android_sha256_cert_fingerprints="",
         app_link_ios_app_id="",
     )
@@ -23,21 +23,21 @@ def _settings(**overrides):
 
 def test_build_assetlinks_shape():
     payload = build_assetlinks_payload(
-        package_name="com.example.mobile",
+        package_name="com.quizverse.app",
         fingerprints=["AA:BB:CC", "DD:EE:FF"],
     )
     assert len(payload) == 1
     assert payload[0]["relation"] == ["delegate_permission/common.handle_all_urls"]
     target = payload[0]["target"]
     assert target["namespace"] == "android_app"
-    assert target["package_name"] == "com.example.mobile"
+    assert target["package_name"] == "com.quizverse.app"
     assert target["sha256_cert_fingerprints"] == ["AA:BB:CC", "DD:EE:FF"]
 
 
 def test_build_aasa_paths():
-    payload = build_aasa_payload(app_id="TEAMID.com.example.mobile")
+    payload = build_aasa_payload(app_id="TEAMID.com.quizverse.app")
     details = payload["applinks"]["details"]
-    assert details[0]["appID"] == "TEAMID.com.example.mobile"
+    assert details[0]["appID"] == "TEAMID.com.quizverse.app"
     assert "/r/*" in details[0]["paths"]
     assert "/share/results/*" in details[0]["paths"]
 
@@ -71,7 +71,7 @@ async def test_assetlinks_200_when_configured():
     assert response.status_code == 200
     assert "application/json" in response.headers.get("content-type", "")
     data = response.json()
-    assert data[0]["target"]["package_name"] == "com.example.mobile"
+    assert data[0]["target"]["package_name"] == "com.quizverse.app"
     assert data[0]["target"]["sha256_cert_fingerprints"] == ["AA:BB:CC", "DD:EE:FF"]
 
 
@@ -92,7 +92,7 @@ async def test_aasa_200_includes_r_paths():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         with patch(
             "app.api.well_known.get_settings",
-            return_value=_settings(app_link_ios_app_id="TEAMID.com.example.mobile"),
+            return_value=_settings(app_link_ios_app_id="TEAMID.com.quizverse.app"),
         ):
             response = await client.get("/.well-known/apple-app-site-association")
     assert response.status_code == 200

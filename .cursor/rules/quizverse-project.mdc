@@ -38,7 +38,9 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 | 7b | IAP foundation (verify + buy path) | **Done** |
 | 7c | HTTPS share landing foundation | **Done** |
 | 8a | App Links / Universal Links foundation | **Done** |
-| Later | Real Apple/Google receipt APIs + prod signing / package rename | Next |
+| 8b | Store verification adapters (Apple/Google) | **Done** |
+| 8c | Production app identity (`com.quizverse.app`) | **Done** |
+| Later | Store Console products + RTDN webhooks + enable caps | Next |
 
 ## Done so far (keep in mind)
 
@@ -58,6 +60,8 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Phase 7b: `POST /entitlements/purchases/verify|restore`; stub billing grants `subscriptions` + `is_premium`; Flutter `in_app_purchase` buy/restore
 - Phase 7c: public HTML `GET /r/{session_id}`; `SHARE_PUBLIC_BASE_URL` → `web_url` in share_payload
 - Phase 8a: `/.well-known/assetlinks.json` + `apple-app-site-association`; Android HTTPS `/r` autoVerify; iOS Associated Domains stub (`quizverse.app`)
+- Phase 8b: `BILLING_VERIFY_MODE=apple_google` → App Store Server API + Play Developer API adapters (503 until credentials set); stub remains default
+- Phase 8c: native + backend package/bundle id `com.quizverse.app`; App Link / IAP defaults aligned
 
 ## Engineering invariants
 
@@ -69,7 +73,7 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 
 ## Next work
 
-Real Apple App Store Server API / Google Play Developer API verification; production package rename + real signing fingerprints / Team ID; turn caps on when monetization ships.
+Store Console products + signing fingerprints / Team ID in env; RTDN/ASN webhooks; turn caps on when monetization ships.
 
 ## Ops notes
 
@@ -80,5 +84,13 @@ Real Apple App Store Server API / Google Play Developer API verification; produc
 - Analytics: `ANALYTICS_PROVIDER=postgres|null`
 - Entitlements: `ENTITLEMENTS_ENFORCE_QUESTION_CAPS`, `FREE_UNIQUE_QUESTIONS_PER_TOPIC`, `ENTITLEMENTS_DEV_TOGGLE`; `GET /api/v1/entitlements/me`
 - Share: `GET /api/v1/share/results/{session_id}` (public); scheme `quizverse://results/{id}`; landing `GET /r/{id}`; `SHARE_PUBLIC_BASE_URL`
-- App Links: `GET /.well-known/assetlinks.json` + `apple-app-site-association`; `APP_LINK_ANDROID_*`, `APP_LINK_IOS_APP_ID` (empty → 503); point domain at API
-- IAP: `IAP_PREMIUM_PRODUCT_ID`, `BILLING_VERIFY_MODE=stub|apple_google`; `POST /entitlements/purchases/verify`
+- App Links: `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.quizverse.app`; `APP_LINK_ANDROID_*`, `APP_LINK_IOS_APP_ID=TEAMID.com.quizverse.app` (empty → 503); point domain at API
+- IAP: `IAP_PREMIUM_PRODUCT_ID`, `IAP_ANDROID_PACKAGE=com.quizverse.app`, `BILLING_VERIFY_MODE=stub|apple_google`; Apple (`APPLE_IAP_*`) / Google (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`) — empty → 503; `POST /entitlements/purchases/verify`
+
+### Release checklist (before store launch)
+
+1. Set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + `APP_LINK_IOS_APP_ID` (Team ID)
+2. Point `quizverse.app` DNS at the API; set `SHARE_PUBLIC_BASE_URL=https://quizverse.app`
+3. Create Play / App Store products matching `IAP_PREMIUM_PRODUCT_ID`
+4. Fill Apple/Google verify secrets; set `BILLING_VERIFY_MODE=apple_google`
+5. Only then consider `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true`
