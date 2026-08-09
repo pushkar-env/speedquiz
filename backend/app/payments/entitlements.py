@@ -1,10 +1,9 @@
 """Subscription / entitlement stubs.
 
-Current policy: free users are unlimited for unique questions and custom topics
-(aside from the existing daily custom-topic soft limit).
+Current policy: free users are unlimited unless ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true.
 
-Roadmap (Phase 6+ monetization)
---------------------------------
+Roadmap (real IAP later)
+------------------------
 - Soft-gate free users after ~30 unique questions per topic.
 - Offer diamonds / premium to continue toward the 1000 unique bank ceiling.
 - Server remains source of truth; clients never invent entitlements.
@@ -12,7 +11,7 @@ Roadmap (Phase 6+ monetization)
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.config import get_settings
 from app.models import User
@@ -30,7 +29,7 @@ def unique_question_allowance(user: Optional[User]) -> Optional[int]:
     if user is None:
         return settings.free_unique_questions_per_topic
     if user.is_premium:
-        return settings.topic_bank_target_unique
+        return None  # premium unlimited (toward bank target operationally)
     return settings.free_unique_questions_per_topic
 
 
@@ -38,3 +37,20 @@ def custom_topics_unlimited(user: Optional[User]) -> bool:
     if user and user.is_premium:
         return True
     return not settings.entitlements_enforce_question_caps
+
+
+def entitlements_status(user: User) -> dict[str, Any]:
+    enforce = bool(settings.entitlements_enforce_question_caps)
+    return {
+        "is_premium": bool(user.is_premium),
+        "enforce_caps": enforce,
+        "unique_per_topic_limit": (
+            None
+            if user.is_premium or not enforce
+            else settings.free_unique_questions_per_topic
+        ),
+        "custom_topics_unlimited": custom_topics_unlimited(user),
+        "dev_toggle_allowed": (
+            not settings.is_production or settings.entitlements_dev_toggle
+        ),
+    }

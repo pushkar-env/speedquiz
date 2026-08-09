@@ -33,7 +33,8 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 | 5a | XP/daily streaks + achievements unlock | Done |
 | 5b | Leaderboards + daily challenge | Done |
 | 6a | Adaptive difficulty + light analytics | **Done** |
-| 6b | Billing, sharing polish, anti-cheat | **Next** |
+| 6b | Entitlements foundation + share + anti-cheat | **Done** |
+| Later | Real StoreKit/Play Billing + HTTPS deep links | Next |
 
 ## Done so far (keep in mind)
 
@@ -44,10 +45,11 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Scoring bugfix: do not stamp `served_at` early; honor taps (no false timeouts)
 - Session no-repeat while unused bank items exist; sync fill when topic is thin
 - Async bank top-up (`bank_topup` jobs), target 1000, chunk ~20, low watermark ~40
-- Entitlements stub: free unlimited now; roadmap soft-cap ~30 + premium/diamonds (`ENTITLEMENTS_ENFORCE_QUESTION_CAPS`)
+- Entitlements: caps off by default; `GET /entitlements/me` + non-prod `POST /entitlements/dev/premium`; deal path honors `unique_question_allowance` (`entitlement_unique_cap`)
 - Phase 5a: calendar daily streak; achievements on finish; `GET /achievements`
 - Phase 5b: UTC daily challenge; Redis+Postgres leaderboards weekly/daily
 - Phase 6a: Elo-lite `skill_ratings`; `adaptive=true` session start + casual mid-run nudges; `analytics_events` (postgres)
+- Phase 6b: rich `share_payload` + Flutter share sheet; answer timing clamp, Redis answer rate limit, points clamp
 
 ## Engineering invariants
 
@@ -57,9 +59,9 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 4. Keys only in `.env` (gitignored); use `.env.example` for templates.
 5. Prefer incremental, production-quality changes; keep stack runnable.
 
-## Next work (Phase 6b)
+## Next work
 
-StoreKit/Play Billing + entitlement enforcement, richer sharing, anti-cheat hardening.
+Real StoreKit / Play Billing + receipt validation; public HTTPS deep-link landing; turn caps on when monetization ships.
 
 ## Ops notes
 
@@ -68,3 +70,4 @@ StoreKit/Play Billing + entitlement enforcement, richer sharing, anti-cheat hard
 - Android Kotlin incremental issue historically: `kotlin.incremental=false` in `mobile/android/gradle.properties`
 - Daily: `GET/POST /api/v1/daily-challenge`; boards: `GET /api/v1/leaderboards?scope=weekly|daily`
 - Analytics: `ANALYTICS_PROVIDER=postgres|null`
+- Entitlements: `ENTITLEMENTS_ENFORCE_QUESTION_CAPS`, `FREE_UNIQUE_QUESTIONS_PER_TOPIC`, `ENTITLEMENTS_DEV_TOGGLE`; `GET /api/v1/entitlements/me`

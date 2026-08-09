@@ -63,6 +63,7 @@ class AuthUser extends Equatable {
     int? currentStreak,
     int? dailyStreak,
     int? bestStreak,
+    bool? isPremium,
   }) {
     return AuthUser(
       id: id,
@@ -71,7 +72,7 @@ class AuthUser extends Equatable {
       displayName: displayName,
       avatarId: avatarId,
       isGuest: isGuest,
-      isPremium: isPremium,
+      isPremium: isPremium ?? this.isPremium,
       level: level ?? this.level,
       xp: xp ?? this.xp,
       coins: coins ?? this.coins,

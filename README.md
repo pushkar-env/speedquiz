@@ -78,7 +78,8 @@ pytest
 6. **Phase 5a** — XP/daily streaks + achievements unlock ✅
 7. **Phase 5b** — Leaderboards + daily challenge ✅
 8. **Phase 6a** — Adaptive difficulty + light analytics ✅
-9. **Phase 6b** — Billing, sharing polish, anti-cheat ← **next**
+9. **Phase 6b** — Entitlements foundation + share + anti-cheat ✅
+10. **Later** — Real StoreKit/Play Billing + HTTPS deep links
 
 See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
 
@@ -91,6 +92,8 @@ See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architect
 - **Leaderboards:** `GET /api/v1/leaderboards?scope=weekly|daily` (Redis + Postgres)
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
+- **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + dev toggle
+- **Share:** finalize returns rich `share_payload`; Results uses system share sheet
 
 
 ## Question bank (endless unique)
@@ -100,12 +103,12 @@ Gameplay never waits on an LLM. Questions are served from Postgres.
 - Target unique bank size per topic: **1000** (then reshuffle-reuse is OK)
 - When a topic falls below a **low watermark**, the worker generates the next **chunk** (~20) in the background
 - Sessions prefer questions the player has not seen yet
-- Free play is **unlimited** today
+- Free play is **unlimited** today (caps ready behind `ENTITLEMENTS_ENFORCE_QUESTION_CAPS`)
 
 ### Monetization roadmap
 
-- Soft-gate free users after ~**30 unique questions / topic**
-- Unlock more via **premium** or **diamonds**
+- Soft-gate free users after ~**30 unique questions / topic** (wired; flag off)
+- Unlock more via **premium** (dev toggle now; StoreKit/Play later) or **diamonds**
 - Flip `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true` when ready (server-side entitlements)
 
 ## License

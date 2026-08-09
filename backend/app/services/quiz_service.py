@@ -40,12 +40,18 @@ from app.schemas.quiz import (
     SubmitAnswerRequest,
 )
 from app.core.config import get_settings
+from app.payments.entitlements import unique_question_allowance
 from app.services import achievements as achievements_service
 from app.services.adaptive import (
     nudge_label,
     parse_difficulty_label,
     suggested_label_from_ratings,
     update_topic_rating,
+)
+from app.services.anticheat import (
+    check_answer_rate_limit,
+    clamp_points_awarded,
+    resolve_answer_elapsed_ms,
 )
 from app.services.progression import apply_xp, update_daily_streak
 from app.services.scoring import scoring_service
@@ -127,6 +133,49 @@ async def _user_seen_question_ids(
     return set(rows.scalars().all())
 
 
+async def _raise_if_unique_cap(
+    db: AsyncSession,
+    user: User,
+    topic_id: UUID,
+    *,
+    session: Optional[QuizSession] = None,
+) -> None:
+    """When caps are enforced, block dealing once unique-seen >= allowance."""
+    if session is not None and (
+        session.is_daily_challenge or session.mode == GameMode.DAILY
+    ):
+        return
+    allowance = unique_question_allowance(user)
+    if allowance is None:
+        return
+    seen = await _user_seen_question_ids(db, user_id=user.id, topic_id=topic_id)
+    if len(seen) >= allowance:
+        try:
+            from app.analytics import track_event
+
+            await track_event(
+                db,
+                "entitlement_blocked",
+                user_id=user.id,
+                properties={
+                    "topic_id": str(topic_id),
+                    "limit": allowance,
+                    "seen": len(seen),
+                },
+            )
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "entitlement_unique_cap",
+                "message": "Free unique-question limit reached for this topic",
+                "limit": allowance,
+                "seen": len(seen),
+            },
+        )
+
+
 async def _select_questions(
     db: AsyncSession,
     *,
@@ -135,6 +184,7 @@ async def _select_questions(
     exclude_ids: set[UUID],
     limit: int,
     prefer_unseen_for_user: Optional[UUID] = None,
+    unique_only: bool = False,
 ) -> list[Question]:
     """Pick playable questions — prefer never-seen-by-user, then unused-in-session."""
     low, high = DIFFICULTY_RANGES[difficulty]
@@ -169,14 +219,15 @@ async def _select_questions(
         for q in await _fetch(skip_seen=True, difficulty_bound=False):
             if q.id not in {r.id for r in rows}:
                 rows.append(q)
-    if len(rows) < limit:
-        for q in await _fetch(skip_seen=False, difficulty_bound=True):
-            if q.id not in {r.id for r in rows}:
-                rows.append(q)
-    if len(rows) < limit:
-        for q in await _fetch(skip_seen=False, difficulty_bound=False):
-            if q.id not in {r.id for r in rows}:
-                rows.append(q)
+    if not unique_only:
+        if len(rows) < limit:
+            for q in await _fetch(skip_seen=False, difficulty_bound=True):
+                if q.id not in {r.id for r in rows}:
+                    rows.append(q)
+        if len(rows) < limit:
+            for q in await _fetch(skip_seen=False, difficulty_bound=False):
+                if q.id not in {r.id for r in rows}:
+                    rows.append(q)
 
     random.shuffle(rows)
     return rows[:limit]
@@ -262,8 +313,20 @@ async def _append_questions(
     *,
     start_index: int,
     count: int,
+    user: Optional[User] = None,
 ) -> list[QuizQuestion]:
     await _maybe_nudge_adaptive_difficulty(db, session)
+    if user is not None:
+        try:
+            await _raise_if_unique_cap(db, user, session.topic_id, session=session)
+        except HTTPException:
+            return []
+
+    allowance = unique_question_allowance(user) if user else None
+    unique_only = allowance is not None and not (
+        session.is_daily_challenge or session.mode == GameMode.DAILY
+    )
+
     existing_ids = set(
         (
             await db.execute(
@@ -278,6 +341,7 @@ async def _append_questions(
         exclude_ids=existing_ids,
         limit=count,
         prefer_unseen_for_user=session.user_id,
+        unique_only=unique_only,
     )
     if not questions and not existing_ids:
         raise HTTPException(
@@ -318,6 +382,7 @@ async def create_session(
         )
 
     topic = await _load_topic(db, payload.topic_id)
+    await _raise_if_unique_cap(db, user, topic.id)
     defaults = MODE_DEFAULTS[payload.mode]
     question_time = payload.question_time_limit_ms or defaults["question_time_limit_ms"]
 
@@ -364,7 +429,7 @@ async def create_session(
     )
 
     created = await _append_questions(
-        db, session, start_index=0, count=_session_batch_size()
+        db, session, start_index=0, count=_session_batch_size(), user=user
     )
     if not created:
         raise HTTPException(
@@ -490,6 +555,12 @@ async def submit_answer(
     session_id: UUID,
     payload: SubmitAnswerRequest,
 ) -> AnswerFeedbackOut:
+    if not await check_answer_rate_limit(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many answers — slow down",
+        )
+
     session = await _get_session_for_user(db, session_id, user.id)
     if session.status != QuizSessionStatus.ACTIVE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is not active")
@@ -530,6 +601,18 @@ async def submit_answer(
     limit = session.question_time_limit_ms
     client_elapsed = payload.client_elapsed_ms
 
+    selected_original: Optional[int] = None
+    if payload.selected_option_index is not None:
+        if payload.selected_option_index < 0 or payload.selected_option_index >= len(option_order):
+            raise HTTPException(status_code=400, detail="Invalid option index")
+        selected_original = option_order[payload.selected_option_index]
+
+    # Tentative correctness for timing resolve (before timeout logic)
+    tentative_correct = (
+        selected_original is not None
+        and int(selected_original) == int(question.correct_option_index)
+    )
+
     # Bind serve time to the client's question clock (not to when we prepared the
     # next question during the previous answer — that burned feedback reading time).
     if served_at is None:
@@ -537,31 +620,25 @@ async def submit_answer(
             clamped = max(0, min(int(client_elapsed), limit + ANSWER_GRACE_MS))
             qq.served_at = now - timedelta(milliseconds=clamped)
             elapsed = clamped
+            wall = clamped
         else:
             qq.served_at = now
             elapsed = 0
+            wall = 0
     else:
         wall = max(0, int((now - served_at).total_seconds() * 1000))
-        if client_elapsed is not None:
-            # Prefer client elapsed for fairness; wall is only a sanity ceiling.
-            elapsed = max(0, min(int(client_elapsed), limit + ANSWER_GRACE_MS))
-            # If client claims far more time than wall, clamp to wall (+skew).
-            elapsed = min(elapsed, wall + 2000)
-        else:
-            elapsed = wall
-
-    selected_original: Optional[int] = None
-    if payload.selected_option_index is not None:
-        if payload.selected_option_index < 0 or payload.selected_option_index >= len(option_order):
-            raise HTTPException(status_code=400, detail="Invalid option index")
-        selected_original = option_order[payload.selected_option_index]
+        elapsed = resolve_answer_elapsed_ms(
+            client_elapsed=client_elapsed,
+            wall_ms=wall,
+            limit_ms=limit,
+            grace_ms=ANSWER_GRACE_MS,
+            is_correct=tentative_correct,
+        )
 
     # A real tap always counts — never silently convert a selection into a timeout.
-    # (Previously served_at was stamped when preparing next_question, so reading
-    # "Why?" / Teach Me made the server think the next question had already expired.)
     if selected_original is not None:
         timed_out = False
-        is_correct = int(selected_original) == int(question.correct_option_index)
+        is_correct = tentative_correct
     else:
         timed_out = bool(payload.timed_out) or elapsed >= limit
         is_correct = False
@@ -579,8 +656,9 @@ async def submit_answer(
         total_ms=limit,
         mode=session.mode,
     )
+    points = clamp_points_awarded(breakdown.points_awarded)
 
-    session.score += breakdown.points_awarded
+    session.score += points
     session.streak = breakdown.new_streak
     session.best_streak = max(session.best_streak, session.streak)
     if breakdown.lives_delta and session.lives is not None:
@@ -604,7 +682,7 @@ async def submit_answer(
         base_points=breakdown.base_points,
         speed_bonus=breakdown.speed_bonus,
         streak_multiplier=breakdown.streak_multiplier,
-        points_awarded=breakdown.points_awarded,
+        points_awarded=points,
         answered_at=_now(),
     )
     db.add(answer)
@@ -649,9 +727,15 @@ async def submit_answer(
                     session,
                     start_index=session.current_question_index,
                     count=_session_batch_size(),
+                    user=user,
                 )
                 next_qq = appended[0] if appended else None
-                if next_qq is None:
+                # When unique caps apply, empty append means paywall — do not reshuffle past seen.
+                allowance = unique_question_allowance(user)
+                unique_only = allowance is not None and not (
+                    session.is_daily_challenge or session.mode == GameMode.DAILY
+                )
+                if next_qq is None and not unique_only:
                     # Never reshuffle in-session questions while unused bank items exist.
                     used_ids = set(
                         (
@@ -669,6 +753,7 @@ async def submit_answer(
                         exclude_ids=used_ids,
                         limit=8,
                         prefer_unseen_for_user=session.user_id,
+                        unique_only=False,
                     )
                     if fresh:
                         pick = fresh[0]
@@ -690,6 +775,7 @@ async def submit_answer(
                             exclude_ids=set(),
                             limit=8,
                             prefer_unseen_for_user=session.user_id,
+                            unique_only=False,
                         )
                         if reused:
                             # Prefer questions not already in this session when possible
@@ -736,7 +822,7 @@ async def submit_answer(
         base_points=breakdown.base_points,
         speed_bonus=breakdown.speed_bonus,
         streak_multiplier=float(breakdown.streak_multiplier),
-        points_awarded=breakdown.points_awarded,
+        points_awarded=points,
         score=session.score,
         streak=session.streak,
         best_streak=session.best_streak,
@@ -813,11 +899,27 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     db.add(score_row)
 
     topic = await _load_topic(db, session.topic_id)
-    share_text = (
-        f"🧠 QUIZVERSE\n\n{topic.name} — {session.difficulty.value.upper()}\n\n"
-        f"Score: {session.score:,}\nAccuracy: {accuracy:.0f}%\n"
-        f"Best Streak: {session.best_streak}\n\nCan you beat me?"
-    )
+    share_payload = {
+        "text": (
+            f"QUIZVERSE\n\n{topic.name} — {session.difficulty.value.upper()} · "
+            f"{session.mode.value.replace('_', ' ')}\n\n"
+            f"Score: {session.score:,}\n"
+            f"Accuracy: {accuracy:.0f}%\n"
+            f"Best Streak: {session.best_streak}\n\n"
+            f"Can you beat me?\n"
+            f"quizverse://results/{session.id}"
+        ),
+        "deep_link": f"quizverse://results/{session.id}",
+        "stats": {
+            "score": session.score,
+            "accuracy": accuracy,
+            "best_streak": session.best_streak,
+            "topic": topic.name,
+            "mode": session.mode.value,
+            "difficulty": session.difficulty.value,
+            "questions_answered": answered,
+        },
+    }
     summary = {
         "final_score": session.score,
         "accuracy": accuracy,
@@ -839,7 +941,7 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
             session_id=session.id,
             user_id=user.id,
             summary=summary,
-            share_payload={"text": share_text},
+            share_payload=share_payload,
             comparisons=comparisons,
         )
     )
@@ -1061,6 +1163,7 @@ async def get_result(
         is_personal_best=bool(comparisons.get("is_personal_best", False)),
         previous_best=int(comparisons.get("previous_best", 0)),
         share_text=str(share.get("text", "")),
+        share_payload=dict(share) if isinstance(share, dict) else {},
         comparisons=comparisons,
         new_achievements=new_achievements,
         level=int(summary["level"]) if "level" in summary else (profile.level if profile else None),

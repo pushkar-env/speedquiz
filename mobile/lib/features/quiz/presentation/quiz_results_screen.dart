@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quizverse/core/theme/app_theme.dart';
 import 'package:quizverse/features/quiz/domain/quiz_models.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:share_plus/share_plus.dart';
 
 class QuizResultsScreen extends StatefulWidget {
   const QuizResultsScreen({super.key, required this.result});
@@ -38,6 +38,17 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _shareResult() async {
+    final result = widget.result;
+    final text = result.shareText.isNotEmpty
+        ? result.shareText
+        : 'QUIZVERSE\n\n${result.topicName}\n'
+            'Score: ${formatScore(result.finalScore)}\n'
+            'Accuracy: ${result.accuracy.toStringAsFixed(0)}%\n'
+            'Best Streak: ${result.bestStreak}';
+    await SharePlus.instance.share(ShareParams(text: text));
   }
 
   @override
@@ -175,6 +186,8 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                             ),
                           ),
                         ],
+                        const SizedBox(height: AppSpacing.lg),
+                        _ShareCardPreview(result: result),
                       ],
                     ),
                   ),
@@ -185,18 +198,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                   const SizedBox(height: 10),
                   QvGhostButton(
                     label: 'SHARE RESULT',
-                    onPressed: () async {
-                      await Clipboard.setData(
-                        ClipboardData(text: result.shareText),
-                      );
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Result copied — ready to share'),
-                          ),
-                        );
-                      }
-                    },
+                    onPressed: _shareResult,
                   ),
                   const SizedBox(height: 4),
                   Center(
@@ -210,6 +212,66 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ShareCardPreview extends StatelessWidget {
+  const _ShareCardPreview({required this.result});
+
+  final QuizResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: dark
+              ? const [Color(0xFF1A2836), Color(0xFF12201A)]
+              : [
+                  AppColors.surfaceLight,
+                  AppColors.accent.withValues(alpha: 0.08),
+                ],
+        ),
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SHARE CARD',
+            style: theme.textTheme.labelLarge?.copyWith(
+              letterSpacing: 1.2,
+              color: AppColors.accent,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            result.topicName,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${formatScore(result.finalScore)} · '
+            '${result.accuracy.toStringAsFixed(0)}% accuracy · '
+            'streak ${result.bestStreak}',
+            style: theme.textTheme.bodyMedium,
+          ),
+        ],
       ),
     );
   }

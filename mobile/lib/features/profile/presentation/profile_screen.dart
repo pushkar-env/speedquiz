@@ -5,6 +5,7 @@ import 'package:quizverse/core/theme/theme_mode_provider.dart';
 import 'package:quizverse/features/achievements/data/achievements_repository.dart';
 import 'package:quizverse/features/achievements/domain/achievement_models.dart';
 import 'package:quizverse/features/auth/presentation/auth_controller.dart';
+import 'package:quizverse/features/entitlements/data/entitlements_repository.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -18,7 +19,10 @@ class ProfileScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
     final achievementsAsync = ref.watch(achievementsProvider);
+    final entitlementsAsync = ref.watch(entitlementsProvider);
     final dailyStreak = user?.dailyStreak ?? user?.currentStreak ?? 0;
+    final isPremium =
+        entitlementsAsync.valueOrNull?.isPremium ?? user?.isPremium ?? false;
 
     return Scaffold(
       body: SafeArea(
@@ -82,6 +86,8 @@ class ProfileScreen extends ConsumerWidget {
                       color: dark ? AppColors.textPrimaryDark : null,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  _PlanBadge(isPremium: isPremium),
                   const SizedBox(height: 4),
                   Text(
                     user?.isGuest == true
@@ -114,6 +120,74 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+            ),
+            entitlementsAsync.when(
+              data: (ent) {
+                if (!ent.devToggleAllowed) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.lg),
+                  child: QvSurface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Dev entitlements',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ent.enforceCaps
+                              ? 'Caps ON · free limit ${ent.uniquePerTopicLimit ?? 30}/topic'
+                              : 'Caps OFF · free unlimited (flag ready)',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            isPremium ? 'Premium enabled' : 'Enable Premium',
+                          ),
+                          value: isPremium,
+                          onChanged: (enabled) async {
+                            try {
+                              final updated = await ref
+                                  .read(entitlementsRepositoryProvider)
+                                  .setDevPremium(enabled: enabled);
+                              ref.invalidate(entitlementsProvider);
+                              ref
+                                  .read(authControllerProvider.notifier)
+                                  .applyProgress(isPremium: updated.isPremium);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      updated.isPremium
+                                          ? 'Premium enabled (dev)'
+                                          : 'Back to Free (dev)',
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Toggle failed: $e')),
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
             ),
             const SizedBox(height: AppSpacing.xl),
             Text('Appearance', style: theme.textTheme.titleLarge),
@@ -161,6 +235,37 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanBadge extends StatelessWidget {
+  const _PlanBadge({required this.isPremium});
+
+  final bool isPremium;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: (isPremium ? AppColors.warning : AppColors.accent)
+            .withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(
+          color: (isPremium ? AppColors.warning : AppColors.accent)
+              .withValues(alpha: 0.35),
+        ),
+      ),
+      child: Text(
+        isPremium ? 'PREMIUM' : 'FREE',
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: isPremium ? AppColors.warning : AppColors.accent,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.1,
         ),
       ),
     );

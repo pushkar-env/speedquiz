@@ -68,6 +68,7 @@ class AuthController extends StateNotifier<AuthState> {
     int? currentStreak,
     int? dailyStreak,
     int? bestStreak,
+    bool? isPremium,
   }) {
     final current = state;
     if (current is! AuthAuthenticated) return;
@@ -79,6 +80,7 @@ class AuthController extends StateNotifier<AuthState> {
         currentStreak: currentStreak ?? dailyStreak,
         dailyStreak: dailyStreak ?? currentStreak,
         bestStreak: bestStreak,
+        isPremium: isPremium,
       ),
     );
   }

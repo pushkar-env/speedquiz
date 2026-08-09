@@ -98,6 +98,7 @@ class QuizResultOut(BaseModel):
     is_personal_best: bool
     previous_best: int
     share_text: str
+    share_payload: dict = Field(default_factory=dict)
     comparisons: dict
     new_achievements: list[AchievementUnlockedOut] = Field(default_factory=list)
     level: Optional[int] = None

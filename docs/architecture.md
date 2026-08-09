@@ -39,7 +39,7 @@ Anonymous JWT accounts are first-class. Access + refresh tokens; refresh rotates
 
 ## Decision: Entitlements later
 
-`payments/entitlements.py` stubs free vs premium caps. `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=false` keeps free unlimited until monetization ships.
+`payments/entitlements.py` + `GET /entitlements/me` wire free vs premium caps. `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=false` keeps free unlimited until monetization ships. Deal path raises `entitlement_unique_cap` when enforced. Anti-cheat helpers live in `services/anticheat.py` (timing, rate limit, points clamp). Finalize stores rich `share_payload` (`text`, `deep_link`, `stats`).
 
 ## Risks
 

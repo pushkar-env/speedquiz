@@ -246,6 +246,7 @@ class QuizResult extends Equatable {
     required this.isPersonalBest,
     required this.previousBest,
     required this.shareText,
+    this.sharePayload = const {},
     this.newAchievements = const [],
     this.level,
     this.xp,
@@ -269,6 +270,7 @@ class QuizResult extends Equatable {
   final bool isPersonalBest;
   final int previousBest;
   final String shareText;
+  final Map<String, dynamic> sharePayload;
   final List<AchievementUnlock> newAchievements;
   final int? level;
   final int? xp;
@@ -280,6 +282,12 @@ class QuizResult extends Equatable {
     final unlocks = (json['new_achievements'] as List<dynamic>? ?? [])
         .map((e) => AchievementUnlock.fromJson(e as Map<String, dynamic>))
         .toList();
+    final rawShare = json['share_payload'];
+    final sharePayload = rawShare is Map<String, dynamic>
+        ? Map<String, dynamic>.from(rawShare)
+        : <String, dynamic>{};
+    final shareText = json['share_text'] as String? ??
+        (sharePayload['text'] as String? ?? '');
     return QuizResult(
       sessionId: json['session_id'] as String,
       topicName: json['topic_name'] as String,
@@ -295,7 +303,8 @@ class QuizResult extends Equatable {
       xpEarned: json['xp_earned'] as int,
       isPersonalBest: json['is_personal_best'] as bool,
       previousBest: json['previous_best'] as int,
-      shareText: json['share_text'] as String? ?? '',
+      shareText: shareText,
+      sharePayload: sharePayload,
       newAchievements: unlocks,
       level: json['level'] as int?,
       xp: json['xp'] as int?,

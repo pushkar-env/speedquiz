@@ -93,8 +93,21 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
         return 'Too many requests. Please wait a moment and try again.';
       }
       final detail = error.response?.data;
-      if (detail is Map && detail['detail'] is String) {
-        return detail['detail'] as String;
+      if (detail is Map) {
+        final nested = detail['detail'];
+        if (nested is Map) {
+          final errCode = nested['code'] as String?;
+          if (errCode == 'entitlement_unique_cap') {
+            return 'Free unique-question limit reached for this topic. '
+                'Go Premium (Profile) to keep playing.';
+          }
+          if (nested['message'] is String) {
+            return nested['message'] as String;
+          }
+        }
+        if (nested is String) {
+          return nested;
+        }
       }
       if (error.type == DioExceptionType.connectionTimeout ||
           error.type == DioExceptionType.receiveTimeout) {

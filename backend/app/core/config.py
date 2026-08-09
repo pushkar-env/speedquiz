@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     # Monetization roadmap — keep free unlimited until explicitly enabled
     entitlements_enforce_question_caps: bool = False
     free_unique_questions_per_topic: int = 30
+    entitlements_dev_toggle: bool = False
 
     # Analytics: postgres | null
     analytics_provider: str = "postgres"

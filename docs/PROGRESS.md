@@ -63,9 +63,16 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 - Casual mid-run difficulty nudges from last 5 answers
 - `analytics_events` table + Postgres provider; events: quiz_started/finished, daily_started, achievement_unlocked
 
+### Phase 6b — Entitlements foundation + share + anti-cheat
+- Soft-cap plumbing wired into deal/refill (`unique_question_allowance`); caps still **off** by default
+- `GET /entitlements/me` + `POST /entitlements/dev/premium` (non-prod / `ENTITLEMENTS_DEV_TOGGLE`)
+- Flutter Profile Free/Premium badge + dev premium toggle; friendly cap errors on play
+- Finalize `share_payload` (`text`, `deep_link`, `stats`); Results share card + `share_plus` sheet
+- Anti-cheat: timing resolve for instant-correct claims, Redis ~3 answers/s rate limit, points clamp
+
 ## In progress / next
 
-**Phase 6b (next):** StoreKit/Play Billing, richer sharing, anti-cheat hardening.
+**Later:** Real StoreKit/Play Billing + receipt validation, public HTTPS deep-link hosting, enable caps in production when ready.
 
 ## Architecture reminders
 

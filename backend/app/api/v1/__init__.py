@@ -6,6 +6,7 @@ from app.api.v1 import (
     catalog,
     custom_topics,
     daily,
+    entitlements,
     health,
     leaderboards,
     questions,
@@ -22,3 +23,4 @@ api_router.include_router(questions.router)
 api_router.include_router(achievements.router)
 api_router.include_router(daily.router)
 api_router.include_router(leaderboards.router)
+api_router.include_router(entitlements.router)
