@@ -53,4 +53,5 @@ def entitlements_status(user: User) -> dict[str, Any]:
         "dev_toggle_allowed": (
             not settings.is_production or settings.entitlements_dev_toggle
         ),
+        "premium_product_id": settings.iap_premium_product_id,
     }

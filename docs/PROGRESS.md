@@ -1,6 +1,6 @@
 # QuizVerse progress & goals
 
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 
 ## Vision
 
@@ -70,9 +70,30 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 - Finalize `share_payload` (`text`, `deep_link`, `stats`); Results share card + `share_plus` sheet
 - Anti-cheat: timing resolve for instant-correct claims, Redis ~3 answers/s rate limit, points clamp
 
+### Phase 7a — Share deep links + paywall UX
+- Public `GET /share/results/{session_id}` (safe fields only, no auth)
+- Flutter `app_links` + `quizverse://results/{id}` → shared result screen; owner results fetch without `extra`
+- `PremiumPaywallSheet` on entitlement cap + Profile Upgrade card (dev enable or Coming soon)
+
+### Phase 7b — IAP foundation
+- `POST /entitlements/purchases/verify` + `/restore`; upserts `subscriptions`, sets `user.is_premium`
+- `BILLING_VERIFY_MODE=stub` (non-prod); `apple_google` returns 501 until store APIs wired
+- Flutter `in_app_purchase` BillingService; paywall Buy / Restore / stub-dev path
+
+### Phase 7c — HTTPS share landing foundation
+- Public HTML `GET /r/{session_id}` (Jinja score card + Open in QuizVerse deep link)
+- `SHARE_PUBLIC_BASE_URL` adds `web_url` to finalize `share_payload` / share text
+- Flutter deep-link mapper accepts `/r/{id}`
+
+### Phase 8a — App Links / Universal Links foundation
+- `GET /.well-known/assetlinks.json` + `apple-app-site-association` (503 until fingerprints / iOS app id set)
+- Android HTTPS intent-filter `/r` with `autoVerify` (host `quizverse.app` placeholder)
+- iOS `Runner.entitlements` Associated Domains `applinks:quizverse.app`
+- Package id stays `com.example.mobile` until release rename
+
 ## In progress / next
 
-**Later:** Real StoreKit/Play Billing + receipt validation, public HTTPS deep-link hosting, enable caps in production when ready.
+**Later:** Real Apple/Google receipt verification, production package rename + real signing fingerprints / Team ID, enable caps in production when ready.
 
 ## Architecture reminders
 

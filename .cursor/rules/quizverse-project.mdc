@@ -34,7 +34,11 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 | 5b | Leaderboards + daily challenge | Done |
 | 6a | Adaptive difficulty + light analytics | **Done** |
 | 6b | Entitlements foundation + share + anti-cheat | **Done** |
-| Later | Real StoreKit/Play Billing + HTTPS deep links | Next |
+| 7a | Share deep links + paywall UX | **Done** |
+| 7b | IAP foundation (verify + buy path) | **Done** |
+| 7c | HTTPS share landing foundation | **Done** |
+| 8a | App Links / Universal Links foundation | **Done** |
+| Later | Real Apple/Google receipt APIs + prod signing / package rename | Next |
 
 ## Done so far (keep in mind)
 
@@ -50,6 +54,10 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Phase 5b: UTC daily challenge; Redis+Postgres leaderboards weekly/daily
 - Phase 6a: Elo-lite `skill_ratings`; `adaptive=true` session start + casual mid-run nudges; `analytics_events` (postgres)
 - Phase 6b: rich `share_payload` + Flutter share sheet; answer timing clamp, Redis answer rate limit, points clamp
+- Phase 7a: public `GET /share/results/{id}`; `quizverse://` deep links; Premium paywall sheet (dev toggle / coming soon)
+- Phase 7b: `POST /entitlements/purchases/verify|restore`; stub billing grants `subscriptions` + `is_premium`; Flutter `in_app_purchase` buy/restore
+- Phase 7c: public HTML `GET /r/{session_id}`; `SHARE_PUBLIC_BASE_URL` → `web_url` in share_payload
+- Phase 8a: `/.well-known/assetlinks.json` + `apple-app-site-association`; Android HTTPS `/r` autoVerify; iOS Associated Domains stub (`quizverse.app`)
 
 ## Engineering invariants
 
@@ -61,7 +69,7 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 
 ## Next work
 
-Real StoreKit / Play Billing + receipt validation; public HTTPS deep-link landing; turn caps on when monetization ships.
+Real Apple App Store Server API / Google Play Developer API verification; production package rename + real signing fingerprints / Team ID; turn caps on when monetization ships.
 
 ## Ops notes
 
@@ -71,3 +79,6 @@ Real StoreKit / Play Billing + receipt validation; public HTTPS deep-link landin
 - Daily: `GET/POST /api/v1/daily-challenge`; boards: `GET /api/v1/leaderboards?scope=weekly|daily`
 - Analytics: `ANALYTICS_PROVIDER=postgres|null`
 - Entitlements: `ENTITLEMENTS_ENFORCE_QUESTION_CAPS`, `FREE_UNIQUE_QUESTIONS_PER_TOPIC`, `ENTITLEMENTS_DEV_TOGGLE`; `GET /api/v1/entitlements/me`
+- Share: `GET /api/v1/share/results/{session_id}` (public); scheme `quizverse://results/{id}`; landing `GET /r/{id}`; `SHARE_PUBLIC_BASE_URL`
+- App Links: `GET /.well-known/assetlinks.json` + `apple-app-site-association`; `APP_LINK_ANDROID_*`, `APP_LINK_IOS_APP_ID` (empty → 503); point domain at API
+- IAP: `IAP_PREMIUM_PRODUCT_ID`, `BILLING_VERIFY_MODE=stub|apple_google`; `POST /entitlements/purchases/verify`

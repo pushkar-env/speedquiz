@@ -46,8 +46,9 @@ class QuizPlayFinished extends QuizPlayState {
 }
 
 class QuizPlayError extends QuizPlayState {
-  const QuizPlayError(this.message);
+  const QuizPlayError(this.message, {this.isEntitlementCap = false});
   final String message;
+  final bool isEntitlementCap;
 }
 
 class QuizPlayController extends StateNotifier<QuizPlayState> {
@@ -80,7 +81,10 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
           );
       _beginQuestion(session);
     } catch (error) {
-      state = QuizPlayError(_friendlyError(error));
+      state = QuizPlayError(
+        _friendlyError(error),
+        isEntitlementCap: isEntitlementUniqueCap(error),
+      );
     }
   }
 
@@ -209,7 +213,10 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
         _startSpeedrunAutoAdvance();
       }
     } catch (error) {
-      state = QuizPlayError(_friendlyError(error));
+      state = QuizPlayError(
+        _friendlyError(error),
+        isEntitlementCap: isEntitlementUniqueCap(error),
+      );
     }
   }
 
@@ -286,7 +293,12 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
       final result = await _repo.finishSession(current.session.id);
       if (!_disposed) state = QuizPlayFinished(result);
     } catch (error) {
-      if (!_disposed) state = QuizPlayError(_friendlyError(error));
+      if (!_disposed) {
+        state = QuizPlayError(
+          _friendlyError(error),
+          isEntitlementCap: isEntitlementUniqueCap(error),
+        );
+      }
     }
   }
 

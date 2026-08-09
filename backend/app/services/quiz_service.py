@@ -55,6 +55,7 @@ from app.services.anticheat import (
 )
 from app.services.progression import apply_xp, update_daily_streak
 from app.services.scoring import scoring_service
+from app.services.share import build_share_payload
 
 DIFFICULTY_RANGES: dict[DifficultyLabel, tuple[float, float]] = {
     DifficultyLabel.EASY: (0.0, 0.4),
@@ -899,27 +900,16 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     db.add(score_row)
 
     topic = await _load_topic(db, session.topic_id)
-    share_payload = {
-        "text": (
-            f"QUIZVERSE\n\n{topic.name} — {session.difficulty.value.upper()} · "
-            f"{session.mode.value.replace('_', ' ')}\n\n"
-            f"Score: {session.score:,}\n"
-            f"Accuracy: {accuracy:.0f}%\n"
-            f"Best Streak: {session.best_streak}\n\n"
-            f"Can you beat me?\n"
-            f"quizverse://results/{session.id}"
-        ),
-        "deep_link": f"quizverse://results/{session.id}",
-        "stats": {
-            "score": session.score,
-            "accuracy": accuracy,
-            "best_streak": session.best_streak,
-            "topic": topic.name,
-            "mode": session.mode.value,
-            "difficulty": session.difficulty.value,
-            "questions_answered": answered,
-        },
-    }
+    share_payload = build_share_payload(
+        session_id=session.id,
+        topic_name=topic.name,
+        difficulty=session.difficulty.value,
+        mode=session.mode.value,
+        score=session.score,
+        accuracy=accuracy,
+        best_streak=session.best_streak,
+        questions_answered=answered,
+    )
     summary = {
         "final_score": session.score,
         "accuracy": accuracy,

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuizVerse — {{ result.topic_name }}</title>
+  <meta name="description" content="Score {{ '{:,}'.format(result.final_score) }} on {{ result.topic_name }}" />
+  <style>
+    :root {
+      --bg: #0b1210;
+      --fg: #e8f0ec;
+      --muted: #9bb0a4;
+      --accent: #3dd68c;
+      --card: #14201a;
+      --line: rgba(61, 214, 140, 0.28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(61,214,140,0.18), transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, rgba(40,120,90,0.22), transparent 50%),
+        var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    main {
+      width: min(420px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 24px;
+    }
+    .brand {
+      letter-spacing: 0.18em;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0 0 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 2.4rem;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+    }
+    .meta {
+      margin: 8px 0 20px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.95rem;
+    }
+    .row strong { font-weight: 700; }
+    .actions { margin-top: 24px; display: grid; gap: 10px; }
+    a.btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    a.primary {
+      background: var(--accent);
+      color: #062015;
+    }
+    a.ghost {
+      color: var(--fg);
+      border: 1px solid rgba(255,255,255,0.14);
+    }
+    .hint {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="brand">QUIZVERSE</p>
+    <h1>{{ "{:,}".format(result.final_score) }}</h1>
+    <p class="meta">
+      {{ result.topic_name }} · {{ result.difficulty|upper }} · {{ result.mode.replace('_', ' ') }}
+    </p>
+    <div class="row"><span>Accuracy</span><strong>{{ "%.0f"|format(result.accuracy) }}%</strong></div>
+    <div class="row"><span>Best streak</span><strong>{{ result.best_streak }}</strong></div>
+    <div class="row"><span>Questions</span><strong>{{ result.questions_answered }}</strong></div>
+    <div class="actions">
+      <a class="btn primary" href="{{ result.deep_link }}">Open in QuizVerse</a>
+      {% if result.web_url %}
+      <a class="btn ghost" href="{{ result.web_url }}">Share this page</a>
+      {% endif %}
+    </div>
+    <p class="hint">If the app doesn’t open, install QuizVerse and try the button again.</p>
+  </main>
+</body>
+</html>

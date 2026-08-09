@@ -6,6 +6,7 @@ import 'package:quizverse/features/achievements/data/achievements_repository.dar
 import 'package:quizverse/features/achievements/domain/achievement_models.dart';
 import 'package:quizverse/features/auth/presentation/auth_controller.dart';
 import 'package:quizverse/features/entitlements/data/entitlements_repository.dart';
+import 'package:quizverse/features/entitlements/presentation/premium_paywall_sheet.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -121,6 +122,32 @@ class ProfileScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            if (!isPremium) ...[
+              const SizedBox(height: AppSpacing.lg),
+              QvSurface(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Upgrade',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Unlock unlimited unique questions and custom topics when caps go live.',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    QvButton(
+                      label: 'VIEW PREMIUM',
+                      onPressed: () => showPremiumPaywall(context),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             entitlementsAsync.when(
               data: (ent) {
                 if (!ent.devToggleAllowed) {

@@ -61,6 +61,19 @@ class Settings(BaseSettings):
     free_unique_questions_per_topic: int = 30
     entitlements_dev_toggle: bool = False
 
+    # IAP — stub verify by default; real Apple/Google later
+    iap_premium_product_id: str = "quizverse_premium"
+    billing_verify_mode: str = "stub"  # stub | apple_google
+    billing_allow_stub_in_production: bool = False
+
+    # Public share landing (empty = omit web_url from share text)
+    share_public_base_url: str = ""
+
+    # HTTPS App Links / Universal Links association (empty = 503 on well-known)
+    app_link_android_package: str = "com.example.mobile"
+    app_link_android_sha256_cert_fingerprints: str = ""
+    app_link_ios_app_id: str = ""  # TEAMID.com.example.mobile
+
     # Analytics: postgres | null
     analytics_provider: str = "postgres"
 

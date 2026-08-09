@@ -11,6 +11,7 @@ from app.api.v1 import (
     leaderboards,
     questions,
     quiz,
+    share,
 )
 
 api_router = APIRouter()
@@ -24,3 +25,4 @@ api_router.include_router(achievements.router)
 api_router.include_router(daily.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(entitlements.router)
+api_router.include_router(share.router)

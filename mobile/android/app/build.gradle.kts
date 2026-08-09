@@ -23,6 +23,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // HTTPS App Links host (point DNS + assetlinks when ready).
+        manifestPlaceholders["shareHttpsHost"] = "quizverse.app"
     }
 
     buildTypes {

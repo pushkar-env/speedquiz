@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.api.v1 import api_router
 from app.api.v1.health import router as health_router
+from app.api.share_landing import router as share_landing_router
+from app.api.well_known import router as well_known_router
 from app.core.config import get_settings
 from app.core.exceptions import (
     RequestIdMiddleware,
@@ -60,6 +62,8 @@ def create_app() -> FastAPI:
 
     # Ops probes at root; versioned API under /api/v1
     app.include_router(health_router)
+    app.include_router(well_known_router)
+    app.include_router(share_landing_router)
     app.include_router(api_router, prefix=settings.api_prefix)
 
     return app

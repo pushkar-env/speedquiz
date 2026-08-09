@@ -10,8 +10,9 @@ import 'package:quizverse/features/onboarding/presentation/splash_screen.dart';
 import 'package:quizverse/features/profile/presentation/profile_screen.dart';
 import 'package:quizverse/features/quiz/domain/quiz_models.dart';
 import 'package:quizverse/features/quiz/presentation/quiz_play_screen.dart';
-import 'package:quizverse/features/quiz/presentation/quiz_results_screen.dart';
+import 'package:quizverse/features/quiz/presentation/quiz_results_loader_screen.dart';
 import 'package:quizverse/features/quiz/presentation/quiz_setup_screen.dart';
+import 'package:quizverse/features/share/presentation/shared_result_screen.dart';
 import 'package:quizverse/features/shell/presentation/main_shell.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -28,8 +29,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final authState = ref.read(authControllerProvider);
       final loggingIn = state.matchedLocation == '/splash';
+      final sharePath = state.matchedLocation.startsWith('/share/');
       final authed = authState is AuthAuthenticated;
-      if (!authed && !loggingIn) return '/splash';
+      // Public share cards are viewable before/without treating as "logged out bounce".
+      if (!authed && !loggingIn && !sharePath) return '/splash';
       if (authed && loggingIn) return '/home';
       return null;
     },
@@ -93,18 +96,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: _rootNavigatorKey,
         path: '/quiz/results/:sessionId',
         builder: (context, state) {
-          final result = state.extra as QuizResult?;
-          if (result == null) {
-            return Scaffold(
-              body: Center(
-                child: TextButton(
-                  onPressed: () => context.go('/home'),
-                  child: const Text('Back home'),
-                ),
-              ),
-            );
-          }
-          return QuizResultsScreen(result: result);
+          final sessionId = state.pathParameters['sessionId']!;
+          final result = state.extra is QuizResult ? state.extra as QuizResult : null;
+          return QuizResultsLoaderScreen(
+            sessionId: sessionId,
+            initialResult: result,
+          );
+        },
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/share/results/:sessionId',
+        builder: (context, state) {
+          final sessionId = state.pathParameters['sessionId']!;
+          return SharedResultScreen(sessionId: sessionId);
         },
       ),
     ],

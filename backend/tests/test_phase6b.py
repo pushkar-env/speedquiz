@@ -52,12 +52,14 @@ def test_entitlements_status_shape():
         settings.free_unique_questions_per_topic = 30
         settings.is_production = False
         settings.entitlements_dev_toggle = False
+        settings.iap_premium_product_id = "quizverse_premium"
         status = entitlements_status(_user())
         assert status["is_premium"] is False
         assert status["enforce_caps"] is True
         assert status["unique_per_topic_limit"] == 30
         assert status["custom_topics_unlimited"] is False
         assert status["dev_toggle_allowed"] is True
+        assert status["premium_product_id"] == "quizverse_premium"
 
         prem = entitlements_status(_user(premium=True))
         assert prem["unique_per_topic_limit"] is None

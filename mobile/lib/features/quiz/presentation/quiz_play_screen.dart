@@ -5,6 +5,7 @@ import 'package:quizverse/core/theme/app_theme.dart';
 import 'package:quizverse/features/auth/presentation/auth_controller.dart';
 import 'package:quizverse/features/custom_topics/data/custom_topics_repository.dart';
 import 'package:quizverse/features/daily/data/daily_repository.dart';
+import 'package:quizverse/features/entitlements/presentation/premium_paywall_sheet.dart';
 import 'package:quizverse/features/leaderboard/data/leaderboard_repository.dart';
 import 'package:quizverse/features/quiz/domain/quiz_models.dart';
 import 'package:quizverse/features/quiz/presentation/quiz_play_controller.dart';
@@ -81,35 +82,51 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
                 ],
               ),
             ),
-          QuizPlayError(:final message) => Padding(
+          QuizPlayError(:final message, :final isEntitlementCap) => Padding(
               padding: const EdgeInsets.all(AppSpacing.lg),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(message, textAlign: TextAlign.center),
                   const SizedBox(height: AppSpacing.md),
-                  QvButton(
-                    label: 'Back home',
-                    onPressed: () => context.go('/home'),
-                  ),
-                  if (message.toLowerCase().contains('session')) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    TextButton(
-                      onPressed: () async {
-                        await ref
-                            .read(authControllerProvider.notifier)
-                            .continueAsGuest();
-                        if (!context.mounted) return;
-                        ref.read(quizPlayControllerProvider.notifier).start(
-                              topicId: widget.topicId,
-                              mode: widget.mode,
-                              difficulty: widget.difficulty,
-                              adaptive: widget.adaptive,
-                              existingSession: null,
-                            );
-                      },
-                      child: const Text('Sign in again & retry'),
+                  if (isEntitlementCap) ...[
+                    QvButton(
+                      label: 'GO PREMIUM',
+                      onPressed: () => showPremiumPaywall(
+                        context,
+                        reason:
+                            'You hit the free unique-question limit for this topic.',
+                      ),
                     ),
+                    const SizedBox(height: 10),
+                    QvGhostButton(
+                      label: 'BACK HOME',
+                      onPressed: () => context.go('/home'),
+                    ),
+                  ] else ...[
+                    QvButton(
+                      label: 'Back home',
+                      onPressed: () => context.go('/home'),
+                    ),
+                    if (message.toLowerCase().contains('session')) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      TextButton(
+                        onPressed: () async {
+                          await ref
+                              .read(authControllerProvider.notifier)
+                              .continueAsGuest();
+                          if (!context.mounted) return;
+                          ref.read(quizPlayControllerProvider.notifier).start(
+                                topicId: widget.topicId,
+                                mode: widget.mode,
+                                difficulty: widget.difficulty,
+                                adaptive: widget.adaptive,
+                                existingSession: null,
+                              );
+                        },
+                        child: const Text('Sign in again & retry'),
+                      ),
+                    ],
                   ],
                 ],
               ),

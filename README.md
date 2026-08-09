@@ -79,7 +79,11 @@ pytest
 7. **Phase 5b** — Leaderboards + daily challenge ✅
 8. **Phase 6a** — Adaptive difficulty + light analytics ✅
 9. **Phase 6b** — Entitlements foundation + share + anti-cheat ✅
-10. **Later** — Real StoreKit/Play Billing + HTTPS deep links
+10. **Phase 7a** — Share deep links + paywall UX ✅
+11. **Phase 7b** — IAP foundation (verify + buy path) ✅
+12. **Phase 7c** — HTTPS share landing foundation ✅
+13. **Phase 8a** — App Links / Universal Links foundation ✅
+14. **Later** — Real Apple/Google receipt APIs + prod signing / package rename
 
 See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
 
@@ -92,8 +96,10 @@ See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architect
 - **Leaderboards:** `GET /api/v1/leaderboards?scope=weekly|daily` (Redis + Postgres)
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
-- **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + dev toggle
-- **Share:** finalize returns rich `share_payload`; Results uses system share sheet
+- **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
+- **IAP:** `POST /api/v1/entitlements/purchases/verify` (stub in non-prod); Flutter store buy/restore when products exist
+- **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `quizverse://` + optional `SHARE_PUBLIC_BASE_URL`
+- **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; set `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready (package id still `com.example.mobile`)
 
 
 ## Question bank (endless unique)
