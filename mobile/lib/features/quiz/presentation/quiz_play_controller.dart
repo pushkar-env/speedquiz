@@ -64,6 +64,7 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
     required String topicId,
     required String mode,
     required String difficulty,
+    bool adaptive = false,
     QuizSession? existingSession,
   }) async {
     _cancelTimers();
@@ -74,6 +75,7 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
             topicId: topicId,
             mode: mode,
             difficulty: difficulty,
+            adaptive: adaptive,
           );
       _beginQuestion(session);
     } catch (error) {

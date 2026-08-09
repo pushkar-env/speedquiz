@@ -3,10 +3,50 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:quizverse/core/theme/app_theme.dart';
 import 'package:quizverse/features/auth/presentation/auth_controller.dart';
+import 'package:quizverse/features/daily/data/daily_repository.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
+
+  Future<void> _openDaily(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(dailyRepositoryProvider);
+    try {
+      final info = await repo.fetchToday();
+      if (!context.mounted) return;
+      if (info.isCompleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              info.bestScore != null
+                  ? 'Done for today · score ${info.bestScore}. Come back tomorrow!'
+                  : 'Daily challenge complete. Come back tomorrow!',
+            ),
+          ),
+        );
+        ref.invalidate(dailyChallengeProvider);
+        return;
+      }
+      final session = await repo.start();
+      if (!context.mounted) return;
+      ref.invalidate(dailyChallengeProvider);
+      context.push(
+        '/quiz/play',
+        extra: {
+          'topicId': session.topicId,
+          'topicName': session.topicName,
+          'mode': 'daily',
+          'difficulty': session.difficulty,
+          'session': session,
+        },
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Daily challenge unavailable: $error')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -14,6 +54,7 @@ class HomeScreen extends ConsumerWidget {
     final user = auth is AuthAuthenticated ? auth.user : null;
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
+    final dailyAsync = ref.watch(dailyChallengeProvider);
 
     return Scaffold(
       body: Container(
@@ -120,48 +161,126 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: AppSpacing.xl),
               _PlayHero(onPlay: () => context.push('/quiz/setup')),
               const SizedBox(height: AppSpacing.lg),
-              QvSurface(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Daily Challenge arrives in Phase 5'),
+              dailyAsync.when(
+                loading: () => QvSurface(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
+                        ),
+                        child: const Text('📅', style: TextStyle(fontSize: 22)),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Daily Challenge',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            Text(
+                              'Loading today’s set…',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                error: (_, _) => QvSurface(
+                  onTap: () => ref.invalidate(dailyChallengeProvider),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
+                        ),
+                        child: const Text('📅', style: TextStyle(fontSize: 22)),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Daily Challenge',
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            Text(
+                              'Tap to retry',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.refresh_rounded,
+                        color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ],
+                  ),
+                ),
+                data: (daily) {
+                  final subtitle = daily.isCompleted
+                      ? (daily.bestScore != null
+                          ? 'Completed · ${daily.bestScore} pts'
+                          : 'Completed · come back tomorrow')
+                      : daily.isInProgress
+                          ? 'Resume · ${daily.topicName}'
+                          : '${daily.topicName} · ${daily.questionCount} Qs';
+                  return QvSurface(
+                    onTap: () => _openDaily(context, ref),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(AppRadii.sm),
+                          ),
+                          child: Text(
+                            daily.topicIcon,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                daily.title,
+                                style: theme.textTheme.titleMedium,
+                              ),
+                              Text(subtitle, style: theme.textTheme.bodyMedium),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          daily.isCompleted
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.chevron_right_rounded,
+                          color: daily.isCompleted
+                              ? AppColors.accent
+                              : theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                        ),
+                      ],
                     ),
                   );
                 },
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(AppRadii.sm),
-                      ),
-                      child: const Text('📅', style: TextStyle(fontSize: 22)),
-                    ),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Daily Challenge',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          Text(
-                            'Same questions for everyone',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.lock_outline_rounded,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                    ),
-                  ],
-                ),
               ),
               const SizedBox(height: AppSpacing.xl),
               const QvSectionHeader(

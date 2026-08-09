@@ -1,6 +1,16 @@
 from fastapi import APIRouter
 
-from app.api.v1 import achievements, auth, catalog, custom_topics, health, questions, quiz
+from app.api.v1 import (
+    achievements,
+    auth,
+    catalog,
+    custom_topics,
+    daily,
+    health,
+    leaderboards,
+    questions,
+    quiz,
+)
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -10,3 +20,5 @@ api_router.include_router(quiz.router)
 api_router.include_router(custom_topics.router)
 api_router.include_router(questions.router)
 api_router.include_router(achievements.router)
+api_router.include_router(daily.router)
+api_router.include_router(leaderboards.router)

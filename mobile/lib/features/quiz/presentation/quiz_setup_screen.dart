@@ -21,12 +21,14 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
   String _difficulty = 'medium';
   String _mode = 'casual';
   bool _starting = false;
+  bool get _adaptive => _difficulty == 'adaptive';
 
   static const _difficulties = [
     ('easy', 'Easy'),
     ('medium', 'Medium'),
     ('hard', 'Hard'),
     ('expert', 'Expert'),
+    ('adaptive', 'Adaptive'),
   ];
 
   static const _modes = [
@@ -59,7 +61,8 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
         'topicId': _topicId,
         'topicName': _topicName,
         'mode': _mode,
-        'difficulty': _difficulty,
+        'difficulty': _adaptive ? 'medium' : _difficulty,
+        'adaptive': _adaptive,
       },
     );
     if (mounted) setState(() => _starting = false);
@@ -141,21 +144,32 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 Text('Difficulty', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 4),
+                Text(
+                  _adaptive
+                      ? 'Difficulty adjusts to you as you play'
+                      : 'Pick a fixed band or Adaptive',
+                  style: theme.textTheme.bodyMedium,
+                ),
                 const SizedBox(height: AppSpacing.md),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: _difficulties.map((d) {
                     final selected = _difficulty == d.$1;
-                    return Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          right: d != _difficulties.last ? 8 : 0,
-                        ),
-                        child: _DiffTile(
-                          label: d.$2,
-                          selected: selected,
-                          onTap: () => setState(() => _difficulty = d.$1),
-                        ),
+                    return FilterChip(
+                      selected: selected,
+                      showCheckmark: false,
+                      label: Text(d.$2),
+                      selectedColor: AppColors.accent.withValues(alpha: 0.18),
+                      side: BorderSide(
+                        color: selected
+                            ? AppColors.accent
+                            : (dark
+                                ? AppColors.borderDark
+                                : AppColors.borderLight),
                       ),
+                      onSelected: (_) => setState(() => _difficulty = d.$1),
                     );
                   }).toList(),
                 ),
@@ -232,53 +246,6 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _DiffTile extends StatelessWidget {
-  const _DiffTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
-      color: selected
-          ? AppColors.accent.withValues(alpha: 0.16)
-          : (dark ? AppColors.surfaceDark : AppColors.surfaceLight),
-      borderRadius: BorderRadius.circular(AppRadii.sm),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadii.sm),
-            border: Border.all(
-              color: selected
-                  ? AppColors.accent
-                  : (dark ? AppColors.borderDark : AppColors.borderLight),
-            ),
-          ),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: selected ? AppColors.accent : null,
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-        ),
       ),
     );
   }

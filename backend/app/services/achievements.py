@@ -65,8 +65,7 @@ def criteria_met(
     if ctype == "perfect_run":
         return ctx.perfect_run and int(value) <= 1
     if ctype == "daily_completed":
-        # Deferred to Phase 5b — never unlock early
-        return False
+        return bool(ctx.daily_completed) and int(value) <= 1
     if ctype == "topic_mastery":
         slug = str(criteria.get("topic", ""))
         percent = ctx.topic_mastery_by_slug.get(slug, 0.0)
@@ -176,6 +175,7 @@ async def build_context_from_profile_stats(
     topic_mastery: dict,
     min_answer_ms: Optional[int],
     perfect_run: bool,
+    daily_completed: bool = False,
 ) -> AchievementContext:
     return AchievementContext(
         quizzes_completed=quizzes_completed,
@@ -186,4 +186,5 @@ async def build_context_from_profile_stats(
         topic_mastery_by_slug=await _mastery_by_slug(db, topic_mastery or {}),
         min_answer_ms=min_answer_ms,
         perfect_run=perfect_run,
+        daily_completed=daily_completed,
     )

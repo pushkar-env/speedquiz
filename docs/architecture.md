@@ -22,8 +22,20 @@ Anonymous JWT accounts are first-class. Access + refresh tokens; refresh rotates
 ## Decision: Progression (Phase 5a)
 
 - `daily_streak` is calendar play streak; Home 🔥 uses it. `best_streak` on profile is lifetime answer streak.
-- Achievements evaluate only on session finalize (not per-answer). `daily_completed` waits for Phase 5b.
+- Achievements evaluate only on session finalize (not per-answer).
 - XP curve: spend `level * 500` XP to advance; Flutter XP bar matches.
+
+## Decision: Daily + leaderboards (Phase 5b)
+
+- Daily challenge is bank-only (no LLM): same seeded question IDs for UTC day; one completed attempt; resume ACTIVE.
+- Leaderboards dual-write Redis ZSET (hot) + Postgres `leaderboards` (durable). Scopes: weekly ISO week + daily date.
+- Score = best `final_score` per user per board.
+
+## Decision: Adaptive + analytics (Phase 6a)
+
+- Per-topic Elo-lite in `player_statistics.skill_ratings`; Adaptive sessions pick start difficulty server-side.
+- Casual + adaptive mid-run nudges from rolling last-5 accuracy (no LLM).
+- Product events land in `analytics_events` (best-effort); never on the answer hot path.
 
 ## Decision: Entitlements later
 
@@ -33,5 +45,5 @@ Anonymous JWT accounts are first-class. Access + refresh tokens; refresh rotates
 
 1. AI generation latency / cost for cold topics — mitigated by caching, chunking, watermarks, loading UX.
 2. Enum proliferation in Postgres — keep shared enum types and migrations explicit.
-3. Leaderboard hot paths — Redis sorted sets (Phase 5b), Postgres as source of truth.
+3. Leaderboard hot paths — Redis sorted sets with Postgres fallback.
 4. OpenAI spend if periodic top-ups are too aggressive — tune `TOPIC_BANK_*` env knobs.

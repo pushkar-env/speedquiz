@@ -13,13 +13,15 @@ class QuizRepository {
     required String topicId,
     required String mode,
     required String difficulty,
+    bool adaptive = false,
   }) async {
     final response = await _dio.post(
       '${AppConfig.apiPrefix}/quiz/sessions',
       data: {
         'topic_id': topicId,
         'mode': mode,
-        'difficulty': difficulty,
+        'difficulty': adaptive ? 'medium' : difficulty,
+        'adaptive': adaptive,
       },
     );
     return QuizSession.fromJson(response.data as Map<String, dynamic>);

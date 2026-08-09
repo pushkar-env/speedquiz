@@ -16,6 +16,7 @@ class CreateQuizSessionRequest(BaseModel):
     mode: GameMode = GameMode.CASUAL
     difficulty: DifficultyLabel = DifficultyLabel.MEDIUM
     question_time_limit_ms: Optional[int] = Field(default=None, ge=5000, le=60000)
+    adaptive: bool = False
 
 
 class QuizOptionOut(BaseModel):

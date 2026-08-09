@@ -41,6 +41,12 @@ from app.schemas.quiz import (
 )
 from app.core.config import get_settings
 from app.services import achievements as achievements_service
+from app.services.adaptive import (
+    nudge_label,
+    parse_difficulty_label,
+    suggested_label_from_ratings,
+    update_topic_rating,
+)
 from app.services.progression import apply_xp, update_daily_streak
 from app.services.scoring import scoring_service
 
@@ -214,6 +220,42 @@ async def _get_session_for_user(
     return session
 
 
+async def _maybe_nudge_adaptive_difficulty(db: AsyncSession, session: QuizSession) -> None:
+    """Casual + adaptive only: shift difficulty band from last up to 5 answers."""
+    cfg = dict(session.config or {})
+    if not cfg.get("adaptive"):
+        return
+    if session.mode != GameMode.CASUAL:
+        return
+
+    rows = (
+        await db.execute(
+            select(Answer.is_correct)
+            .where(Answer.session_id == session.id)
+            .order_by(Answer.answered_at.desc())
+            .limit(5)
+        )
+    ).scalars().all()
+    if not rows:
+        return
+
+    recent_correct = sum(1 for ok in rows if ok)
+    recent_total = len(rows)
+    current = parse_difficulty_label(
+        cfg.get("adaptive_label"),
+        default=session.difficulty,
+    )
+    new_label = nudge_label(
+        current,
+        recent_correct=recent_correct,
+        recent_total=recent_total,
+    )
+    if new_label != current:
+        session.difficulty = new_label
+        cfg["adaptive_label"] = new_label.value
+        session.config = cfg
+
+
 async def _append_questions(
     db: AsyncSession,
     session: QuizSession,
@@ -221,6 +263,7 @@ async def _append_questions(
     start_index: int,
     count: int,
 ) -> list[QuizQuestion]:
+    await _maybe_nudge_adaptive_difficulty(db, session)
     existing_ids = set(
         (
             await db.execute(
@@ -263,16 +306,40 @@ async def create_session(
     user: User,
     payload: CreateQuizSessionRequest,
 ) -> QuizSessionOut:
+    if payload.mode == GameMode.DAILY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use /daily-challenge/start for the daily challenge",
+        )
+    if payload.adaptive and payload.mode == GameMode.DAILY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Adaptive mode is not available for daily challenge",
+        )
+
     topic = await _load_topic(db, payload.topic_id)
     defaults = MODE_DEFAULTS[payload.mode]
     question_time = payload.question_time_limit_ms or defaults["question_time_limit_ms"]
+
+    stats = user.statistics or await db.scalar(
+        select(PlayerStatistics).where(PlayerStatistics.user_id == user.id)
+    )
+    difficulty = payload.difficulty
+    config: dict = {"version": 1}
+    if payload.adaptive:
+        difficulty = suggested_label_from_ratings(
+            stats.skill_ratings if stats else {},
+            str(topic.id),
+        )
+        config["adaptive"] = True
+        config["adaptive_label"] = difficulty.value
 
     session = QuizSession(
         id=uuid4(),
         user_id=user.id,
         topic_id=topic.id,
         mode=payload.mode,
-        difficulty=payload.difficulty,
+        difficulty=difficulty,
         status=QuizSessionStatus.ACTIVE,
         score=defaults["score"],
         lives=defaults["lives"],
@@ -281,7 +348,7 @@ async def create_session(
         question_time_limit_ms=question_time,
         current_question_index=0,
         started_at=_now(),
-        config={"version": 1},
+        config=config,
     )
     db.add(session)
     await db.flush()
@@ -292,7 +359,7 @@ async def create_session(
     await ensure_minimum_bank(
         db,
         topic,
-        difficulty=payload.difficulty,
+        difficulty=difficulty,
         user=user,
     )
 
@@ -315,6 +382,24 @@ async def create_session(
         .where(Question.id == first.question_id)
     )
     assert question is not None
+
+    try:
+        from app.analytics import track_event
+
+        await track_event(
+            db,
+            "quiz_started",
+            user_id=user.id,
+            properties={
+                "session_id": str(session.id),
+                "topic_id": str(topic.id),
+                "mode": session.mode.value,
+                "difficulty": session.difficulty.value,
+                "adaptive": bool(payload.adaptive),
+            },
+        )
+    except Exception:
+        pass
 
     return QuizSessionOut(
         id=session.id,
@@ -538,73 +623,55 @@ async def submit_answer(
             )
         )
         if next_qq is None:
-            # Refill session buffer from bank; kick async bank growth if thin.
-            from app.services.bank_inventory import count_active_questions, enqueue_bank_topup
+            # Daily challenges are a fixed hand — never endless-append.
+            if session.mode == GameMode.DAILY or session.is_daily_challenge:
+                await _finalize_session(db, user, session)
+                run_ended = True
+            else:
+                # Refill session buffer from bank; kick async bank growth if thin.
+                from app.services.bank_inventory import count_active_questions, enqueue_bank_topup
 
-            topic = await _load_topic(db, session.topic_id)
-            active = await count_active_questions(db, topic.id)
-            # Keep a runway of unique items ahead of the player without racing to 1000 in one go.
-            if active < max(get_settings().topic_bank_low_watermark * 2, 80):
-                await enqueue_bank_topup(
-                    db,
-                    topic,
-                    difficulty=session.difficulty,
-                    reason="session_consume",
-                    user=user,
-                    force=True,
-                )
-
-            appended = await _append_questions(
-                db,
-                session,
-                start_index=session.current_question_index,
-                count=_session_batch_size(),
-            )
-            next_qq = appended[0] if appended else None
-            if next_qq is None:
-                # Never reshuffle in-session questions while unused bank items exist.
-                used_ids = set(
-                    (
-                        await db.execute(
-                            select(QuizQuestion.question_id).where(
-                                QuizQuestion.session_id == session.id
-                            )
-                        )
-                    ).scalars().all()
-                )
-                fresh = await _select_questions(
-                    db,
-                    topic_id=session.topic_id,
-                    difficulty=session.difficulty,
-                    exclude_ids=used_ids,
-                    limit=8,
-                    prefer_unseen_for_user=session.user_id,
-                )
-                if fresh:
-                    pick = fresh[0]
-                    next_qq = QuizQuestion(
-                        id=uuid4(),
-                        session_id=session.id,
-                        question_id=pick.id,
-                        sequence_index=session.current_question_index,
-                        option_order=_shuffle_option_order(),
+                topic = await _load_topic(db, session.topic_id)
+                active = await count_active_questions(db, topic.id)
+                # Keep a runway of unique items ahead of the player without racing to 1000 in one go.
+                if active < max(get_settings().topic_bank_low_watermark * 2, 80):
+                    await enqueue_bank_topup(
+                        db,
+                        topic,
+                        difficulty=session.difficulty,
+                        reason="session_consume",
+                        user=user,
+                        force=True,
                     )
-                    db.add(next_qq)
-                    await db.flush()
-                else:
-                    # True exhaustion of unused bank items for this session — reuse least-served.
-                    reused = await _select_questions(
+
+                appended = await _append_questions(
+                    db,
+                    session,
+                    start_index=session.current_question_index,
+                    count=_session_batch_size(),
+                )
+                next_qq = appended[0] if appended else None
+                if next_qq is None:
+                    # Never reshuffle in-session questions while unused bank items exist.
+                    used_ids = set(
+                        (
+                            await db.execute(
+                                select(QuizQuestion.question_id).where(
+                                    QuizQuestion.session_id == session.id
+                                )
+                            )
+                        ).scalars().all()
+                    )
+                    fresh = await _select_questions(
                         db,
                         topic_id=session.topic_id,
                         difficulty=session.difficulty,
-                        exclude_ids=set(),
+                        exclude_ids=used_ids,
                         limit=8,
                         prefer_unseen_for_user=session.user_id,
                     )
-                    if reused:
-                        # Prefer questions not already in this session when possible
-                        unused = [q for q in reused if q.id not in used_ids]
-                        pick = (unused or reused)[0]
+                    if fresh:
+                        pick = fresh[0]
                         next_qq = QuizQuestion(
                             id=uuid4(),
                             session_id=session.id,
@@ -614,6 +681,29 @@ async def submit_answer(
                         )
                         db.add(next_qq)
                         await db.flush()
+                    else:
+                        # True exhaustion of unused bank items for this session — reuse least-served.
+                        reused = await _select_questions(
+                            db,
+                            topic_id=session.topic_id,
+                            difficulty=session.difficulty,
+                            exclude_ids=set(),
+                            limit=8,
+                            prefer_unseen_for_user=session.user_id,
+                        )
+                        if reused:
+                            # Prefer questions not already in this session when possible
+                            unused = [q for q in reused if q.id not in used_ids]
+                            pick = (unused or reused)[0]
+                            next_qq = QuizQuestion(
+                                id=uuid4(),
+                                session_id=session.id,
+                                question_id=pick.id,
+                                sequence_index=session.current_question_index,
+                                option_order=_shuffle_option_order(),
+                            )
+                            db.add(next_qq)
+                            await db.flush()
 
         if next_qq is None and not run_ended:
             await _finalize_session(db, user, session)
@@ -790,6 +880,13 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
             "name": topic.name,
         }
         stats.topic_mastery = mastery
+        if answered > 0:
+            stats.skill_ratings = update_topic_rating(
+                stats.skill_ratings,
+                topic_id=str(session.topic_id),
+                accuracy_percent=accuracy,
+                session_label=session.difficulty,
+            )
 
     newly_unlocked = []
     if profile:
@@ -836,6 +933,7 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
             topic_mastery=(stats.topic_mastery if stats else {}) or {},
             min_answer_ms=min_answer_ms,
             perfect_run=perfect_run,
+            daily_completed=bool(session.is_daily_challenge),
         )
         newly_unlocked = await achievements_service.evaluate_and_unlock(
             db,
@@ -843,6 +941,56 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
             profile=profile,
             ctx=ctx,
         )
+
+    # Leaderboards: weekly for all runs; daily board for daily challenge
+    try:
+        from app.services import leaderboards as lb_service
+
+        daily_date = None
+        if session.is_daily_challenge or session.mode == GameMode.DAILY:
+            daily_date = _now().date()
+        await lb_service.record_score(
+            db,
+            user_id=user.id,
+            score=session.score,
+            weekly=True,
+            daily_date=daily_date,
+        )
+    except Exception:
+        # Leaderboard must never block session finalize
+        pass
+
+    try:
+        from app.analytics import track_event
+
+        cfg = dict(session.config or {})
+        await track_event(
+            db,
+            "quiz_finished",
+            user_id=user.id,
+            properties={
+                "session_id": str(session.id),
+                "topic_id": str(session.topic_id),
+                "mode": session.mode.value,
+                "difficulty": session.difficulty.value,
+                "adaptive": bool(cfg.get("adaptive")),
+                "score": session.score,
+                "accuracy": accuracy,
+                "questions_answered": answered,
+            },
+        )
+        if newly_unlocked:
+            await track_event(
+                db,
+                "achievement_unlocked",
+                user_id=user.id,
+                properties={
+                    "codes": [a.code for a in newly_unlocked],
+                    "session_id": str(session.id),
+                },
+            )
+    except Exception:
+        pass
 
     # Persist unlocks on the result summary for later get_result calls
     quiz_result = await db.scalar(select(QuizResult).where(QuizResult.session_id == session.id))

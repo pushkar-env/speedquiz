@@ -84,6 +84,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             topicName: extra['topicName'] as String?,
             mode: extra['mode'] as String? ?? 'casual',
             difficulty: extra['difficulty'] as String? ?? 'medium',
+            adaptive: extra['adaptive'] as bool? ?? false,
             existingSession: sessionExtra is QuizSession ? sessionExtra : null,
           );
         },

@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     entitlements_enforce_question_caps: bool = False
     free_unique_questions_per_topic: int = 30
 
+    # Analytics: postgres | null
+    analytics_provider: str = "postgres"
+
     @property
     def cors_origin_list(self) -> list[str]:
         if self.cors_origins.strip() == "*":

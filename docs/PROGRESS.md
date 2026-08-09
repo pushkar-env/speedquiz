@@ -51,11 +51,21 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 - Flutter Profile achievements list + Results unlock cards
 - XP bar uses `level * 500` threshold (matches backend)
 
+### Phase 5b — Engagement
+- UTC daily challenge: fixed ~10 medium questions, one completed attempt/day, resume ACTIVE
+- `GET /daily-challenge`, `POST /daily-challenge/start` (mode `daily`, no endless append)
+- Leaderboards: Redis ZSET + Postgres `LeaderboardEntry`; scopes `weekly` + `daily`
+- `GET /leaderboards?scope=weekly|daily`; Flutter Leaderboard tabs + Home daily tile
+- `daily_completed` / First Daily achievement enabled
+
+### Phase 6a — Adaptive + analytics
+- Per-topic Elo-lite in `skill_ratings`; Adaptive quiz start (`adaptive=true`)
+- Casual mid-run difficulty nudges from last 5 answers
+- `analytics_events` table + Postgres provider; events: quiz_started/finished, daily_started, achievement_unlocked
+
 ## In progress / next
 
-**Phase 5b (next):** leaderboards (Redis + Postgres), daily challenge, `daily_completed` achievement.
-
-**Phase 6:** adaptive difficulty, analytics events, StoreKit/Play Billing, sharing, anti-cheat hardening.
+**Phase 6b (next):** StoreKit/Play Billing, richer sharing, anti-cheat hardening.
 
 ## Architecture reminders
 

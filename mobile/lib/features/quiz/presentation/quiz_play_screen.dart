@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:quizverse/core/theme/app_theme.dart';
 import 'package:quizverse/features/auth/presentation/auth_controller.dart';
 import 'package:quizverse/features/custom_topics/data/custom_topics_repository.dart';
+import 'package:quizverse/features/daily/data/daily_repository.dart';
+import 'package:quizverse/features/leaderboard/data/leaderboard_repository.dart';
 import 'package:quizverse/features/quiz/domain/quiz_models.dart';
 import 'package:quizverse/features/quiz/presentation/quiz_play_controller.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
@@ -14,6 +16,7 @@ class QuizPlayScreen extends ConsumerStatefulWidget {
     required this.topicId,
     required this.mode,
     required this.difficulty,
+    this.adaptive = false,
     this.topicName,
     this.existingSession,
   });
@@ -21,6 +24,7 @@ class QuizPlayScreen extends ConsumerStatefulWidget {
   final String topicId;
   final String mode;
   final String difficulty;
+  final bool adaptive;
   final String? topicName;
   final QuizSession? existingSession;
 
@@ -37,6 +41,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
             topicId: widget.topicId,
             mode: widget.mode,
             difficulty: widget.difficulty,
+            adaptive: widget.adaptive,
             existingSession: widget.existingSession,
           );
     });
@@ -56,6 +61,9 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
               dailyStreak: result.dailyStreak,
               currentStreak: result.currentStreak ?? result.dailyStreak,
             );
+        ref.invalidate(dailyChallengeProvider);
+        ref.invalidate(leaderboardProvider('weekly'));
+        ref.invalidate(leaderboardProvider('daily'));
         context.go('/quiz/results/${result.sessionId}', extra: result);
       }
     });
@@ -96,6 +104,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
                               topicId: widget.topicId,
                               mode: widget.mode,
                               difficulty: widget.difficulty,
+                              adaptive: widget.adaptive,
                               existingSession: null,
                             );
                       },

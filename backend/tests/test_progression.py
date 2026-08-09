@@ -89,10 +89,14 @@ def test_criteria_first_quiz():
     assert not criteria_met({"type": "quizzes_completed", "value": 1}, _ctx(quizzes_completed=0))
 
 
-def test_criteria_daily_completed_deferred():
-    assert not criteria_met(
+def test_criteria_daily_completed():
+    assert criteria_met(
         {"type": "daily_completed", "value": 1},
         _ctx(daily_completed=True),
+    )
+    assert not criteria_met(
+        {"type": "daily_completed", "value": 1},
+        _ctx(daily_completed=False),
     )
 
 

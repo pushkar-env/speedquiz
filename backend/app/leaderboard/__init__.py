@@ -1,1 +1,1 @@
-"""Placeholder modules reserved for Phase 5+."""
+"""Leaderboard package — see app.services.leaderboards."""

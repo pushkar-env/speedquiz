@@ -76,16 +76,22 @@ pytest
 4. **Phase 4** — AI generation, custom topics, Teach Me ✅
 5. **Bank scale** — Watermark top-ups toward ~1000 unique/topic ✅ (ongoing refill)
 6. **Phase 5a** — XP/daily streaks + achievements unlock ✅
-7. **Phase 5b** — Leaderboards + daily challenge ← **next**
-8. **Phase 6** — Adaptive difficulty, analytics, subscriptions, sharing
+7. **Phase 5b** — Leaderboards + daily challenge ✅
+8. **Phase 6a** — Adaptive difficulty + light analytics ✅
+9. **Phase 6b** — Billing, sharing polish, anti-cheat ← **next**
 
 See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
 
-## Progression (Phase 5a)
+## Progression & engagement
 
 - Calendar **daily streak** updates on quiz finish; Home 🔥 shows it
-- Achievements evaluate on finish (`GET /api/v1/achievements` for catalog)
+- Achievements evaluate on finish (`GET /api/v1/achievements`)
 - XP level curve: need `level * 500` XP to advance
+- **Daily challenge:** `GET/POST /api/v1/daily-challenge` (fixed questions, one clear/day)
+- **Leaderboards:** `GET /api/v1/leaderboards?scope=weekly|daily` (Redis + Postgres)
+- **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
+- **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
+
 
 ## Question bank (endless unique)
 

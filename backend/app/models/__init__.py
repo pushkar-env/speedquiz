@@ -609,3 +609,21 @@ class GenerationJob(Base, TimestampMixin):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+    __table_args__ = (
+        Index("ix_analytics_events_event_created", "event", "created_at"),
+        Index("ix_analytics_events_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    event: Mapped[str] = mapped_column(String(128), nullable=False)
+    properties: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

@@ -30,9 +30,10 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 | 3 | Polished quiz UX (inline feedback, speedrun auto-advance) | Done |
 | 4 | AI pipeline, custom topics, Teach Me, reports | Done |
 | Bank growth | Watermark top-ups toward ~1000 unique/topic | Done (ongoing refill) |
-| 5a | XP/daily streaks + achievements unlock | **Done** |
-| 5b | Leaderboards + daily challenge | **Next** |
-| 6 | Adaptive difficulty, analytics, subscriptions, sharing | Later |
+| 5a | XP/daily streaks + achievements unlock | Done |
+| 5b | Leaderboards + daily challenge | Done |
+| 6a | Adaptive difficulty + light analytics | **Done** |
+| 6b | Billing, sharing polish, anti-cheat | **Next** |
 
 ## Done so far (keep in mind)
 
@@ -44,7 +45,9 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Session no-repeat while unused bank items exist; sync fill when topic is thin
 - Async bank top-up (`bank_topup` jobs), target 1000, chunk ~20, low watermark ~40
 - Entitlements stub: free unlimited now; roadmap soft-cap ~30 + premium/diamonds (`ENTITLEMENTS_ENFORCE_QUESTION_CAPS`)
-- Phase 5a: calendar daily streak (`daily_streak` / Home 🔥); achievement evaluate+unlock on finish; `GET /achievements`; Profile + Results unlock UX
+- Phase 5a: calendar daily streak; achievements on finish; `GET /achievements`
+- Phase 5b: UTC daily challenge; Redis+Postgres leaderboards weekly/daily
+- Phase 6a: Elo-lite `skill_ratings`; `adaptive=true` session start + casual mid-run nudges; `analytics_events` (postgres)
 
 ## Engineering invariants
 
@@ -54,12 +57,14 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 4. Keys only in `.env` (gitignored); use `.env.example` for templates.
 5. Prefer incremental, production-quality changes; keep stack runnable.
 
-## Next work (Phase 5b)
+## Next work (Phase 6b)
 
-Real leaderboards (Redis + Postgres), daily challenge create/play, `daily_completed` achievement.
+StoreKit/Play Billing + entitlement enforcement, richer sharing, anti-cheat hardening.
 
 ## Ops notes
 
 - `docker compose up` — API `:8000`, docs `/docs`
-- Migrations: `0001_initial`, `0002_quiz_question_reuse`
+- Migrations: `0001_initial`, `0002_quiz_question_reuse`, `0003_analytics_events`
 - Android Kotlin incremental issue historically: `kotlin.incremental=false` in `mobile/android/gradle.properties`
+- Daily: `GET/POST /api/v1/daily-challenge`; boards: `GET /api/v1/leaderboards?scope=weekly|daily`
+- Analytics: `ANALYTICS_PROVIDER=postgres|null`
