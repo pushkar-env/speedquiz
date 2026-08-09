@@ -91,7 +91,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                     child: Text(
-                      '🔥 ${user?.currentStreak ?? 0}',
+                      '🔥 ${user?.dailyStreak ?? user?.currentStreak ?? 0}',
                       style: theme.textTheme.labelLarge?.copyWith(
                         color: AppColors.warning,
                       ),

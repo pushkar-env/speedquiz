@@ -246,6 +246,12 @@ class QuizResult extends Equatable {
     required this.isPersonalBest,
     required this.previousBest,
     required this.shareText,
+    this.newAchievements = const [],
+    this.level,
+    this.xp,
+    this.coins,
+    this.dailyStreak,
+    this.currentStreak,
   });
 
   final String sessionId;
@@ -263,8 +269,17 @@ class QuizResult extends Equatable {
   final bool isPersonalBest;
   final int previousBest;
   final String shareText;
+  final List<AchievementUnlock> newAchievements;
+  final int? level;
+  final int? xp;
+  final int? coins;
+  final int? dailyStreak;
+  final int? currentStreak;
 
   factory QuizResult.fromJson(Map<String, dynamic> json) {
+    final unlocks = (json['new_achievements'] as List<dynamic>? ?? [])
+        .map((e) => AchievementUnlock.fromJson(e as Map<String, dynamic>))
+        .toList();
     return QuizResult(
       sessionId: json['session_id'] as String,
       topicName: json['topic_name'] as String,
@@ -281,9 +296,53 @@ class QuizResult extends Equatable {
       isPersonalBest: json['is_personal_best'] as bool,
       previousBest: json['previous_best'] as int,
       shareText: json['share_text'] as String? ?? '',
+      newAchievements: unlocks,
+      level: json['level'] as int?,
+      xp: json['xp'] as int?,
+      coins: json['coins'] as int?,
+      dailyStreak: json['daily_streak'] as int?,
+      currentStreak: json['current_streak'] as int?,
     );
   }
 
   @override
-  List<Object?> get props => [sessionId, finalScore];
+  List<Object?> get props => [sessionId, finalScore, newAchievements.length];
+}
+
+class AchievementUnlock extends Equatable {
+  const AchievementUnlock({
+    required this.id,
+    required this.code,
+    required this.name,
+    required this.description,
+    required this.icon,
+    required this.category,
+    required this.xpReward,
+    required this.coinsReward,
+  });
+
+  final String id;
+  final String code;
+  final String name;
+  final String description;
+  final String icon;
+  final String category;
+  final int xpReward;
+  final int coinsReward;
+
+  factory AchievementUnlock.fromJson(Map<String, dynamic> json) {
+    return AchievementUnlock(
+      id: json['id'] as String,
+      code: json['code'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String,
+      icon: json['icon'] as String? ?? 'trophy',
+      category: json['category'] as String? ?? 'general',
+      xpReward: json['xp_reward'] as int? ?? 0,
+      coinsReward: json['coins_reward'] as int? ?? 0,
+    );
+  }
+
+  @override
+  List<Object?> get props => [id, code];
 }

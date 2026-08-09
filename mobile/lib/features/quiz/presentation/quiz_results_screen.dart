@@ -46,6 +46,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
     final avgSec = (result.averageAnswerMs / 1000).toStringAsFixed(1);
+    final unlocks = result.newAchievements;
 
     return Scaffold(
       body: Container(
@@ -86,73 +87,97 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                     style: theme.textTheme.bodyLarge,
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  QvSurface(
-                    child: Column(
+                  Expanded(
+                    child: ListView(
                       children: [
-                        _StatRow(
-                          label: 'Best Streak',
-                          icon: '🔥',
-                          value: '${result.bestStreak}',
+                        QvSurface(
+                          child: Column(
+                            children: [
+                              _StatRow(
+                                label: 'Best Streak',
+                                icon: '🔥',
+                                value: '${result.bestStreak}',
+                              ),
+                              const Divider(height: 20),
+                              _StatRow(
+                                label: 'Accuracy',
+                                icon: '🎯',
+                                value: '${result.accuracy.toStringAsFixed(0)}%',
+                              ),
+                              const Divider(height: 20),
+                              _StatRow(
+                                label: 'Avg Answer',
+                                icon: '⚡',
+                                value: '${avgSec}s',
+                              ),
+                              const Divider(height: 20),
+                              _StatRow(
+                                label: 'Questions',
+                                icon: '📘',
+                                value: '${result.questionsAnswered}',
+                              ),
+                            ],
+                          ),
                         ),
-                        const Divider(height: 20),
-                        _StatRow(
-                          label: 'Accuracy',
-                          icon: '🎯',
-                          value: '${result.accuracy.toStringAsFixed(0)}%',
+                        const SizedBox(height: AppSpacing.lg),
+                        Row(
+                          children: [
+                            Text(
+                              '+${result.xpEarned} XP',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (result.isPersonalBest)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      AppColors.warning.withValues(alpha: 0.14),
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadii.pill),
+                                ),
+                                child: Text(
+                                  'NEW BEST',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: AppColors.warning,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                        const Divider(height: 20),
-                        _StatRow(
-                          label: 'Avg Answer',
-                          icon: '⚡',
-                          value: '${avgSec}s',
-                        ),
-                        const Divider(height: 20),
-                        _StatRow(
-                          label: 'Questions',
-                          icon: '📘',
-                          value: '${result.questionsAnswered}',
-                        ),
+                        if (!result.isPersonalBest &&
+                            result.previousBest > 0) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Personal best: ${formatScore(result.previousBest)}',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                        if (unlocks.isNotEmpty) ...[
+                          const SizedBox(height: AppSpacing.lg),
+                          Text(
+                            'Unlocked',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          ...unlocks.map(
+                            (a) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _UnlockCard(achievement: a),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Row(
-                    children: [
-                      Text(
-                        '+${result.xpEarned} XP',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (result.isPersonalBest)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(AppRadii.pill),
-                          ),
-                          child: Text(
-                            'NEW BEST',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: AppColors.warning,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  if (!result.isPersonalBest && result.previousBest > 0) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'Personal best: ${formatScore(result.previousBest)}',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
-                  const Spacer(),
                   QvButton(
                     label: 'PLAY AGAIN',
                     onPressed: () => context.go('/quiz/setup'),
@@ -187,6 +212,108 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
         ),
       ),
     );
+  }
+}
+
+class _UnlockCard extends StatelessWidget {
+  const _UnlockCard({required this.achievement});
+
+  final AchievementUnlock achievement;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final rewardBits = <String>[];
+    if (achievement.xpReward > 0) {
+      rewardBits.add('+${achievement.xpReward} XP');
+    }
+    if (achievement.coinsReward > 0) {
+      rewardBits.add('+${achievement.coinsReward} coins');
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        color: dark ? AppColors.surfaceDark : AppColors.surfaceLight,
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.accent.withValues(alpha: 0.14),
+            ),
+            child: Text(
+              _iconGlyph(achievement.icon),
+              style: const TextStyle(fontSize: 20),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  achievement.name,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  achievement.description,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                if (rewardBits.isNotEmpty)
+                  Text(
+                    rewardBits.join(' · '),
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: AppColors.accent,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _iconGlyph(String icon) {
+  switch (icon) {
+    case 'flag':
+      return '🏁';
+    case 'check':
+      return '✅';
+    case 'fire':
+      return '🔥';
+    case 'bolt':
+      return '⚡';
+    case 'brain':
+      return '🧠';
+    case 'infinity':
+      return '∞';
+    case 'star':
+      return '⭐';
+    case 'calendar':
+      return '📅';
+    case 'planet':
+      return '🪐';
+    case 'sigma':
+      return '∑';
+    case 'robot':
+      return '🤖';
+    default:
+      return '🏆';
   }
 }
 

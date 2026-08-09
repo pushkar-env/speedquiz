@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:quizverse/core/theme/app_theme.dart';
 import 'package:quizverse/core/theme/theme_mode_provider.dart';
+import 'package:quizverse/features/achievements/data/achievements_repository.dart';
+import 'package:quizverse/features/achievements/domain/achievement_models.dart';
 import 'package:quizverse/features/auth/presentation/auth_controller.dart';
 import 'package:quizverse/shared/widgets/qv_button.dart';
 
@@ -15,6 +17,8 @@ class ProfileScreen extends ConsumerWidget {
     final user = auth is AuthAuthenticated ? auth.user : null;
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
+    final achievementsAsync = ref.watch(achievementsProvider);
+    final dailyStreak = user?.dailyStreak ?? user?.currentStreak ?? 0;
 
     return Scaffold(
       body: SafeArea(
@@ -102,8 +106,8 @@ class ProfileScreen extends ConsumerWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: _Metric(
-                          label: 'Streak',
-                          value: '${user?.currentStreak ?? 0}',
+                          label: 'Daily streak',
+                          value: '$dailyStreak',
                         ),
                       ),
                     ],
@@ -126,15 +130,32 @@ class ProfileScreen extends ConsumerWidget {
               },
             ),
             const SizedBox(height: AppSpacing.xl),
-            QvSurface(
-              child: Column(
+            Text('Achievements', style: theme.textTheme.titleLarge),
+            const SizedBox(height: AppSpacing.sm),
+            achievementsAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (err, _) => QvSurface(
+                child: Text(
+                  'Could not load achievements. Pull to retry later.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+              data: (list) => Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Achievements', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 6),
                   Text(
-                    'Unlock trophies as you climb — coming in Phase 5.',
+                    '${list.unlockedCount} / ${list.total} unlocked',
                     style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  ...list.items.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _AchievementTile(item: item),
+                    ),
                   ),
                 ],
               ),
@@ -143,6 +164,107 @@ class ProfileScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+class _AchievementTile extends StatelessWidget {
+  const _AchievementTile({required this.item});
+
+  final AchievementItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final locked = !item.unlocked;
+
+    return Opacity(
+      opacity: locked ? 0.55 : 1,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          color: dark ? AppColors.surfaceDark : AppColors.surfaceLight,
+          border: Border.all(
+            color: item.unlocked
+                ? AppColors.accent.withValues(alpha: 0.35)
+                : (dark ? AppColors.borderDark : AppColors.borderLight),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.accent.withValues(alpha: 0.12),
+              ),
+              child: Text(
+                locked ? '🔒' : _achievementIcon(item.icon),
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(item.description, style: theme.textTheme.bodyMedium),
+                  if (item.unlocked)
+                    Text(
+                      [
+                        if (item.xpReward > 0) '+${item.xpReward} XP',
+                        if (item.coinsReward > 0) '+${item.coinsReward} coins',
+                      ].join(' · '),
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: AppColors.accent,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _achievementIcon(String icon) {
+  switch (icon) {
+    case 'flag':
+      return '🏁';
+    case 'check':
+      return '✅';
+    case 'fire':
+      return '🔥';
+    case 'bolt':
+      return '⚡';
+    case 'brain':
+      return '🧠';
+    case 'infinity':
+      return '∞';
+    case 'star':
+      return '⭐';
+    case 'calendar':
+      return '📅';
+    case 'planet':
+      return '🪐';
+    case 'sigma':
+      return '∑';
+    case 'robot':
+      return '🤖';
+    default:
+      return '🏆';
   }
 }
 

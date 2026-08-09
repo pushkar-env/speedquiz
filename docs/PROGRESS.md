@@ -43,9 +43,17 @@ A real user can: open app → guest/account → pick topic/difficulty/mode → p
 - Async chunk top-ups toward **1000 unique / topic**
 - Entitlement stubs for future free-cap (~30) + premium/diamonds (**unlimited free today**)
 
+### Phase 5a — Progression
+- Calendar daily streak (`last_played_date` → `daily_streak`; Home 🔥)
+- Lifetime answer streak kept on `profile.best_streak`
+- Achievement evaluation on quiz finish + XP/coin rewards
+- `GET /achievements` catalog with unlock status
+- Flutter Profile achievements list + Results unlock cards
+- XP bar uses `level * 500` threshold (matches backend)
+
 ## In progress / next
 
-**Phase 5 (next):** achievements unlock UX, leaderboards (Redis + Postgres), daily challenge, XP/streak presentation polish.
+**Phase 5b (next):** leaderboards (Redis + Postgres), daily challenge, `daily_completed` achievement.
 
 **Phase 6:** adaptive difficulty, analytics events, StoreKit/Play Billing, sharing, anti-cheat hardening.
 

@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.models import DifficultyLabel, GameMode, QuizSessionStatus
+from app.schemas.achievements import AchievementUnlockedOut
 
 
 class CreateQuizSessionRequest(BaseModel):
@@ -97,3 +98,9 @@ class QuizResultOut(BaseModel):
     previous_best: int
     share_text: str
     comparisons: dict
+    new_achievements: list[AchievementUnlockedOut] = Field(default_factory=list)
+    level: Optional[int] = None
+    xp: Optional[int] = None
+    coins: Optional[int] = None
+    daily_streak: Optional[int] = None
+    current_streak: Optional[int] = None

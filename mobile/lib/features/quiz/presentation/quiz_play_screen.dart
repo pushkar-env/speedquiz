@@ -48,7 +48,15 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
 
     ref.listen<QuizPlayState>(quizPlayControllerProvider, (prev, next) {
       if (next is QuizPlayFinished) {
-        context.go('/quiz/results/${next.result.sessionId}', extra: next.result);
+        final result = next.result;
+        ref.read(authControllerProvider.notifier).applyProgress(
+              level: result.level,
+              xp: result.xp,
+              coins: result.coins,
+              dailyStreak: result.dailyStreak,
+              currentStreak: result.currentStreak ?? result.dailyStreak,
+            );
+        context.go('/quiz/results/${result.sessionId}', extra: result);
       }
     });
 

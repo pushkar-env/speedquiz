@@ -30,7 +30,8 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 | 3 | Polished quiz UX (inline feedback, speedrun auto-advance) | Done |
 | 4 | AI pipeline, custom topics, Teach Me, reports | Done |
 | Bank growth | Watermark top-ups toward ~1000 unique/topic | Done (ongoing refill) |
-| 5 | XP/streaks polish, achievements, leaderboards, daily | **Next** |
+| 5a | XP/daily streaks + achievements unlock | **Done** |
+| 5b | Leaderboards + daily challenge | **Next** |
 | 6 | Adaptive difficulty, analytics, subscriptions, sharing | Later |
 
 ## Done so far (keep in mind)
@@ -43,6 +44,7 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Session no-repeat while unused bank items exist; sync fill when topic is thin
 - Async bank top-up (`bank_topup` jobs), target 1000, chunk ~20, low watermark ~40
 - Entitlements stub: free unlimited now; roadmap soft-cap ~30 + premium/diamonds (`ENTITLEMENTS_ENFORCE_QUESTION_CAPS`)
+- Phase 5a: calendar daily streak (`daily_streak` / Home 🔥); achievement evaluate+unlock on finish; `GET /achievements`; Profile + Results unlock UX
 
 ## Engineering invariants
 
@@ -52,9 +54,9 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 4. Keys only in `.env` (gitignored); use `.env.example` for templates.
 5. Prefer incremental, production-quality changes; keep stack runnable.
 
-## Next work (Phase 5)
+## Next work (Phase 5b)
 
-Streaks/XP surface, achievements unlock flow, real leaderboards, daily challenge.
+Real leaderboards (Redis + Postgres), daily challenge create/play, `daily_completed` achievement.
 
 ## Ops notes
 

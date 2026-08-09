@@ -88,6 +88,8 @@ async def create_guest_user(db: AsyncSession, device_info: Optional[str] = None)
             xp=profile.xp,
             coins=profile.coins,
             current_streak=profile.current_streak,
+            daily_streak=profile.daily_streak,
+            best_streak=profile.best_streak,
             onboarding_completed=profile.onboarding_completed,
             theme_preference=profile.theme_preference,
         ),
@@ -229,6 +231,8 @@ def _to_me(user: User, profile: UserProfile) -> UserMeResponse:
         xp=profile.xp,
         coins=profile.coins,
         current_streak=profile.current_streak,
+        daily_streak=profile.daily_streak,
+        best_streak=profile.best_streak,
         onboarding_completed=profile.onboarding_completed,
         theme_preference=profile.theme_preference,
     )

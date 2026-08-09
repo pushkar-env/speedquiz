@@ -75,10 +75,17 @@ pytest
 3. **Phase 3** — Polished Flutter gameplay UI ✅
 4. **Phase 4** — AI generation, custom topics, Teach Me ✅
 5. **Bank scale** — Watermark top-ups toward ~1000 unique/topic ✅ (ongoing refill)
-6. **Phase 5** — XP/achievements UX, leaderboards, daily challenge ← **next**
-7. **Phase 6** — Adaptive difficulty, analytics, subscriptions, sharing
+6. **Phase 5a** — XP/daily streaks + achievements unlock ✅
+7. **Phase 5b** — Leaderboards + daily challenge ← **next**
+8. **Phase 6** — Adaptive difficulty, analytics, subscriptions, sharing
 
 See [docs/PROGRESS.md](docs/PROGRESS.md) for detailed status and [docs/architecture.md](docs/architecture.md) for decisions.
+
+## Progression (Phase 5a)
+
+- Calendar **daily streak** updates on quiz finish; Home 🔥 shows it
+- Achievements evaluate on finish (`GET /api/v1/achievements` for catalog)
+- XP level curve: need `level * 500` XP to advance
 
 ## Question bank (endless unique)
 

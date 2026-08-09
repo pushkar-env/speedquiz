@@ -157,17 +157,18 @@ class QvXpBar extends StatelessWidget {
     super.key,
     required this.level,
     required this.xp,
-    this.xpPerLevel = 500,
+    this.xpPerLevel,
   });
 
   final int level;
   final int xp;
-  final int xpPerLevel;
+  final int? xpPerLevel;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final progress = (xp / xpPerLevel).clamp(0.0, 1.0);
+    final threshold = xpPerLevel ?? (level < 1 ? 500 : level * 500);
+    final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -176,7 +177,7 @@ class QvXpBar extends StatelessWidget {
             Text('LVL $level', style: theme.textTheme.labelLarge),
             const Spacer(),
             Text(
-              '$xp / $xpPerLevel XP',
+              '$xp / $threshold XP',
               style: theme.textTheme.bodySmall,
             ),
           ],

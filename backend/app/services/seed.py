@@ -60,34 +60,19 @@ ACHIEVEMENTS = [
 ]
 
 
-async def seed_reference_data() -> None:
-    async with session_scope() as db:
-        existing = await db.scalar(select(TopicCategory.id).limit(1))
-        if existing:
-            return
-
-        category_map: dict[str, TopicCategory] = {}
-        for slug, name, icon, order in CATEGORIES:
-            cat = TopicCategory(slug=slug, name=name, icon=icon, sort_order=order)
-            db.add(cat)
-            category_map[slug] = cat
-        await db.flush()
-
-        for slug, name, category_slug, icon, trending in TOPICS:
-            db.add(
-                Topic(
-                    slug=slug,
-                    name=name,
-                    category_id=category_map[category_slug].id,
-                    icon=icon,
-                    is_trending=trending,
-                    popularity_score=100 if trending else 50,
-                    description=f"Challenge yourself with {name} quizzes.",
-                )
-            )
-
-        for idx, row in enumerate(ACHIEVEMENTS):
-            code, name, desc, icon, category, criteria, xp, coins = row
+async def upsert_achievements(db) -> int:
+    """Insert missing achievements / refresh criteria & rewards by code."""
+    existing = {
+        row.code: row
+        for row in (
+            await db.execute(select(Achievement))
+        ).scalars().all()
+    }
+    created = 0
+    for idx, row in enumerate(ACHIEVEMENTS):
+        code, name, desc, icon, category, criteria, xp, coins = row
+        ach = existing.get(code)
+        if ach is None:
             db.add(
                 Achievement(
                     code=code,
@@ -101,5 +86,48 @@ async def seed_reference_data() -> None:
                     sort_order=idx * 10,
                 )
             )
+            created += 1
+            continue
+        ach.name = name
+        ach.description = desc
+        ach.icon = icon
+        ach.category = category
+        ach.criteria = criteria
+        ach.xp_reward = xp
+        ach.coins_reward = coins
+        ach.sort_order = idx * 10
+        ach.is_active = True
+    return created
 
-        logger.info("seed_complete", topics=len(TOPICS), achievements=len(ACHIEVEMENTS))
+
+async def seed_reference_data() -> None:
+    async with session_scope() as db:
+        existing = await db.scalar(select(TopicCategory.id).limit(1))
+        if not existing:
+            category_map: dict[str, TopicCategory] = {}
+            for slug, name, icon, order in CATEGORIES:
+                cat = TopicCategory(slug=slug, name=name, icon=icon, sort_order=order)
+                db.add(cat)
+                category_map[slug] = cat
+            await db.flush()
+
+            for slug, name, category_slug, icon, trending in TOPICS:
+                db.add(
+                    Topic(
+                        slug=slug,
+                        name=name,
+                        category_id=category_map[category_slug].id,
+                        icon=icon,
+                        is_trending=trending,
+                        popularity_score=100 if trending else 50,
+                        description=f"Challenge yourself with {name} quizzes.",
+                    )
+                )
+
+        created = await upsert_achievements(db)
+        logger.info(
+            "seed_complete",
+            topics=len(TOPICS),
+            achievements=len(ACHIEVEMENTS),
+            achievements_created=created,
+        )

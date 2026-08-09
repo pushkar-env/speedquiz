@@ -13,6 +13,8 @@ class AuthUser extends Equatable {
     required this.onboardingCompleted,
     required this.themePreference,
     required this.avatarId,
+    this.dailyStreak = 0,
+    this.bestStreak = 0,
     this.email,
     this.displayName,
   });
@@ -28,10 +30,13 @@ class AuthUser extends Equatable {
   final int xp;
   final int coins;
   final int currentStreak;
+  final int dailyStreak;
+  final int bestStreak;
   final bool onboardingCompleted;
   final String themePreference;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
+    final daily = json['daily_streak'] as int? ?? json['current_streak'] as int? ?? 0;
     return AuthUser(
       id: json['id'] as String,
       email: json['email'] as String?,
@@ -43,14 +48,43 @@ class AuthUser extends Equatable {
       level: json['level'] as int? ?? 1,
       xp: json['xp'] as int? ?? 0,
       coins: json['coins'] as int? ?? 0,
-      currentStreak: json['current_streak'] as int? ?? 0,
+      currentStreak: json['current_streak'] as int? ?? daily,
+      dailyStreak: daily,
+      bestStreak: json['best_streak'] as int? ?? 0,
       onboardingCompleted: json['onboarding_completed'] as bool? ?? false,
       themePreference: json['theme_preference'] as String? ?? 'dark',
     );
   }
 
+  AuthUser copyWith({
+    int? level,
+    int? xp,
+    int? coins,
+    int? currentStreak,
+    int? dailyStreak,
+    int? bestStreak,
+  }) {
+    return AuthUser(
+      id: id,
+      email: email,
+      username: username,
+      displayName: displayName,
+      avatarId: avatarId,
+      isGuest: isGuest,
+      isPremium: isPremium,
+      level: level ?? this.level,
+      xp: xp ?? this.xp,
+      coins: coins ?? this.coins,
+      currentStreak: currentStreak ?? this.currentStreak,
+      dailyStreak: dailyStreak ?? this.dailyStreak,
+      bestStreak: bestStreak ?? this.bestStreak,
+      onboardingCompleted: onboardingCompleted,
+      themePreference: themePreference,
+    );
+  }
+
   @override
-  List<Object?> get props => [id, username, level, xp, currentStreak];
+  List<Object?> get props => [id, username, level, xp, currentStreak, dailyStreak];
 }
 
 class AuthSession extends Equatable {

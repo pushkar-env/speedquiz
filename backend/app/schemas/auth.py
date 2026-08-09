@@ -43,6 +43,8 @@ class UserMeResponse(BaseModel):
     xp: int
     coins: int
     current_streak: int
+    daily_streak: int = 0
+    best_streak: int = 0
     onboarding_completed: bool
     theme_preference: str
 

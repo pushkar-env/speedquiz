@@ -60,6 +60,39 @@ class AuthController extends StateNotifier<AuthState> {
       state = AuthError(error.toString());
     }
   }
+
+  void applyProgress({
+    int? level,
+    int? xp,
+    int? coins,
+    int? currentStreak,
+    int? dailyStreak,
+    int? bestStreak,
+  }) {
+    final current = state;
+    if (current is! AuthAuthenticated) return;
+    state = AuthAuthenticated(
+      current.user.copyWith(
+        level: level,
+        xp: xp,
+        coins: coins,
+        currentStreak: currentStreak ?? dailyStreak,
+        dailyStreak: dailyStreak ?? currentStreak,
+        bestStreak: bestStreak,
+      ),
+    );
+  }
+
+  Future<void> refreshMe() async {
+    try {
+      final user = await _repo.fetchMe();
+      if (user != null) {
+        state = AuthAuthenticated(user);
+      }
+    } catch (_) {
+      // Keep current session if refresh fails.
+    }
+  }
 }
 
 final authControllerProvider =

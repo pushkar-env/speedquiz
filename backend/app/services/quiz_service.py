@@ -24,10 +24,12 @@ from app.models import (
     QuizSession,
     QuizSessionStatus,
     Score,
+    Streak,
     Topic,
     User,
     UserProfile,
 )
+from app.schemas.achievements import AchievementUnlockedOut
 from app.schemas.quiz import (
     AnswerFeedbackOut,
     CreateQuizSessionRequest,
@@ -38,6 +40,8 @@ from app.schemas.quiz import (
     SubmitAnswerRequest,
 )
 from app.core.config import get_settings
+from app.services import achievements as achievements_service
+from app.services.progression import apply_xp, update_daily_streak
 from app.services.scoring import scoring_service
 
 DIFFICULTY_RANGES: dict[DifficultyLabel, tuple[float, float]] = {
@@ -685,6 +689,13 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
         )
     )
     average_answer_ms = int(avg_ms or 0)
+    min_ms = await db.scalar(
+        select(func.min(Answer.server_elapsed_ms)).where(
+            Answer.session_id == session.id,
+            Answer.server_elapsed_ms.is_not(None),
+        )
+    )
+    min_answer_ms = int(min_ms) if min_ms is not None else None
 
     previous_best = await db.scalar(
         select(func.coalesce(func.max(Score.final_score), 0)).where(
@@ -780,15 +791,83 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
         }
         stats.topic_mastery = mastery
 
+    newly_unlocked = []
     if profile:
-        profile.xp += xp
-        # simple level curve
-        while profile.xp >= profile.level * 500:
-            profile.xp -= profile.level * 500
-            profile.level += 1
+        today = _now().date()
+        new_daily, played_on = update_daily_streak(
+            daily_streak=profile.daily_streak,
+            last_played_date=profile.last_played_date,
+            today=today,
+        )
+        profile.daily_streak = new_daily
+        profile.current_streak = new_daily
+        profile.last_played_date = played_on
         profile.best_streak = max(profile.best_streak, session.best_streak)
-        profile.current_streak = max(profile.current_streak, session.best_streak)
-        profile.last_played_date = _now().date()
+        profile.level, profile.xp = apply_xp(profile.level, profile.xp, xp)
+
+        streak_row = await db.scalar(
+            select(Streak).where(Streak.user_id == user.id, Streak.streak_type == "daily")
+        )
+        if streak_row is None:
+            streak_row = Streak(
+                user_id=user.id,
+                streak_type="daily",
+                current_count=new_daily,
+                best_count=new_daily,
+                last_increment_date=played_on,
+            )
+            db.add(streak_row)
+        else:
+            streak_row.current_count = new_daily
+            streak_row.best_count = max(streak_row.best_count, new_daily)
+            streak_row.last_increment_date = played_on
+
+        perfect_run = answered >= 10 and session.incorrect_count == 0 and session.correct_count == answered
+        ctx = await achievements_service.build_context_from_profile_stats(
+            db,
+            profile=profile,
+            quizzes_completed=(stats.total_quizzes if stats else 1),
+            correct_answers=(stats.total_correct if stats else session.correct_count),
+            best_streak=max(
+                (stats.best_streak if stats else 0),
+                profile.best_streak,
+                session.best_streak,
+            ),
+            topic_mastery=(stats.topic_mastery if stats else {}) or {},
+            min_answer_ms=min_answer_ms,
+            perfect_run=perfect_run,
+        )
+        newly_unlocked = await achievements_service.evaluate_and_unlock(
+            db,
+            user_id=user.id,
+            profile=profile,
+            ctx=ctx,
+        )
+
+    # Persist unlocks on the result summary for later get_result calls
+    quiz_result = await db.scalar(select(QuizResult).where(QuizResult.session_id == session.id))
+    if quiz_result is not None:
+        summary_blob = dict(quiz_result.summary or {})
+        summary_blob["new_achievements"] = [
+            {
+                "id": str(a.id),
+                "code": a.code,
+                "name": a.name,
+                "description": a.description,
+                "icon": a.icon,
+                "category": a.category,
+                "xp_reward": a.xp_reward,
+                "coins_reward": a.coins_reward,
+            }
+            for a in newly_unlocked
+        ]
+        if profile:
+            summary_blob["level"] = profile.level
+            summary_blob["xp"] = profile.xp
+            summary_blob["coins"] = profile.coins
+            summary_blob["daily_streak"] = profile.daily_streak
+            summary_blob["current_streak"] = profile.current_streak
+        quiz_result.summary = summary_blob
 
 
 async def get_result(
@@ -806,6 +885,17 @@ async def get_result(
     summary = (result.summary if result else {}) or {}
     comparisons = (result.comparisons if result else {}) or {}
     share = (result.share_payload if result else {}) or {}
+    profile = user.profile or await db.scalar(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+
+    raw_unlocks = summary.get("new_achievements") or []
+    new_achievements: list[AchievementUnlockedOut] = []
+    for item in raw_unlocks:
+        try:
+            new_achievements.append(AchievementUnlockedOut.model_validate(item))
+        except Exception:
+            continue
 
     return QuizResultOut(
         session_id=session.id,
@@ -824,4 +914,14 @@ async def get_result(
         previous_best=int(comparisons.get("previous_best", 0)),
         share_text=str(share.get("text", "")),
         comparisons=comparisons,
+        new_achievements=new_achievements,
+        level=int(summary["level"]) if "level" in summary else (profile.level if profile else None),
+        xp=int(summary["xp"]) if "xp" in summary else (profile.xp if profile else None),
+        coins=int(summary["coins"]) if "coins" in summary else (profile.coins if profile else None),
+        daily_streak=int(summary["daily_streak"])
+        if "daily_streak" in summary
+        else (profile.daily_streak if profile else None),
+        current_streak=int(summary["current_streak"])
+        if "current_streak" in summary
+        else (profile.current_streak if profile else None),
     )

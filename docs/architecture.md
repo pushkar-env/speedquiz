@@ -19,6 +19,12 @@ Anonymous JWT accounts are first-class. Access + refresh tokens; refresh rotates
 - Sessions exclude already-used question IDs in the run while unused bank items exist.
 - Critically thin topics may sync-fill one chunk at session start so the first hand is not repetitive.
 
+## Decision: Progression (Phase 5a)
+
+- `daily_streak` is calendar play streak; Home 🔥 uses it. `best_streak` on profile is lifetime answer streak.
+- Achievements evaluate only on session finalize (not per-answer). `daily_completed` waits for Phase 5b.
+- XP curve: spend `level * 500` XP to advance; Flutter XP bar matches.
+
 ## Decision: Entitlements later
 
 `payments/entitlements.py` stubs free vs premium caps. `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=false` keeps free unlimited until monetization ships.
@@ -27,5 +33,5 @@ Anonymous JWT accounts are first-class. Access + refresh tokens; refresh rotates
 
 1. AI generation latency / cost for cold topics — mitigated by caching, chunking, watermarks, loading UX.
 2. Enum proliferation in Postgres — keep shared enum types and migrations explicit.
-3. Leaderboard hot paths — Redis sorted sets (Phase 5), Postgres as source of truth.
+3. Leaderboard hot paths — Redis sorted sets (Phase 5b), Postgres as source of truth.
 4. OpenAI spend if periodic top-ups are too aggressive — tune `TOPIC_BANK_*` env knobs.

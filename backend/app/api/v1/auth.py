@@ -76,6 +76,8 @@ async def auth_me(user: CurrentUser) -> UserMeResponse:
         xp=profile.xp,
         coins=profile.coins,
         current_streak=profile.current_streak,
+        daily_streak=profile.daily_streak,
+        best_streak=profile.best_streak,
         onboarding_completed=profile.onboarding_completed,
         theme_preference=profile.theme_preference,
     )
