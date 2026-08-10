@@ -17,9 +17,10 @@ scripts/         Dev utilities
 
 ## Quick start
 
+Master Play Store & 1,000 CCU Guide: **[docs/PLAYSTORE_PRODUCTION_GUIDE.md](docs/PLAYSTORE_PRODUCTION_GUIDE.md)**.  
 Day-to-day open/run/build: **[docs/OPEN_AND_RUN.md](docs/OPEN_AND_RUN.md)**.  
-Full local + Play launch: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.  
-Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.
+Deployment quick reference: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.  
+Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.  
 
 ### Prerequisites
 
@@ -40,8 +41,9 @@ Production-style (no reload / no source mounts):
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
 
-Full local + Play launch steps: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.  
-Host API on a real domain: **[docs/HOSTING.md](docs/HOSTING.md)**.  
+Master Play Store launch & 1,000 CCU blueprint: **[docs/PLAYSTORE_PRODUCTION_GUIDE.md](docs/PLAYSTORE_PRODUCTION_GUIDE.md)**.  
+Host API on a real domain: **[docs/HOSTING.md](docs/HOSTING.md)** (VPS) or **[docs/RAILWAY.md](docs/RAILWAY.md)** (Railway).  
+Google Sign-In: **[docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)**.  
 Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.
 
 Services:
@@ -121,6 +123,7 @@ See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.m
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
 - **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
+- **Auth:** guest bootstrap; Profile **Sign in with Google** (`POST /auth/google`) — see [docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)
 - **IAP:** `POST /api/v1/entitlements/purchases/verify` (`stub` default; `apple_google` with `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Flutter store buy/restore when products exist
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `quizverse://` + optional `SHARE_PUBLIC_BASE_URL`
 - **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.quizverse.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready

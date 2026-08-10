@@ -238,6 +238,140 @@ def _to_me(user: User, profile: UserProfile) -> UserMeResponse:
     )
 
 
+async def _issue_tokens(db: AsyncSession, user: User) -> TokenResponse:
+    if not user.profile:
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.id == user.id)
+        )
+        user = result.scalar_one()
+    access = create_access_token(user.id, is_guest=user.is_guest)
+    refresh = create_refresh_token(user.id)
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=sha256(refresh.encode()).hexdigest(),
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=settings.jwt_refresh_token_expire_days),
+        )
+    )
+    await db.flush()
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        token_type="bearer",
+        user=_to_me(user, user.profile),
+    )
+
+
+async def login_or_link_google(
+    db: AsyncSession,
+    *,
+    id_token: str,
+    guest_user: Optional[User] = None,
+) -> TokenResponse:
+    from app.auth.google import verify_google_id_token
+
+    identity = await verify_google_id_token(id_token)
+
+    existing = await db.execute(
+        select(User)
+        .options(selectinload(User.profile))
+        .where(
+            User.auth_provider == AuthProvider.GOOGLE,
+            User.provider_subject == identity.subject,
+            User.is_active.is_(True),
+        )
+    )
+    google_user = existing.scalar_one_or_none()
+
+    if google_user is not None:
+        if (
+            guest_user is not None
+            and guest_user.is_guest
+            and guest_user.id != google_user.id
+        ):
+            # Guest tried to link to an already-registered Google account — sign into Google.
+            pass
+        google_user.last_login_at = datetime.now(timezone.utc)
+        return await _issue_tokens(db, google_user)
+
+    if identity.email:
+        email_owner = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.email == identity.email, User.is_active.is_(True))
+        )
+        owner = email_owner.scalar_one_or_none()
+        if owner is not None and not (
+            guest_user is not None and guest_user.is_guest and owner.id == guest_user.id
+        ):
+            if owner.auth_provider != AuthProvider.GOOGLE:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered with another sign-in method",
+                )
+
+    if guest_user is not None and guest_user.is_guest:
+        if identity.email:
+            conflict = await db.scalar(
+                select(User.id).where(
+                    User.email == identity.email,
+                    User.id != guest_user.id,
+                )
+            )
+            if conflict:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already registered with another sign-in method",
+                )
+            guest_user.email = identity.email
+        guest_user.auth_provider = AuthProvider.GOOGLE
+        guest_user.provider_subject = identity.subject
+        guest_user.is_guest = False
+        guest_user.password_hash = None
+        guest_user.last_login_at = datetime.now(timezone.utc)
+        if identity.name and guest_user.profile and not guest_user.profile.display_name:
+            guest_user.profile.display_name = identity.name[:64]
+        await db.flush()
+        # Reload profile relationship
+        result = await db.execute(
+            select(User)
+            .options(selectinload(User.profile))
+            .where(User.id == guest_user.id)
+        )
+        return await _issue_tokens(db, result.scalar_one())
+
+    user = User(
+        email=identity.email,
+        auth_provider=AuthProvider.GOOGLE,
+        provider_subject=identity.subject,
+        is_guest=False,
+        last_login_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    await db.flush()
+
+    base_name = (identity.name or identity.email or identity.subject).split("@")[0]
+    safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in base_name)[:24] or "player"
+    uname = await _ensure_unique_username(db, safe.lower())
+    profile = UserProfile(
+        user_id=user.id,
+        username=uname,
+        display_name=identity.name[:64] if identity.name else uname,
+    )
+    stats = PlayerStatistics(user_id=user.id)
+    db.add(profile)
+    db.add(stats)
+    await db.flush()
+
+    result = await db.execute(
+        select(User).options(selectinload(User.profile)).where(User.id == user.id)
+    )
+    return await _issue_tokens(db, result.scalar_one())
+
+
 async def get_current_user(
     credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],

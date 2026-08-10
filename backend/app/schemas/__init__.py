@@ -1,6 +1,7 @@
 from app.schemas.auth import (
     EmailLoginRequest,
     EmailRegisterRequest,
+    GoogleAuthRequest,
     GuestAuthRequest,
     GuestAuthResponse,
     HealthResponse,
@@ -30,6 +31,7 @@ from app.schemas.quiz import (
 __all__ = [
     "EmailLoginRequest",
     "EmailRegisterRequest",
+    "GoogleAuthRequest",
     "GuestAuthRequest",
     "GuestAuthResponse",
     "HealthResponse",

@@ -27,7 +27,10 @@ flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.a
 
 3. Upload `build/app/outputs/bundle/release/app-release.aab` in Play Console.
 
-Day-to-day: [docs/OPEN_AND_RUN.md](../docs/OPEN_AND_RUN.md). Full Play steps: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
+Day-to-day: [docs/OPEN_AND_RUN.md](../docs/OPEN_AND_RUN.md).  
+Google Sign-In: [docs/AUTH_GOOGLE.md](../docs/AUTH_GOOGLE.md).  
+Railway deploy: [docs/RAILWAY.md](../docs/RAILWAY.md).  
+Full Play steps: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
 
 ## iOS
 

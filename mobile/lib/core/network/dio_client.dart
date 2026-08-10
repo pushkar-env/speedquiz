@@ -49,7 +49,8 @@ class _AuthInterceptor extends Interceptor {
     final isAuthEndpoint = path.contains('/auth/guest') ||
         path.contains('/auth/refresh') ||
         path.contains('/auth/login') ||
-        path.contains('/auth/register');
+        path.contains('/auth/register') ||
+        path.contains('/auth/google');
 
     if (status != 401 || alreadyRetried || isAuthEndpoint) {
       handler.next(err);

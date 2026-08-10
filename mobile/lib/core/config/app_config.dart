@@ -19,6 +19,14 @@ abstract final class AppConfig {
 
   static const apiPrefix = '/api/v1';
 
+  /// Google Cloud **Web** OAuth client ID (serverClientId for ID tokens).
+  /// Pass via `--dart-define=GOOGLE_SERVER_CLIENT_ID=....apps.googleusercontent.com`
+  static const googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+  );
+
+  static bool get hasGoogleSignInConfig => googleServerClientId.isNotEmpty;
+
   /// True when API_BASE_URL was provided at compile time (typical for store builds).
   static bool get hasCompileTimeApiBase {
     const fromEnv = String.fromEnvironment('API_BASE_URL');

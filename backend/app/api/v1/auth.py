@@ -3,8 +3,10 @@ from fastapi import APIRouter, status
 from app.auth.deps import (
     CurrentUser,
     DbSession,
+    OptionalUser,
     create_guest_user,
     login_email_user,
+    login_or_link_google,
     refresh_access_token,
     register_email_user,
     upgrade_guest_to_email,
@@ -12,6 +14,7 @@ from app.auth.deps import (
 from app.schemas.auth import (
     EmailLoginRequest,
     EmailRegisterRequest,
+    GoogleAuthRequest,
     GuestAuthRequest,
     GuestAuthResponse,
     RefreshRequest,
@@ -26,6 +29,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/guest", response_model=GuestAuthResponse, status_code=status.HTTP_201_CREATED)
 async def auth_guest(payload: GuestAuthRequest, db: DbSession) -> GuestAuthResponse:
     return await create_guest_user(db, device_info=payload.device_info)
+
+
+@router.post("/google", response_model=TokenResponse)
+async def auth_google(
+    payload: GoogleAuthRequest,
+    db: DbSession,
+    user: OptionalUser,
+) -> TokenResponse:
+    guest = user if user is not None and user.is_guest else None
+    return await login_or_link_google(db, id_token=payload.id_token, guest_user=guest)
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)

@@ -20,7 +20,8 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - `workers/` — background generation / bank top-ups
 - `docker-compose.yml` (+ `docker-compose.prod.yml`) — Postgres 16, Redis 7, API, worker
 - Emulator API base: `http://10.0.2.2:8000`; any-device testing via Cloudflare tunnel (`scripts/dev_tunnel.ps1`); prod via `--dart-define=API_BASE_URL=https://...`
-- Ops docs: `docs/OPEN_AND_RUN.md` (cheat sheet), `docs/HOSTING.md` (domain/VPS), `docs/DEPLOYMENT.md`, `docs/ENV_PROVIDERS.md`
+- Ops docs: `docs/OPEN_AND_RUN.md` (cheat sheet), `docs/AUTH_GOOGLE.md`, `docs/RAILWAY.md`, `docs/HOSTING.md`, `docs/DEPLOYMENT.md`, `docs/ENV_PROVIDERS.md`
+- Auth: guest bootstrap; `POST /auth/google` + Profile Sign in with Google (`GOOGLE_CLIENT_ID`)
 
 ## Overall goals / phases
 
@@ -65,6 +66,7 @@ Cross-platform **AI quiz game** (Flutter + FastAPI). Feels like a polished mobil
 - Phase 8b: `BILLING_VERIFY_MODE=apple_google` → App Store Server API + Play Developer API adapters (503 until credentials set); stub remains default
 - Phase 8c: native + backend package/bundle id `com.quizverse.app`; App Link / IAP defaults aligned
 - Phase 8d: Android release signing (`key.properties.example`), QuizVerse label, prod compose overlay, deployment + provider env docs; iOS kept configured for later
+- Google Sign-In: `POST /auth/google` (JWKS verify); Flutter `google_sign_in` + Profile CTA; guest link preserves progress; `GOOGLE_CLIENT_ID` / `GOOGLE_SERVER_CLIENT_ID`
 
 ## Engineering invariants
 

@@ -1,22 +1,27 @@
-# QuizVerse — open & run (cheat sheet)
+# QuizVerse — Open & Run (Cheat Sheet)
 
-Use this the next time you open the project. Full Play/prod detail: [DEPLOYMENT.md](DEPLOYMENT.md) · env providers: [ENV_PROVIDERS.md](ENV_PROVIDERS.md).
+> **Master Production Blueprint**: For 1,000 CCU capacity planning, 3 hosting cost tiers, test build generation, and Play Store publishing, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
+> Quick release reference: [DEPLOYMENT.md](DEPLOYMENT.md) · VPS hosting: [HOSTING.md](HOSTING.md) · Railway: [RAILWAY.md](RAILWAY.md) · Google Sign-In: [AUTH_GOOGLE.md](AUTH_GOOGLE.md) · Env providers: [ENV_PROVIDERS.md](ENV_PROVIDERS.md).
 
-## One-time (if not already done)
+---
+
+## One-time Setup (If Not Already Done)
 
 ```bash
 cp .env.example .env
-# Optional: set LLM_API_KEY in .env for real AI generation
+# Optional: set LLM_API_KEY in .env for real AI background question generation
 ```
 
-Install Flutter deps:
+Install Flutter dependencies:
 
 ```bash
 cd mobile
 flutter pub get
 ```
 
-## Start the backend (every session)
+---
+
+## Start the Backend (Every Dev Session)
 
 From the **repo root** (`quizverse/`):
 
@@ -28,11 +33,13 @@ docker compose up --build
 - Docs: http://localhost:8000/docs  
 - Health: `curl http://localhost:8000/health`
 
-Stop: `docker compose down` (add `-v` only if you want to wipe DB volumes).
+Stop stack: `docker compose down` (add `-v` only if you want to wipe DB volumes).
 
-## Run the app on Android emulator
+---
 
-1. Start an emulator (Android Studio Device Manager), or:
+## Run the App on Android Emulator
+
+1. Start an emulator from Android Studio Device Manager, or:
 
 ```bash
 flutter emulators --launch <emulator_id>
@@ -46,20 +53,17 @@ flutter run -d emulator-5554
 
 Defaults to API `http://10.0.2.2:8000` (emulator → host).
 
-Other devices:
+Pass custom API URL or Google Sign-In Client ID:
 
 ```bash
-flutter devices
-flutter run -d <device_id>
+flutter run -d emulator-5554 \
+  --dart-define=API_BASE_URL=http://10.0.2.2:8000 \
+  --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
 
-Custom API URL:
+Google setup: [AUTH_GOOGLE.md](AUTH_GOOGLE.md).
 
-```bash
-flutter run -d emulator-5554 --dart-define=API_BASE_URL=http://10.0.2.2:8000
-```
-
-After the **package rename** (`com.quizverse.app`), if install fails:
+If app installation fails after package rename (`com.quizverse.app`):
 
 ```bash
 # Windows
@@ -69,11 +73,13 @@ After the **package rename** (`com.quizverse.app`), if install fails:
 
 Then `flutter run` again.
 
-## Physical Android device (any network)
+---
 
-A phone **cannot** reach `localhost` or `10.0.2.2` on your PC. Same-Wi‑Fi LAN IPs often fail (AP isolation / firewall). For reliable device testing, expose the local API with a **public HTTPS tunnel**.
+## Physical Android Device Testing (Any Network)
 
-### Recommended: Cloudflare quick tunnel
+Phones **cannot** reach `localhost` or `10.0.2.2` on your PC. For reliable testing across any network, expose your local API with a **public HTTPS tunnel**.
+
+### Recommended: Cloudflare Quick Tunnel
 
 1. Keep `docker compose up` running (API on `:8000`).
 2. In a **second** terminal (repo root):
@@ -82,97 +88,36 @@ A phone **cannot** reach `localhost` or `10.0.2.2` on your PC. Same-Wi‑Fi LAN 
 powershell -ExecutionPolicy Bypass -File scripts/dev_tunnel.ps1
 ```
 
-3. Copy the printed URL, e.g. `https://something.trycloudflare.com`.
-4. Confirm on the phone browser: `https://something.trycloudflare.com/health`
-5. Rebuild + install:
+3. Copy printed URL (e.g. `https://something.trycloudflare.com`).
+4. Rebuild & install test APK:
 
 ```bash
 cd mobile
-flutter build apk --release --dart-define=API_BASE_URL=https://something.trycloudflare.com
+flutter build apk --release \
+  --dart-define=API_BASE_URL=https://something.trycloudflare.com \
+  --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
 
-Install `build/app/outputs/flutter-apk/app-release.apk` on any device (Wi‑Fi or mobile data).
+Install `mobile/build/app/outputs/flutter-apk/app-release.apk` on any Android device.
 
-**Keep the tunnel window open** while testing. Quick tunnels get a **new URL each start** — rebuild the APK when the URL changes.
+---
 
-### Optional: same Wi‑Fi LAN (fragile)
-
-Only if the phone browser can open `http://<PC-LAN-IP>:8000/health`:
-
-```bash
-flutter build apk --release --dart-define=API_BASE_URL=http://192.168.1.7:8000
-```
-
-### How production works (no tunnel)
-
-In production the API is hosted on the public internet with a real domain + TLS (e.g. `https://quizverse.app`). Store builds bake that URL in:
-
-```bash
-flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
-```
-
-Also set server `SHARE_PUBLIC_BASE_URL=https://quizverse.app` and App Link fingerprints (see [DEPLOYMENT.md](DEPLOYMENT.md)). Phones talk to that HTTPS API from any network — same as any commercial app. The tunnel is **dev-only** so you can test before you rent hosting.
-
-## Local release build (debug-signed)
-
-No Play upload keystore needed — Gradle uses the **debug** keystore when `mobile/android/key.properties` is missing.
-
-From `mobile/`:
-
-```bash
-# Prefer the tunnel HTTPS URL for real phones (see above).
-flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-TUNNEL.trycloudflare.com
-
-# Emulator-only shortcut:
-flutter build apk --release --dart-define=API_BASE_URL=http://10.0.2.2:8000
-
-# App Bundle (practice Play upload flow)
-flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
-```
-
-Outputs:
-
-| Artifact | Path |
-|----------|------|
-| APK | `mobile/build/app/outputs/flutter-apk/app-release.apk` |
-| AAB | `mobile/build/app/outputs/bundle/release/app-release.aab` |
-
-Install APK on a running emulator:
-
-```bash
-# Windows
-%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe -s emulator-5554 install -r build\app\outputs\flutter-apk\app-release.apk
-```
-
-Or:
-
-```bash
-flutter install -d emulator-5554 --release
-```
-
-**Note:** Debug-signed release builds are for local/QA only — **not** for Play Store. For Play, create `android/key.properties` from `android/key.properties.example` and build with your production `API_BASE_URL` (see [DEPLOYMENT.md](DEPLOYMENT.md)).
-
-## Backend tests
+## Backend Tests
 
 ```bash
 docker compose exec api pytest -q
 ```
 
-## Hot reload while developing
+---
 
-With `flutter run` attached:
+## Useful Paths & Guides
 
-- `r` — hot reload  
-- `R` — hot restart  
-- `q` — quit  
-
-## Useful paths
-
-| What | Where |
-|------|--------|
-| Flutter app | `mobile/` |
-| API | `backend/` |
-| Env template | `.env.example` → copy to `.env` |
-| Dev tunnel | `scripts/dev_tunnel.ps1` |
-| Package id | `com.quizverse.app` |
-| This cheat sheet | `docs/OPEN_AND_RUN.md` |
+| What | Reference |
+| :--- | :--- |
+| **Master Play Store & 1,000 CCU Guide** | **[docs/PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)** |
+| **Deployment Quick Reference** | **[docs/DEPLOYMENT.md](DEPLOYMENT.md)** |
+| **Hosting & Caddy Setup** | **[docs/HOSTING.md](HOSTING.md)** |
+| **Env Variables & Secrets** | **[docs/ENV_PROVIDERS.md](ENV_PROVIDERS.md)** |
+| **Google Sign-In Guide** | **[docs/AUTH_GOOGLE.md](AUTH_GOOGLE.md)** |
+| **Flutter Mobile App** | `mobile/` |
+| **Backend API** | `backend/` |

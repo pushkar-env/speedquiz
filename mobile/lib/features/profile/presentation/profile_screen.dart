@@ -99,6 +99,26 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  if (user?.isGuest == true) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    QvButton(
+                      label: 'SIGN IN WITH GOOGLE',
+                      onPressed: () async {
+                        final err = await ref
+                            .read(authControllerProvider.notifier)
+                            .signInWithGoogle();
+                        if (!context.mounted) return;
+                        if (err == 'cancelled') return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              err ?? 'Signed in with Google',
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.lg),
                   QvXpBar(level: user?.level ?? 1, xp: user?.xp ?? 0),
                   const SizedBox(height: AppSpacing.md),

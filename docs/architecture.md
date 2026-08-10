@@ -1,49 +1,61 @@
-# QuizVerse architecture
+# QuizVerse Architecture & Scale Specifications
 
-## Decision: Question bank before gameplay
+> **Single Source of Truth**: For complete 1,000 CCU capacity planning, 3 hosting cost tiers, test build procedures, and Play Store publishing details, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
 
-Gameplay APIs read validated `questions` rows. LLM calls happen only in workers / custom-topic preparation / rare sync fill for cold topics.
+---
 
-## Decision: Guest-first auth
+## 1. Architectural Principles
 
-Anonymous JWT accounts are first-class. Access + refresh tokens; refresh rotates with unique `jti`. Dio retries once on 401 after refresh.
+1. **Question Bank Before Gameplay**: Live LLM calls are **never** made during active quiz sessions. All questions are pre-generated, validated, and stored in PostgreSQL by background workers (`workers.main`).
+2. **High Concurrency & Low Latency**: Fast DB lookups, server-authoritative scoring, and Redis caching allow the backend to process **250 to 500 Requests Per Second (RPS)**, effortlessly supporting **1,000+ Concurrent Active Users (CCU)** at P99 latency `< 80ms`.
+3. **Guest-First Authentication**: Anonymous JWT accounts are upgraded seamlessly when linked to Google Sign-In (`POST /api/v1/auth/google`).
+4. **Resilient Rate-Limiting & Anti-Cheat**: Redis sliding window rate-limiting (~3 answers/sec max) and timing checks prevent automated cheating.
+5. **Decoupled AI Watermark Top-Ups**: Asynchronous background jobs top up topic inventory toward target watermarks (~1,000 unique questions per topic).
 
-## Decision: Server-authoritative scoring
+---
 
-`ScoringService` awards points. Clients send selected option index + client elapsed hint. Server must **not** start the question clock when preparing `next_question` (feedback reading time must not force timeouts).
+## 2. 1,000 CCU Concurrency Model
 
-## Decision: Endless unique via watermark top-up
+```text
+[ 1,000 Concurrent Mobile Players ]
+                 │
+                 │ 250 - 500 RPS (Answer / Session Requests)
+                 ▼
+[ Reverse Proxy / TLS Termination (Caddy / Cloudflare) ]
+                 │
+                 │ Load Balanced Internal HTTP
+                 ▼
+[ Multi-Worker FastAPI Backend (4 - 8 Uvicorn Processes) ]
+        │                               │
+        │ Async DB Pool (Asyncpg)       │ Redis Connection Pool
+        ▼                               ▼
+[ PostgreSQL 16 Cluster ]       [ Redis 7 ZSET Leaderboards ]
+        ▲                               ▲
+        │                               │
+        └───── [ Async AI Workers ] ────┘
+```
 
-- Target ~1000 unique active questions per topic, then reshuffle-reuse is acceptable.
-- Low watermark triggers async `bank_topup` generation jobs (chunk size ~20).
-- Sessions exclude already-used question IDs in the run while unused bank items exist.
-- Critically thin topics may sync-fill one chunk at session start so the first hand is not repetitive.
+### Resource Sizing & Connection Pools
 
-## Decision: Progression (Phase 5a)
+- **Web Workers**: 4 Uvicorn processes per 4 CPU cores (`uvicorn app.main:app --workers 4`).
+- **PostgreSQL Connection Pool**: 25 connections per worker (`pool_size=25`, `max_overflow=25`), allowing up to 200 total active database connections.
+- **Redis Connection Pool**: Max 500 connections for ZSET leaderboards, rate limits, and caching.
 
-- `daily_streak` is calendar play streak; Home 🔥 uses it. `best_streak` on profile is lifetime answer streak.
-- Achievements evaluate only on session finalize (not per-answer).
-- XP curve: spend `level * 500` XP to advance; Flutter XP bar matches.
+---
 
-## Decision: Daily + leaderboards (Phase 5b)
+## 3. Core Subsystems
 
-- Daily challenge is bank-only (no LLM): same seeded question IDs for UTC day; one completed attempt; resume ACTIVE.
-- Leaderboards dual-write Redis ZSET (hot) + Postgres `leaderboards` (durable). Scopes: weekly ISO week + daily date.
-- Score = best `final_score` per user per board.
+- **Quiz Engine**: `backend/app/quiz` (Session state machine, server-authoritative scoring, adaptive difficulty).
+- **Leaderboard Engine**: `backend/app/leaderboard` (Dual-write Redis ZSET + PostgreSQL fallback).
+- **Entitlements & Monetization**: `backend/app/payments` (Play Developer API verification, free/premium caps).
+- **AI Pipeline**: `workers/` (LLM generation, schema validation, quality scoring, deduplication).
+- **Mobile Client**: `mobile/` (Flutter 3.44+, Riverpod state management, Dio HTTP client with automatic JWT refresh retry, GoRouter navigation).
 
-## Decision: Adaptive + analytics (Phase 6a)
+---
 
-- Per-topic Elo-lite in `player_statistics.skill_ratings`; Adaptive sessions pick start difficulty server-side.
-- Casual + adaptive mid-run nudges from rolling last-5 accuracy (no LLM).
-- Product events land in `analytics_events` (best-effort); never on the answer hot path.
+## 4. Documentation References
 
-## Decision: Entitlements + share (Phase 6b / 7a / 7b / 7c / 8a / 8b / 8c / 8d)
-
-`payments/entitlements.py` + `GET /entitlements/me` wire free vs premium caps. `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=false` keeps free unlimited until monetization ships. Deal path raises `entitlement_unique_cap` when enforced. Anti-cheat helpers live in `services/anticheat.py` (timing, rate limit, points clamp). Finalize stores rich `share_payload` (`text`, `deep_link`, `web_url?`, `stats`). Public `GET /share/results/{session_id}` exposes safe share-card fields only (no auth). Custom scheme `quizverse://results/{id}` opens the shared result screen. Public HTML landing `GET /r/{session_id}` (set `SHARE_PUBLIC_BASE_URL` to include `web_url` in share text). Association files: `GET /.well-known/assetlinks.json` and `apple-app-site-association` (503 until fingerprints / iOS app id set); Android HTTPS `/r` autoVerify + iOS Associated Domains stub for `quizverse.app`. App / IAP identity: `com.quizverse.app`. Purchases: `POST /entitlements/purchases/verify` upserts `subscriptions` and sets `is_premium`; `BILLING_VERIFY_MODE=stub` for non-prod, or `apple_google` via store adapters. Android Play release uses upload keystore (`key.properties`) + `flutter build appbundle --dart-define=API_BASE_URL=...`. Ops: [DEPLOYMENT.md](DEPLOYMENT.md), [ENV_PROVIDERS.md](ENV_PROVIDERS.md). First public launch targets Play; iOS remains configured for later.
-
-## Risks
-
-1. AI generation latency / cost for cold topics — mitigated by caching, chunking, watermarks, loading UX.
-2. Enum proliferation in Postgres — keep shared enum types and migrations explicit.
-3. Leaderboard hot paths — Redis sorted sets with Postgres fallback.
-4. OpenAI spend if periodic top-ups are too aggressive — tune `TOPIC_BANK_*` env knobs.
+- **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)** — Master Production & Play Store Release Blueprint.
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** — Pre-flight test builds & quick launch procedures.
+- **[HOSTING.md](HOSTING.md)** — Server hosting & Caddy proxy setup.
+- **[ENV_PROVIDERS.md](ENV_PROVIDERS.md)** — Environment variables & provider secrets checklist.

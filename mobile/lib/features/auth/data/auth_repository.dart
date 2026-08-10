@@ -24,6 +24,19 @@ class AuthRepository {
     return session;
   }
 
+  Future<AuthSession> signInWithGoogle(String idToken) async {
+    final response = await _dio.post(
+      '${AppConfig.apiPrefix}/auth/google',
+      data: {'id_token': idToken},
+    );
+    final session = AuthSession.fromJson(response.data as Map<String, dynamic>);
+    await _tokenStore.saveTokens(
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+    );
+    return session;
+  }
+
   Future<AuthUser?> fetchMe() async {
     final token = await _tokenStore.readAccessToken();
     if (token == null || token.isEmpty) return null;

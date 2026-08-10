@@ -30,6 +30,10 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str = Field(min_length=20, max_length=8192)
+
+
 class UserMeResponse(BaseModel):
     id: UUID
     email: Optional[EmailStr] = None

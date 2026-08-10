@@ -1,122 +1,77 @@
-# Environment & provider checklist
+# Environment & Provider Checklist
 
-Use this when taking QuizVerse live. Values live in root `.env` (gitignored). Templates: [`.env.example`](../.env.example).
+> **Single Source of Truth**: For step-by-step production deployment instructions, 1,000 CCU tuning, and Play Store publishing details, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
 
-Flutter compile-time only (not `.env`):
-
-| Define | Example | Where |
-|--------|---------|--------|
-| `API_BASE_URL` | `https://quizverse.app` | `flutter build/run --dart-define=API_BASE_URL=...` |
-
-Android signing (not `.env`):
-
-| File | Purpose |
-|------|---------|
-| `mobile/android/key.properties` | From `key.properties.example` |
-| `mobile/android/upload-keystore.jks` | Upload keystore (backup offline) |
+Use this checklist when taking QuizVerse live. Variables reside in the root `.env` file (gitignored). Template: [`.env.example`](../.env.example).
 
 ---
 
-## Core app / security
+## 1. Flutter Compile-Time Defines (Not `.env`)
 
-| Variable | Local | Production | Provider / notes |
-|----------|-------|------------|------------------|
-| `APP_NAME` | QuizVerse | QuizVerse | — |
-| `APP_ENV` | `development` | `production` | Gates stub billing + some toggles |
-| `DEBUG` | `true` | `false` | — |
-| `API_PREFIX` | `/api/v1` | `/api/v1` | — |
-| `CORS_ORIGINS` | `*` OK | Explicit HTTPS origins | Reverse proxy / web if any |
-| `JWT_SECRET` | Dev default OK | **Required strong secret** | Generate yourself |
-| `JWT_*_EXPIRE_*` | Defaults OK | Tune as needed | — |
+Pass these parameters when building the Flutter app via `--dart-define`:
 
-## Database & Redis
-
-| Variable | Local | Production | Provider |
-|----------|-------|------------|----------|
-| `POSTGRES_USER` / `PASSWORD` / `DB` | Compose defaults | Strong password | Docker / RDS / Cloud SQL / Neon / etc. |
-| `DATABASE_URL` | asyncpg URL to `postgres` service | Managed URL | Same |
-| `DATABASE_URL_SYNC` | psycopg URL | Managed URL | Alembic / sync tools |
-| `REDIS_URL` | `redis://redis:6379/0` | Managed Redis URL | Docker / ElastiCache / Upstash |
-
-## LLM (question bank generation — never on play hot path)
-
-| Variable | Local | Production | Provider |
-|----------|-------|------------|----------|
-| `LLM_PROVIDER` | `openai` or `mock` | `openai` | OpenAI (or future providers) |
-| `LLM_API_KEY` | Your key | Your key | [OpenAI API keys](https://platform.openai.com/api-keys) |
-| `LLM_MODEL_*` | `gpt-4o-mini` | Same or stronger | OpenAI model list |
-
-## Share / App Links
-
-| Variable | Local | Production | Provider |
-|----------|-------|------------|----------|
-| `SHARE_PUBLIC_BASE_URL` | empty or `http://localhost:8000` | `https://quizverse.app` | Your DNS + TLS |
-| `APP_LINK_ANDROID_PACKAGE` | `com.quizverse.app` | Same | Play application id |
-| `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` | empty → well-known 503 | Play **App signing** + **Upload** cert SHA-256 (comma-separated) | [Play Console → App signing](https://play.google.com/console) |
-| `APP_LINK_IOS_APP_ID` | empty | `TEAMID.com.quizverse.app` when shipping iOS | Apple Developer Team ID |
-
-DNS: point `quizverse.app` at the API so `/.well-known/assetlinks.json` and `/r/{id}` are public HTTPS.
-
-## Entitlements & billing
-
-| Variable | Local | Production | Provider |
-|----------|-------|------------|----------|
-| `ENTITLEMENTS_ENFORCE_QUESTION_CAPS` | `false` | `false` until monetizing | Feature flag |
-| `FREE_UNIQUE_QUESTIONS_PER_TOPIC` | `30` | `30` | Used when caps on |
-| `ENTITLEMENTS_DEV_TOGGLE` | `false` / `true` for QA | **`false`** | — |
-| `IAP_PREMIUM_PRODUCT_ID` | `quizverse_premium` | Must match Play product | [Play Console → Monetize](https://play.google.com/console) |
-| `IAP_ANDROID_PACKAGE` | `com.quizverse.app` | Same | Play application id |
-| `BILLING_VERIFY_MODE` | `stub` | `apple_google` | — |
-| `BILLING_ALLOW_STUB_IN_PRODUCTION` | `false` | **`false`** | Safety latch |
-| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | empty | One-line service account JSON | Google Cloud + Play API access |
-| `APPLE_IAP_*` | empty / sandbox | Fill when launching iOS | App Store Connect API key |
-
-### Google Play service account (Android verify)
-
-1. Google Cloud project → create service account → JSON key.
-2. Play Console → Users and permissions → invite SA email → **View financial data** + **Manage orders and subscriptions** (or Android Publisher equivalent).
-3. Enable **Google Play Android Developer API** on the Cloud project.
-4. Paste the JSON as a **single line** into `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`.
-
-### Apple (configured, deferred for first launch)
-
-| Variable | Purpose |
-|----------|---------|
-| `APPLE_IAP_ISSUER_ID` | App Store Connect API issuer |
-| `APPLE_IAP_KEY_ID` | Key id |
-| `APPLE_IAP_PRIVATE_KEY` | `.p8` PEM with `\n` escapes |
-| `APPLE_IAP_BUNDLE_ID` | `com.quizverse.app` |
-| `APPLE_IAP_ENVIRONMENT` | `Sandbox` then `Production` |
-
-## Observability (optional)
-
-| Variable | Provider |
-|----------|----------|
-| `SENTRY_DSN` | Sentry project DSN |
-| `LOG_LEVEL` | `INFO` / `WARNING` in prod |
-| `ANALYTICS_PROVIDER` | `postgres` or `null` |
-
-## OAuth (optional / future)
-
-| Variable | Provider |
-|----------|----------|
-| `GOOGLE_CLIENT_ID` | Google Cloud OAuth client |
-| `APPLE_CLIENT_ID` | Apple Services id |
-
-## Bank growth tuning (usually leave defaults)
-
-`TOPIC_BANK_TARGET_UNIQUE`, `TOPIC_BANK_LOW_WATERMARK`, `TOPIC_BANK_CHUNK_SIZE`, `TOPIC_BANK_SESSION_BATCH`, scoring knobs — see `.env.example`.
+| Variable | Example | Description |
+| :--- | :--- | :--- |
+| `API_BASE_URL` | `https://quizverse.app` | Base HTTPS URL of the backend API. |
+| `GOOGLE_SERVER_CLIENT_ID` | `123456-xxx.apps.googleusercontent.com` | Web OAuth Client ID for Google Sign-In. |
 
 ---
 
-## Go-live order (Android-first)
+## 2. Core App & Performance Tuning Variables
 
-1. Provision Postgres + Redis + API + worker with production `.env`.
-2. Put TLS + DNS on `quizverse.app`.
-3. Create Play app `com.quizverse.app`, privacy policy, listing.
-4. Create upload keystore; build AAB with `--dart-define=API_BASE_URL=https://quizverse.app`.
-5. Upload to Internal testing; copy signing SHA-256 → `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS`; redeploy API.
-6. Create IAP product + service account; set `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` + `BILLING_VERIFY_MODE=apple_google`.
-7. License-tester purchase / restore verification.
-8. Promote to production track.
-9. (Later) Enable caps; ship iOS with Apple IAP + AASA Team ID.
+| Variable | Local / Dev | Production (1,000 CCU) | Provider / Notes |
+| :--- | :--- | :--- | :--- |
+| `APP_NAME` | QuizVerse | QuizVerse | Application branding name. |
+| `APP_ENV` | `development` | `production` | Enables production security checks & disables stub billing. |
+| `DEBUG` | `true` | `false` | Disables verbose SQL logging and debug pages. |
+| `CORS_ORIGINS` | `*` | `https://quizverse.app` | Restrict origins in production. |
+| `JWT_SECRET` | Dev string | 64-char random hex string | Generate via `openssl rand -hex 32`. |
+| `WEB_CONCURRENCY` | `1` | `4` | Number of Uvicorn API worker processes. |
+| `DB_POOL_SIZE` | `10` | `25` | SQLAlchemy asyncpg pool size per worker process. |
+| `DB_MAX_OVERFLOW` | `20` | `25` | Overflow pool connections per worker process. |
+
+---
+
+## 3. Database & Cache Variables
+
+| Variable | Production Example | Provider / Notes |
+| :--- | :--- | :--- |
+| `POSTGRES_USER` | `quizverse` | Database user name. |
+| `POSTGRES_PASSWORD` | Strong Random Password | Database user password. |
+| `POSTGRES_DB` | `quizverse` | Primary database name. |
+| `DATABASE_URL` | `postgresql+asyncpg://...` | Async SQLAlchemy URL. |
+| `DATABASE_URL_SYNC` | `postgresql+psycopg://...` | Sync SQLAlchemy URL (Alembic migrations). |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis instance URL. |
+
+---
+
+## 4. Google Auth & Play Store Verification Secrets
+
+| Variable | Production Value | Provider / Notes |
+| :--- | :--- | :--- |
+| `GOOGLE_CLIENT_ID` | Web Client ID string | Google Cloud Console OAuth 2.0 Client ID (Web Application). |
+| `BILLING_VERIFY_MODE` | `apple_google` | Set to `apple_google` when Google Play service account is linked. |
+| `BILLING_ALLOW_STUB_IN_PRODUCTION` | `false` | Security latch preventing stub purchases in production. |
+| `IAP_PREMIUM_PRODUCT_ID` | `quizverse_premium` | Must match product ID created in Play Console. |
+| `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Single-line JSON string | Google Cloud Service Account with Play Developer API access. |
+
+---
+
+## 5. Share & App Links Fingerprints
+
+| Variable | Production Value | Provider / Notes |
+| :--- | :--- | :--- |
+| `SHARE_PUBLIC_BASE_URL` | `https://quizverse.app` | Base URL used for public result cards (`/r/{id}`). |
+| `APP_LINK_ANDROID_PACKAGE` | `com.quizverse.app` | Android Application ID. |
+| `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` | `SHA256_FINGERPRINT_1,SHA256_FINGERPRINT_2` | Comma-separated SHA-256 fingerprints for `/.well-known/assetlinks.json`. |
+
+---
+
+## 6. AI Generator Worker Variables
+
+| Variable | Production Value | Provider / Notes |
+| :--- | :--- | :--- |
+| `LLM_PROVIDER` | `openai` | AI provider implementation (`openai` or `mock`). |
+| `LLM_API_KEY` | `sk-proj-YOUR_API_KEY` | OpenAI API Key for worker bank generation. |
+| `LLM_MODEL_GENERATE` | `gpt-4o-mini` | Model for batch question generation. |
+| `LLM_MODEL_VALIDATE` | `gpt-4o-mini` | Model for question validation & quality check. |
