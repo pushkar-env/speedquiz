@@ -63,9 +63,21 @@ the URL scheme:
 | `DATABASE_URL` | `postgresql+asyncpg://` | the app at runtime |
 | `DATABASE_URL_SYNC` | `postgresql+psycopg://` | Alembic migrations |
 
-**Drop `?sslmode=require` from the asyncpg URL.** asyncpg does not understand
-that parameter and will fail to connect; it negotiates TLS on its own. Keep it
-on the `psycopg` one.
+**Drop the query string from the asyncpg URL.** SQLAlchemy forwards `sslmode`
+and `channel_binding` verbatim to `asyncpg.connect()`, which accepts neither —
+you get `TypeError: connect() got an unexpected keyword argument 'sslmode'` at
+connect time, which reads like an outage rather than a typo. Nothing is lost:
+asyncpg negotiates TLS itself. Keep the parameters on the `psycopg` URL, which
+does understand them.
+
+Rather than editing by hand, let the script do it:
+
+```bash
+python scripts/split_db_url.py "postgresql://user:pass@ep-...-pooler.../neondb?sslmode=require"
+```
+
+It prints all three variables ready to paste, and warns if you copied the
+direct endpoint instead of the pooled one.
 
 ```env
 DATABASE_URL=postgresql+asyncpg://neondb_owner:PASSWORD@ep-...-pooler.us-east-2.aws.neon.tech/neondb
@@ -86,13 +98,24 @@ overlaps.
 ## 2. Redis on Upstash
 
 1. [console.upstash.com](https://console.upstash.com) → **Create Database** → same region as Neon.
-2. Copy the connection string from the **Redis** tab (the `rediss://…` one).
+2. Copy the connection details.
 
-```env
-REDIS_URL=rediss://default:PASSWORD@apn1-xxxx.upstash.io:6379
+Upstash often shows the credentials as a `redis-cli` invocation:
+
+```text
+redis-cli --tls -u redis://default:TOKEN@fair-bluejay-111963.upstash.io:6379
 ```
 
-Note `rediss://` with two S's — that is TLS, and Upstash requires it.
+**Do not paste that URL as-is.** `redis-cli` takes TLS as a separate `--tls`
+flag, but redis-py derives it from the **scheme** — `redis://` builds a plain
+`Connection`, `rediss://` builds an `SSLConnection`. Upstash refuses plaintext,
+so a single-`s` URL fails with `ConnectionError: Connection closed by server`.
+
+Take the URL, add the second `s`, drop the flag:
+
+```env
+REDIS_URL=rediss://default:TOKEN@fair-bluejay-111963.upstash.io:6379
+```
 
 Redis holds rate limits, leaderboard sorted sets and generation locks. It is not
 the source of truth for anything: losing it degrades ranking freshness, not data.
@@ -341,13 +364,15 @@ path in [HOSTING.md](HOSTING.md).
 | Symptom | Cause / fix |
 |---|---|
 | Container exits instantly, log says "Unsafe production configuration" | Read the listed items — placeholder `JWT_SECRET`, `ENTITLEMENTS_DEV_TOGGLE=true`, or `DEBUG=true` |
-| `invalid dsn: invalid connection option "sslmode"` | `?sslmode=require` left on the **asyncpg** URL. Remove it there; keep it on `DATABASE_URL_SYNC` |
+| `TypeError: connect() got an unexpected keyword argument 'sslmode'` | `?sslmode=` (or `channel_binding=`) left on the **asyncpg** URL. SQLAlchemy forwards it to `asyncpg.connect()`, which has no such keyword. Strip the query string there; keep it on `DATABASE_URL_SYNC`. `scripts/split_db_url.py` does this for you |
 | `prepared statement "__asyncpg_stmt_x__" already exists` | Pooled endpoint without `DB_DISABLE_PREPARED_STATEMENTS=true` |
 | `FATAL: sorry, too many clients already` | Connection maths in §9.3 exceeded, or you are on a direct (non-pooled) endpoint |
 | Build fails on `COPY backend` | Root directory set on the service — clear it, the build context must be repo root |
 | 502 from Railway | App not listening on `$PORT`. Do not override the start command |
 | `/api/v1/topics` returns `{"items": []}` | Seeding failed — grep logs for `seed_failed` |
 | `/ready` returns 503 | `database` / `redis` in the body tells you which one; check that service's URL |
+| Redis: `ConnectionError: Connection closed by server` | `redis://` instead of `rediss://`. Upstash refuses plaintext; redis-py picks TLS from the scheme, not a flag |
+| Redis: `SSL: CERTIFICATE_VERIFY_FAILED ... certificate has expired` **locally only** | Your machine's Python trust store has a stale root CA — not an Upstash problem. Run with `SSL_CERT_FILE=$(python -c "import certifi;print(certifi.where())")`. Linux containers on Railway ship current CAs and are unaffected |
 | Worker idle, bank never grows | `LLM_API_KEY` missing on **worker**, or the service is not deployed |
 | App times out on the phone | APK still built against the old tunnel/LAN URL — rebuild with `API_BASE_URL` |
 | Google Sign-In cancels immediately | `GOOGLE_SERVER_CLIENT_ID` missing at build time, or SHA-1 not registered — see [AUTH_GOOGLE.md](AUTH_GOOGLE.md) |

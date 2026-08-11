@@ -2,6 +2,10 @@
 .env
 .env.local
 .env.*.local
+# Catch-all so backups/variants (.env.backup, .env.prod, .env.neon) can never
+# be committed by accident. .env.example is the one intentional exception.
+.env.*
+!.env.example
 *.pem
 *.key
 *.p12
