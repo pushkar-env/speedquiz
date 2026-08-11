@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/network/api_errors.dart';
-import 'package:quizverse/features/auth/data/auth_repository.dart';
-import 'package:quizverse/features/auth/data/google_auth_service.dart';
-import 'package:quizverse/features/auth/domain/auth_models.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
+import 'package:speedquiz/features/auth/data/auth_repository.dart';
+import 'package:speedquiz/features/auth/data/google_auth_service.dart';
+import 'package:speedquiz/features/auth/domain/auth_models.dart';
 
 sealed class AuthState {
   const AuthState();

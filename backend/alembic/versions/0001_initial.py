@@ -1,4 +1,4 @@
-"""Initial schema for QuizVerse Phase 1."""
+"""Initial schema for SpeedQuiz Phase 1."""
 
 from typing import Sequence, Union
 

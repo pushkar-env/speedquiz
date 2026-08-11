@@ -22,7 +22,7 @@ def test_shared_result_out_fields():
         accuracy=80.0,
         best_streak=4,
         questions_answered=10,
-        deep_link=f"quizverse://results/{sid}",
+        deep_link=f"speedquiz://results/{sid}",
     )
     data = out.model_dump()
     assert set(data.keys()) == {
@@ -68,7 +68,7 @@ async def test_get_shared_result_uses_share_payload_stats():
     result = SimpleNamespace(
         summary={"topic_name": "Space", "accuracy": 70.0},
         share_payload={
-            "deep_link": f"quizverse://results/{sid}",
+            "deep_link": f"speedquiz://results/{sid}",
             "stats": {
                 "topic": "Astronomy",
                 "mode": "speedrun",
@@ -103,4 +103,4 @@ async def test_get_shared_result_uses_share_payload_stats():
     assert out.accuracy == 90.0
     assert out.best_streak == 7
     assert out.questions_answered == 12
-    assert out.deep_link == f"quizverse://results/{sid}"
+    assert out.deep_link == f"speedquiz://results/{sid}"

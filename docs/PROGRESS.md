@@ -1,4 +1,4 @@
-# QuizVerse Progress & Production Roadmap
+# SpeedQuiz Progress & Production Roadmap
 
 Last updated: 2026-08-10
 
@@ -54,11 +54,11 @@ Ship a production-ready Android/iOS quiz game where AI prepares a **validated qu
 
 ### Phase 7a, 7b, 7c — Deep Links, IAP & Web Landing ✅
 - Public `GET /share/results/{session_id}` and HTML landing `GET /r/{session_id}`.
-- Deep link `quizverse://results/{id}`.
+- Deep link `speedquiz://results/{id}`.
 - Store verification adapters (`BILLING_VERIFY_MODE=apple_google`).
 
 ### Phase 8a, 8b, 8c, 8d — App Identity & Release Readiness ✅
-- Native application ID set to **`com.quizverse.app`**.
+- Native application ID set to **`com.speedquiz.app`**.
 - Release signing via `mobile/android/key.properties`.
 - Production Docker overlays (`docker-compose.prod.yml`, `docker-compose.caddy.yml`).
 
@@ -75,7 +75,7 @@ Ship a production-ready Android/iOS quiz game where AI prepares a **validated qu
 ## Active Go-Live Phase: Play Store Upload & Launch
 
 1. **Upload Keystore**: Generate `upload-keystore.jks` and extract SHA-1 / SHA-256 fingerprints.
-2. **Build Test Release APK/AAB**: Run `flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app`.
+2. **Build Test Release APK/AAB**: Run `flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.app`.
 3. **Deploy Backend (Option A, B, or C)**: Tune database connection pools (`pool_size=25`) and Uvicorn workers (`--workers 4`).
 4. **Link Google Services**: Set up Google Cloud OAuth 2.0 Web Client ID, Play Developer API Service Account JSON, and App Links fingerprints.
 5. **Play Console Release**: Submit AAB to Internal Testing -> Closed Testing -> Production.

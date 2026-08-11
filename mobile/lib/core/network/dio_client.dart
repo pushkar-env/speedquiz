@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/config/app_config.dart';
-import 'package:quizverse/features/auth/data/auth_token_store.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/features/auth/data/auth_token_store.dart';
 
 final dioProvider = Provider<Dio>((ref) {
   final dio = Dio(
@@ -43,6 +43,23 @@ class _AuthInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
+    // 1. Transparent retry for socket / connection abort drops on Android emulator / networks.
+    final isConnectionAbort = err.error != null &&
+        (err.error.toString().contains('Software caused connection abort') ||
+            err.error.toString().contains('Connection closed'));
+    final connectionRetried = err.requestOptions.extra['conn_retried'] == true;
+
+    if (isConnectionAbort && !connectionRetried) {
+      try {
+        final req = err.requestOptions;
+        req.extra['conn_retried'] = true;
+        final response = await _dio.fetch(req);
+        handler.resolve(response);
+        return;
+      } catch (_) {}
+    }
+
+    // 2. Token refresh for 401 Unauthorized errors.
     final status = err.response?.statusCode;
     final path = err.requestOptions.path;
     final alreadyRetried = err.requestOptions.extra['auth_retried'] == true;

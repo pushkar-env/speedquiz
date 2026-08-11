@@ -2,10 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/config/app_config.dart';
-import 'package:quizverse/core/network/dio_client.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/network/dio_client.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class TopicItem {
   TopicItem({
@@ -66,7 +66,7 @@ class ExploreScreen extends ConsumerWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: AppSpacing.md),
-                QvButton(
+                SqButton(
                   label: 'Retry',
                   onPressed: () => ref.invalidate(topicsProvider),
                 ),

@@ -1,8 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/config/app_config.dart';
-import 'package:quizverse/core/network/dio_client.dart';
-import 'package:quizverse/features/share/domain/share_models.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/network/dio_client.dart';
+import 'package:speedquiz/features/share/domain/share_models.dart';
 
 class ShareRepository {
   ShareRepository(this._dio);

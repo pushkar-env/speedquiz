@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:quizverse/core/config/app_config.dart';
+import 'package:speedquiz/core/config/app_config.dart';
 
 class GoogleAuthService {
   GoogleAuthService();

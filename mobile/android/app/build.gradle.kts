@@ -14,7 +14,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.quizverse.app"
+    namespace = "com.speedquiz.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -24,13 +24,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.quizverse.app"
+        applicationId = "com.speedquiz.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         // HTTPS App Links host (point DNS + assetlinks when ready).
-        manifestPlaceholders["shareHttpsHost"] = "quizverse.app"
+        manifestPlaceholders["shareHttpsHost"] = "speedquiz.app"
     }
 
     signingConfigs {

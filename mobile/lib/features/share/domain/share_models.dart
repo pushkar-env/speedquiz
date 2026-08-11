@@ -26,7 +26,7 @@ class SharedResult extends Equatable {
   factory SharedResult.fromJson(Map<String, dynamic> json) {
     return SharedResult(
       sessionId: json['session_id'] as String,
-      topicName: json['topic_name'] as String? ?? 'QuizVerse',
+      topicName: json['topic_name'] as String? ?? 'SpeedQuiz',
       mode: json['mode'] as String? ?? 'casual',
       difficulty: json['difficulty'] as String? ?? 'medium',
       finalScore: json['final_score'] as int? ?? 0,

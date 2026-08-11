@@ -1,25 +1,25 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: quizverse-postgres
+    container_name: speedquiz-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-quizverse}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quizverse_dev_password}
-      POSTGRES_DB: ${POSTGRES_DB:-quizverse}
+      POSTGRES_USER: ${POSTGRES_USER:-speedquiz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-speedquiz_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-speedquiz}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quizverse} -d ${POSTGRES_DB:-quizverse}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-speedquiz} -d ${POSTGRES_DB:-speedquiz}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: quizverse-redis
+    container_name: speedquiz-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -35,13 +35,13 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.api
-    container_name: quizverse-api
+    container_name: speedquiz-api
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
-      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-speedquiz}:${POSTGRES_PASSWORD:-speedquiz_dev_password}@postgres:5432/${POSTGRES_DB:-speedquiz}
+      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-speedquiz}:${POSTGRES_PASSWORD:-speedquiz_dev_password}@postgres:5432/${POSTGRES_DB:-speedquiz}
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
@@ -60,13 +60,13 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.worker
-    container_name: quizverse-worker
+    container_name: speedquiz-worker
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
-      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-quizverse}:${POSTGRES_PASSWORD:-quizverse_dev_password}@postgres:5432/${POSTGRES_DB:-quizverse}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-speedquiz}:${POSTGRES_PASSWORD:-speedquiz_dev_password}@postgres:5432/${POSTGRES_DB:-speedquiz}
+      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-speedquiz}:${POSTGRES_PASSWORD:-speedquiz_dev_password}@postgres:5432/${POSTGRES_DB:-speedquiz}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:

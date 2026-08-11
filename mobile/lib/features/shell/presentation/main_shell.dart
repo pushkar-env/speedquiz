@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
 
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.child});

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/share/data/share_repository.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/share/data/share_repository.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class SharedResultScreen extends ConsumerWidget {
   const SharedResultScreen({super.key, required this.sessionId});
@@ -38,7 +38,7 @@ class SharedResultScreen extends ConsumerWidget {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  QvButton(
+                  SqButton(
                     label: 'GO HOME',
                     onPressed: () => context.go('/home'),
                   ),
@@ -73,7 +73,7 @@ class SharedResultScreen extends ConsumerWidget {
                     style: theme.textTheme.bodyLarge,
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  QvSurface(
+                  SqSurface(
                     child: Column(
                       children: [
                         _ShareStat(
@@ -94,8 +94,8 @@ class SharedResultScreen extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
-                  QvButton(
-                    label: 'PLAY QUIZVERSE',
+                  SqButton(
+                    label: 'PLAY SPEEDQUIZ',
                     onPressed: () => context.go('/home'),
                   ),
                   const SizedBox(height: 10),

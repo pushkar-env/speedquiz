@@ -25,9 +25,9 @@ def test_build_share_payload_without_base_url():
             best_streak=4,
             questions_answered=10,
         )
-    assert payload["deep_link"] == f"quizverse://results/{sid}"
+    assert payload["deep_link"] == f"speedquiz://results/{sid}"
     assert "web_url" not in payload
-    assert f"quizverse://results/{sid}" in payload["text"]
+    assert f"speedquiz://results/{sid}" in payload["text"]
     assert set(payload["stats"].keys()) >= {
         "score",
         "accuracy",
@@ -41,7 +41,7 @@ def test_build_share_payload_without_base_url():
 
 def test_build_share_payload_with_web_url():
     with patch("app.services.share.settings") as settings:
-        settings.share_public_base_url = "https://quizverse.app/"
+        settings.share_public_base_url = "https://speedquiz.app/"
         sid = uuid4()
         payload = build_share_payload(
             session_id=sid,
@@ -53,9 +53,9 @@ def test_build_share_payload_with_web_url():
             best_streak=3,
             questions_answered=8,
         )
-    assert payload["web_url"] == f"https://quizverse.app/r/{sid}"
+    assert payload["web_url"] == f"https://speedquiz.app/r/{sid}"
     assert payload["web_url"] in payload["text"]
-    assert payload["deep_link"].startswith("quizverse://")
+    assert payload["deep_link"].startswith("speedquiz://")
 
 
 def test_web_url_for_strips_slash():
@@ -92,7 +92,7 @@ async def test_landing_200_html():
         questions_answered=12,
         difficulty="hard",
         mode="casual",
-        deep_link=f"quizverse://results/{sid}",
+        deep_link=f"speedquiz://results/{sid}",
         web_url=f"http://localhost:8000/r/{sid}",
     )
     transport = ASGITransport(app=app)
@@ -105,5 +105,5 @@ async def test_landing_200_html():
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "Astronomy" in response.text
-    assert "Open in QuizVerse" in response.text
-    assert f"quizverse://results/{sid}" in response.text
+    assert "Open in SpeedQuiz" in response.text
+    assert f"speedquiz://results/{sid}" in response.text

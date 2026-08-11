@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// QuizVerse design tokens — premium game feel without neon clutter.
+/// SpeedQuiz design tokens — premium game feel without neon clutter.
 abstract final class AppColors {
   static const CosmicInk backgroundDark = CosmicInk();
   static const Color backgroundLight = Color(0xFFF3F6F8);

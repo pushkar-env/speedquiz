@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/network/api_errors.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/features/entitlements/data/billing_service.dart';
-import 'package:quizverse/features/entitlements/data/entitlements_repository.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/entitlements/data/billing_service.dart';
+import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 Future<void> showPremiumPaywall(
   BuildContext context, {
@@ -259,17 +259,17 @@ class _PremiumPaywallSheetState extends ConsumerState<PremiumPaywallSheet> {
           ),
           const SizedBox(height: 10),
           const _Benefit(
-            title: 'Support QuizVerse',
+            title: 'Support SpeedQuiz',
             subtitle: 'Help us grow the question bank and polish the game',
           ),
           const SizedBox(height: AppSpacing.xl),
           if (alreadyPremium)
-            QvButton(
+            SqButton(
               label: 'GOT IT',
               onPressed: loading ? null : () => Navigator.of(context).pop(),
             )
           else
-            QvButton(
+            SqButton(
               label: _primaryLabel(
                 alreadyPremium: alreadyPremium,
                 allowDev: allowDev,

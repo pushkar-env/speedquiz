@@ -1,4 +1,4 @@
-package com.quizverse.app
+package com.speedquiz.app
 
 import io.flutter.embedding.android.FlutterActivity
 

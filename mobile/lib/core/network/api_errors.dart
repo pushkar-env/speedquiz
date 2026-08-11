@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 
-/// Extract a human-readable message from QuizVerse API / Dio errors.
+/// Extract a human-readable message from SpeedQuiz API / Dio errors.
 ///
 /// Supports:
 /// - `{ "detail": "..." }`

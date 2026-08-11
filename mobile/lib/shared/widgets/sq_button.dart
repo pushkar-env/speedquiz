@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
 
-class QvButton extends StatelessWidget {
-  const QvButton({
+class SqButton extends StatelessWidget {
+  const SqButton({
     super.key,
     required this.label,
     required this.onPressed,
@@ -33,8 +33,8 @@ class QvButton extends StatelessWidget {
   }
 }
 
-class QvGhostButton extends StatelessWidget {
-  const QvGhostButton({
+class SqGhostButton extends StatelessWidget {
+  const SqGhostButton({
     super.key,
     required this.label,
     required this.onPressed,
@@ -66,8 +66,8 @@ class QvGhostButton extends StatelessWidget {
   }
 }
 
-class QvSectionHeader extends StatelessWidget {
-  const QvSectionHeader({
+class SqSectionHeader extends StatelessWidget {
+  const SqSectionHeader({
     super.key,
     required this.title,
     this.subtitle,
@@ -104,8 +104,8 @@ class QvSectionHeader extends StatelessWidget {
   }
 }
 
-class QvSurface extends StatelessWidget {
-  const QvSurface({
+class SqSurface extends StatelessWidget {
+  const SqSurface({
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(AppSpacing.md),
@@ -152,8 +152,8 @@ class QvSurface extends StatelessWidget {
   }
 }
 
-class QvXpBar extends StatelessWidget {
-  const QvXpBar({
+class SqXpBar extends StatelessWidget {
+  const SqXpBar({
     super.key,
     required this.level,
     required this.xp,
@@ -196,6 +196,7 @@ class QvXpBar extends StatelessWidget {
     );
   }
 }
+
 
 String formatScore(int score) {
   final s = score.abs().toString();

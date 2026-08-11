@@ -2,11 +2,13 @@ import 'package:flutter/foundation.dart';
 
 abstract final class AppConfig {
   /// Override for release / device builds:
-  /// `flutter run --dart-define=API_BASE_URL=https://api.quizverse.app`
+  /// `flutter run --dart-define=API_BASE_URL=https://api.speedquiz.app`
   /// or `flutter build appbundle --dart-define=API_BASE_URL=...`
   static String get apiBaseUrl {
     const fromEnv = String.fromEnvironment('API_BASE_URL');
-    if (fromEnv.isNotEmpty) return fromEnv;
+    if (fromEnv.isNotEmpty) {
+      return fromEnv.endsWith('/') ? fromEnv.substring(0, fromEnv.length - 1) : fromEnv;
+    }
     // Android emulator reaches host machine via 10.0.2.2.
     if (kIsWeb) return 'http://localhost:8000';
     switch (defaultTargetPlatform) {

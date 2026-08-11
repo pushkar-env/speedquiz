@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/auth/data/auth_repository.dart';
-import 'package:quizverse/features/auth/data/auth_token_store.dart';
-import 'package:quizverse/features/auth/domain/auth_models.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/features/onboarding/presentation/splash_screen.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/auth/data/auth_repository.dart';
+import 'package:speedquiz/features/auth/data/auth_token_store.dart';
+import 'package:speedquiz/features/auth/data/google_auth_service.dart';
+import 'package:speedquiz/features/auth/domain/auth_models.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/onboarding/presentation/splash_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,7 +27,7 @@ class _FakeAuthRepository extends AuthRepository {
 }
 
 class _SteadyAuthController extends AuthController {
-  _SteadyAuthController() : super(_FakeAuthRepository());
+  _SteadyAuthController() : super(_FakeAuthRepository(), GoogleAuthService());
 
   @override
   Future<void> bootstrap() async {
@@ -51,7 +52,7 @@ class _SteadyAuthController extends AuthController {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('Splash shows QuizVerse branding', (tester) async {
+  testWidgets('Splash shows SpeedQuiz branding', (tester) async {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(
@@ -68,7 +69,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('QUIZVERSE'), findsOneWidget);
+    expect(find.text('SPEEDQUIZ'), findsOneWidget);
     expect(find.textContaining('Endless AI quizzes'), findsOneWidget);
   });
 

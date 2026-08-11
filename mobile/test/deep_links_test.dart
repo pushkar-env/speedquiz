@@ -1,31 +1,31 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:quizverse/core/routing/deep_links.dart';
+import 'package:speedquiz/core/routing/deep_links.dart';
 
 void main() {
-  test('maps quizverse://results/{id}', () {
+  test('maps speedquiz://results/{id}', () {
     final loc = locationFromDeepLink(
-      Uri.parse('quizverse://results/abc-123'),
+      Uri.parse('speedquiz://results/abc-123'),
     );
     expect(loc, '/share/results/abc-123');
   });
 
-  test('maps path-style quizverse URI', () {
+  test('maps path-style speedquiz URI', () {
     final loc = locationFromDeepLink(
-      Uri.parse('quizverse:///results/abc-123'),
+      Uri.parse('speedquiz:///results/abc-123'),
     );
     expect(loc, '/share/results/abc-123');
   });
 
   test('maps future https share path', () {
     final loc = locationFromDeepLink(
-      Uri.parse('https://quizverse.app/share/results/abc-123'),
+      Uri.parse('https://speedquiz.app/share/results/abc-123'),
     );
     expect(loc, '/share/results/abc-123');
   });
 
   test('maps public landing /r/{id}', () {
     final loc = locationFromDeepLink(
-      Uri.parse('https://quizverse.app/r/abc-123'),
+      Uri.parse('https://speedquiz.app/r/abc-123'),
     );
     expect(loc, '/share/results/abc-123');
   });

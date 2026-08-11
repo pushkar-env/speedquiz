@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/explore/presentation/explore_screen.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/explore/presentation/explore_screen.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class QuizSetupScreen extends ConsumerStatefulWidget {
   const QuizSetupScreen({super.key, this.initialTopicId, this.initialTopicName});
@@ -101,13 +101,13 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
                       child: CircularProgressIndicator(color: AppColors.accent),
                     ),
                   ),
-                  error: (e, _) => QvSurface(
+                  error: (e, _) => SqSurface(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Could not load topics'),
                         const SizedBox(height: 8),
-                        QvButton(
+                        SqButton(
                           label: 'Retry',
                           onPressed: () => ref.invalidate(topicsProvider),
                         ),
@@ -180,7 +180,7 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
                   final selected = _mode == m.$1;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: QvSurface(
+                    child: SqSurface(
                       highlighted: selected,
                       onTap: () => setState(() => _mode = m.$1),
                       child: Row(
@@ -236,7 +236,7 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
                 AppSpacing.lg,
                 AppSpacing.md,
               ),
-              child: QvButton(
+              child: SqButton(
                 label: _topicName == null
                     ? 'START'
                     : 'START · ${_topicName!.toUpperCase()}',

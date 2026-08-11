@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/leaderboard/data/leaderboard_repository.dart';
-import 'package:quizverse/features/leaderboard/domain/leaderboard_models.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/leaderboard/data/leaderboard_repository.dart';
+import 'package:speedquiz/features/leaderboard/domain/leaderboard_models.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class LeaderboardScreen extends ConsumerStatefulWidget {
   const LeaderboardScreen({super.key});
@@ -109,7 +109,7 @@ class _BoardTab extends ConsumerWidget {
           children: [
             Text('Could not load ranks', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            QvButton(
+            SqButton(
               label: 'RETRY',
               onPressed: () => ref.invalidate(leaderboardProvider(scope)),
             ),

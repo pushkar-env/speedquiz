@@ -1,4 +1,4 @@
-# QuizVerse Deployment & Production Release Guide
+# SpeedQuiz Deployment & Production Release Guide
 
 > **Master Guide**: For the comprehensive end-to-end blueprint, 1,000 CCU performance tuning, test build generation, 3 hosting cost categories, and step-by-step Play Store publishing, refer to **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
 
@@ -8,10 +8,10 @@ This document covers quick deployment references for **local development**, **pr
 
 ## Production Quick Reference
 
-- **Application ID / Package**: `com.quizverse.app`
-- **Primary HTTPS Domain**: `https://quizverse.app`
-- **App Links URL**: `https://quizverse.app/.well-known/assetlinks.json`
-- **Result Share URL**: `https://quizverse.app/r/{session_id}`
+- **Application ID / Package**: `com.speedquiz.app`
+- **Primary HTTPS Domain**: `https://speedquiz.app`
+- **App Links URL**: `https://speedquiz.app/.well-known/assetlinks.json`
+- **Result Share URL**: `https://speedquiz.app/r/{session_id}`
 - **Master Operational Blueprint**: **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**
 
 ---
@@ -40,7 +40,7 @@ flutter build apk --release \
 # Create upload keystore & key.properties first (see PLAYSTORE_PRODUCTION_GUIDE.md § 2.2)
 cd mobile
 flutter build appbundle --release \
-  --dart-define=API_BASE_URL=https://quizverse.app \
+  --dart-define=API_BASE_URL=https://speedquiz.app \
   --dart-define=GOOGLE_SERVER_CLIENT_ID=<your-web-client-id>.apps.googleusercontent.com
 ```
 
@@ -48,7 +48,7 @@ flutter build appbundle --release \
 
 ## 2. 1,000 CCU Production Architecture & Hosting Options
 
-QuizVerse isolates gameplay from LLM calls (serving questions directly from PostgreSQL and Redis), allowing high throughput (250–500 RPS).
+SpeedQuiz isolates gameplay from LLM calls (serving questions directly from PostgreSQL and Redis), allowing high throughput (250–500 RPS).
 
 ### Three Hosting Categories (See [PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md) for full configs)
 
@@ -63,7 +63,7 @@ QuizVerse isolates gameplay from LLM calls (serving questions directly from Post
 1. **Upload Keystore**: Create `mobile/android/key.properties` and extract SHA-1 / SHA-256 fingerprints.
 2. **Google Cloud Credentials**: Register Web Client ID (`GOOGLE_CLIENT_ID`) and Android Client ID in Google Cloud Console.
 3. **Play Developer API Service Account**: Generate JSON key, invite to Play Console, and set `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` on backend with `BILLING_VERIFY_MODE=apple_google`.
-4. **App Links Fingerprints**: Add SHA-256 certificate fingerprints to `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` so `https://quizverse.app/.well-known/assetlinks.json` verifies successfully.
+4. **App Links Fingerprints**: Add SHA-256 certificate fingerprints to `APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS` so `https://speedquiz.app/.well-known/assetlinks.json` verifies successfully.
 5. **App Bundle Upload**: Upload `mobile/build/app/outputs/bundle/release/app-release.aab` to Play Console Internal Testing track -> Closed Testing -> Production.
 
 ---

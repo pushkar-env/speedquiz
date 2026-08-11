@@ -24,7 +24,7 @@ async def test_stub_verify_grants_premium():
     db.flush = AsyncMock()
 
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "stub"
         settings.is_production = False
         settings.billing_allow_stub_in_production = False
@@ -33,7 +33,7 @@ async def test_stub_verify_grants_premium():
             db,
             user,
             platform="android",
-            product_id="quizverse_premium",
+            product_id="speedquiz_premium",
             purchase_token="tok_abc",
             original_transaction_id="txn_1",
         )
@@ -51,7 +51,7 @@ async def test_stub_verify_idempotent_same_txn():
     existing = SimpleNamespace(
         user_id=user.id,
         status=SubscriptionStatus.EXPIRED,
-        product_id="quizverse_premium",
+        product_id="speedquiz_premium",
         platform="ios",
         entitlements={},
         expires_at=None,
@@ -61,7 +61,7 @@ async def test_stub_verify_idempotent_same_txn():
     db.flush = AsyncMock()
 
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "stub"
         settings.is_production = False
         settings.billing_allow_stub_in_production = False
@@ -70,7 +70,7 @@ async def test_stub_verify_idempotent_same_txn():
             db,
             user,
             platform="ios",
-            product_id="quizverse_premium",
+            product_id="speedquiz_premium",
             purchase_token="tok",
             original_transaction_id="txn_same",
         )
@@ -84,7 +84,7 @@ async def test_stub_verify_idempotent_same_txn():
 async def test_wrong_product_rejected():
     db = MagicMock()
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "stub"
         settings.is_production = False
         with pytest.raises(HTTPException) as exc:
@@ -102,7 +102,7 @@ async def test_wrong_product_rejected():
 async def test_empty_token_rejected():
     db = MagicMock()
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "stub"
         settings.is_production = False
         with pytest.raises(HTTPException) as exc:
@@ -110,7 +110,7 @@ async def test_empty_token_rejected():
                 db,
                 _user(),
                 platform="android",
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="  ",
             )
     assert exc.value.status_code == 400
@@ -120,7 +120,7 @@ async def test_empty_token_rejected():
 async def test_production_stub_refused():
     db = MagicMock()
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "stub"
         settings.is_production = True
         settings.billing_allow_stub_in_production = False
@@ -129,7 +129,7 @@ async def test_production_stub_refused():
                 db,
                 _user(),
                 platform="ios",
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="tok",
             )
     assert exc.value.status_code == 403
@@ -139,7 +139,7 @@ async def test_production_stub_refused():
 async def test_apple_google_mode_missing_creds_503():
     db = MagicMock()
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "apple_google"
         settings.is_production = False
         with patch(
@@ -156,7 +156,7 @@ async def test_apple_google_mode_missing_creds_503():
                     db,
                     _user(),
                     platform="ios",
-                    product_id="quizverse_premium",
+                    product_id="speedquiz_premium",
                     purchase_token="tok",
                 )
     assert exc.value.status_code == 503

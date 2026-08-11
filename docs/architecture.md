@@ -1,4 +1,4 @@
-# QuizVerse Architecture & Scale Specifications
+# SpeedQuiz Architecture & Scale Specifications
 
 > **Single Source of Truth**: For complete 1,000 CCU capacity planning, 3 hosting cost tiers, test build procedures, and Play Store publishing details, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
 

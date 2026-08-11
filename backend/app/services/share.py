@@ -32,7 +32,7 @@ class SharedResultOut(BaseModel):
 
 
 def deep_link_for(session_id: UUID) -> str:
-    return f"quizverse://results/{session_id}"
+    return f"speedquiz://results/{session_id}"
 
 
 def web_url_for(session_id: UUID) -> Optional[str]:
@@ -57,7 +57,7 @@ def build_share_payload(
     web = web_url_for(session_id)
     link_line = web or deep
     text = (
-        f"QUIZVERSE\n\n{topic_name} — {difficulty.upper()} · "
+        f"SPEEDQUIZ\n\n{topic_name} — {difficulty.upper()} · "
         f"{mode.replace('_', ' ')}\n\n"
         f"Score: {score:,}\n"
         f"Accuracy: {accuracy:.0f}%\n"
@@ -101,7 +101,7 @@ async def get_shared_result(db: AsyncSession, session_id: UUID) -> SharedResultO
     topic_name = (
         str(stats.get("topic"))
         if stats.get("topic")
-        else str(summary.get("topic_name") or (topic.name if topic else "QuizVerse"))
+        else str(summary.get("topic_name") or (topic.name if topic else "SpeedQuiz"))
     )
     deep_link = str(share.get("deep_link") or deep_link_for(session.id))
     web_url = share.get("web_url")

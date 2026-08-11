@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/features/custom_topics/data/custom_topics_repository.dart';
-import 'package:quizverse/features/daily/data/daily_repository.dart';
-import 'package:quizverse/features/entitlements/presentation/premium_paywall_sheet.dart';
-import 'package:quizverse/features/leaderboard/data/leaderboard_repository.dart';
-import 'package:quizverse/features/quiz/domain/quiz_models.dart';
-import 'package:quizverse/features/quiz/presentation/quiz_play_controller.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/custom_topics/data/custom_topics_repository.dart';
+import 'package:speedquiz/features/daily/data/daily_repository.dart';
+import 'package:speedquiz/features/entitlements/presentation/premium_paywall_sheet.dart';
+import 'package:speedquiz/features/leaderboard/data/leaderboard_repository.dart';
+import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
+import 'package:speedquiz/features/quiz/presentation/quiz_play_controller.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class QuizPlayScreen extends ConsumerStatefulWidget {
   const QuizPlayScreen({
@@ -90,7 +90,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
                   Text(message, textAlign: TextAlign.center),
                   const SizedBox(height: AppSpacing.md),
                   if (isEntitlementCap) ...[
-                    QvButton(
+                    SqButton(
                       label: 'GO PREMIUM',
                       onPressed: () => showPremiumPaywall(
                         context,
@@ -99,12 +99,12 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    QvGhostButton(
+                    SqGhostButton(
                       label: 'BACK HOME',
                       onPressed: () => context.go('/home'),
                     ),
                   ] else ...[
-                    QvButton(
+                    SqButton(
                       label: 'Back home',
                       onPressed: () => context.go('/home'),
                     ),
@@ -316,9 +316,9 @@ class _QuestionViewState extends State<_QuestionView> {
                 label: feedback.runEnded ? 'Results in' : 'Next question in',
               )
             else if (feedback.runEnded)
-              QvButton(label: 'SEE RESULTS', onPressed: widget.onEnd)
+              SqButton(label: 'SEE RESULTS', onPressed: widget.onEnd)
             else
-              QvButton(label: 'NEXT', onPressed: widget.onNext),
+              SqButton(label: 'NEXT', onPressed: widget.onNext),
             if (!feedback.runEnded)
               TextButton(
                 onPressed: widget.onEnd,

@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/config/app_config.dart';
-import 'package:quizverse/core/network/dio_client.dart';
-import 'package:quizverse/features/entitlements/domain/entitlement_models.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/network/dio_client.dart';
+import 'package:speedquiz/features/entitlements/domain/entitlement_models.dart';
 
 class PurchasePayload {
   const PurchasePayload({

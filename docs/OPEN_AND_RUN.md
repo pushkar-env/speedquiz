@@ -1,4 +1,4 @@
-# QuizVerse — Open & Run (Cheat Sheet)
+# SpeedQuiz — Open & Run (Cheat Sheet)
 
 > **Master Production Blueprint**: For 1,000 CCU capacity planning, 3 hosting cost tiers, test build generation, and Play Store publishing, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
 > Quick release reference: [DEPLOYMENT.md](DEPLOYMENT.md) · VPS hosting: [HOSTING.md](HOSTING.md) · Railway: [RAILWAY.md](RAILWAY.md) · Google Sign-In: [AUTH_GOOGLE.md](AUTH_GOOGLE.md) · Env providers: [ENV_PROVIDERS.md](ENV_PROVIDERS.md).
@@ -23,7 +23,7 @@ flutter pub get
 
 ## Start the Backend (Every Dev Session)
 
-From the **repo root** (`quizverse/`):
+From the **repo root** (`speedquiz/`):
 
 ```bash
 docker compose up --build
@@ -63,12 +63,12 @@ flutter run -d emulator-5554 \
 
 Google setup: [AUTH_GOOGLE.md](AUTH_GOOGLE.md).
 
-If app installation fails after package rename (`com.quizverse.app`):
+If app installation fails after package rename (`com.speedquiz.app`):
 
 ```bash
 # Windows
 %LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe uninstall com.example.mobile
-%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe uninstall com.quizverse.app
+%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe uninstall com.speedquiz.app
 ```
 
 Then `flutter run` again.

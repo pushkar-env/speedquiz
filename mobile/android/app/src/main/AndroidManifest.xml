@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="QuizVerse"
+        android:label="SpeedQuiz"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
@@ -31,7 +31,7 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="quizverse" android:host="results"/>
+                <data android:scheme="speedquiz" android:host="results"/>
             </intent-filter>
             <!-- HTTPS App Links: verified when /.well-known/assetlinks.json is live -->
             <intent-filter android:autoVerify="true">

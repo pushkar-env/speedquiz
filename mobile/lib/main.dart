@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/app.dart';
-import 'package:quizverse/core/theme/theme_mode_provider.dart';
+import 'package:speedquiz/app.dart';
+import 'package:speedquiz/core/theme/theme_mode_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +14,7 @@ Future<void> main() async {
   runApp(
     UncontrolledProviderScope(
       container: container,
-      child: const QuizVerseApp(),
+      child: const SpeedQuizApp(),
     ),
   );
 }

@@ -1,4 +1,4 @@
-# Deploy QuizVerse on Railway
+# Deploy SpeedQuiz on Railway
 
 Railway gives you **HTTPS out of the box** (no Caddy/VPS required). You run **four pieces**:
 
@@ -36,7 +36,7 @@ VPS alternative: [HOSTING.md](HOSTING.md). Env meanings: [ENV_PROVIDERS.md](ENV_
 ## 1. Create a Railway project
 
 1. Dashboard → **New Project**
-2. **Deploy from GitHub** → select the QuizVerse repo  
+2. **Deploy from GitHub** → select the SpeedQuiz repo  
    (or empty project and add services manually)
 
 You will add **Postgres**, **Redis**, then two services from the same repo (`api` + `worker`).
@@ -64,7 +64,7 @@ You will **not** paste that raw into the app as-is — FastAPI needs SQLAlchemy 
 
 ## 4. Create the API service
 
-1. **+ New** → **GitHub Repo** (same QuizVerse repo) — name it **`api`**
+1. **+ New** → **GitHub Repo** (same SpeedQuiz repo) — name it **`api`**
 2. **Settings** → **Build**:
    - **Builder:** Dockerfile
    - **Dockerfile path:** `infrastructure/docker/Dockerfile.api`
@@ -102,7 +102,7 @@ In Railway you can use **variable references** (e.g. `${{Postgres.DATABASE_URL}}
 ### 6.1 Database URLs (required)
 
 Railway’s `DATABASE_URL` is usually `postgresql://…`.  
-QuizVerse needs:
+SpeedQuiz needs:
 
 | Variable | Value |
 |----------|--------|
@@ -151,7 +151,7 @@ If the plugin exposes `REDIS_PRIVATE_URL`, prefer that for api/worker.
 ### 6.3 Core app (required on api + worker)
 
 ```env
-APP_NAME=QuizVerse
+APP_NAME=SpeedQuiz
 APP_ENV=production
 DEBUG=false
 API_PREFIX=/api/v1
@@ -178,8 +178,8 @@ FREE_UNIQUE_QUESTIONS_PER_TOPIC=30
 
 BILLING_VERIFY_MODE=stub
 BILLING_ALLOW_STUB_IN_PRODUCTION=false
-IAP_PREMIUM_PRODUCT_ID=quizverse_premium
-IAP_ANDROID_PACKAGE=com.quizverse.app
+IAP_PREMIUM_PRODUCT_ID=speedquiz_premium
+IAP_ANDROID_PACKAGE=com.speedquiz.app
 
 ANALYTICS_PROVIDER=postgres
 ```
@@ -199,13 +199,13 @@ After Railway generates a domain (or you attach a custom one):
 SHARE_PUBLIC_BASE_URL=https://your-api.up.railway.app
 
 # After custom domain:
-# SHARE_PUBLIC_BASE_URL=https://quizverse.app
+# SHARE_PUBLIC_BASE_URL=https://speedquiz.app
 ```
 
 Also set App Link package (fingerprints later when Play signing exists):
 
 ```env
-APP_LINK_ANDROID_PACKAGE=com.quizverse.app
+APP_LINK_ANDROID_PACKAGE=com.speedquiz.app
 APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS=
 APP_LINK_IOS_APP_ID=
 ```
@@ -220,7 +220,7 @@ GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=
 APPLE_IAP_ISSUER_ID=
 APPLE_IAP_KEY_ID=
 APPLE_IAP_PRIVATE_KEY=
-APPLE_IAP_BUNDLE_ID=com.quizverse.app
+APPLE_IAP_BUNDLE_ID=com.speedquiz.app
 APPLE_IAP_ENVIRONMENT=Production
 SENTRY_DSN=
 ```
@@ -255,14 +255,14 @@ The API **seeds reference data + curated bank on startup** (see `app.main` lifes
 
 ## 8. Custom domain on Railway
 
-1. Buy `quizverse.app` (or your domain).
-2. Railway **api** service → **Settings** → **Networking** → **Custom Domain** → add `quizverse.app` (and/or `www` / `api`).
+1. Buy `speedquiz.app` (or your domain).
+2. Railway **api** service → **Settings** → **Networking** → **Custom Domain** → add `speedquiz.app` (and/or `www` / `api`).
 3. Railway shows the DNS record to create (usually **CNAME** to `….up.railway.app`, or their documented target).
 4. Wait for certificate **Active**.
 5. Update:
 
 ```env
-SHARE_PUBLIC_BASE_URL=https://quizverse.app
+SHARE_PUBLIC_BASE_URL=https://speedquiz.app
 ```
 
 6. Redeploy **api** (so share links / landings use the new base).
@@ -279,7 +279,7 @@ cd mobile
 flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-API.up.railway.app
 
 # Or after custom domain:
-flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
+flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.app
 ```
 
 Install/sideload the APK and test guest login on mobile data.

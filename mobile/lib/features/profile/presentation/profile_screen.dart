@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/core/theme/theme_mode_provider.dart';
-import 'package:quizverse/features/achievements/data/achievements_repository.dart';
-import 'package:quizverse/features/achievements/domain/achievement_models.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/features/entitlements/data/entitlements_repository.dart';
-import 'package:quizverse/features/entitlements/presentation/premium_paywall_sheet.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/core/theme/theme_mode_provider.dart';
+import 'package:speedquiz/features/achievements/data/achievements_repository.dart';
+import 'package:speedquiz/features/achievements/domain/achievement_models.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
+import 'package:speedquiz/features/entitlements/presentation/premium_paywall_sheet.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -101,7 +101,7 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                   if (user?.isGuest == true) ...[
                     const SizedBox(height: AppSpacing.md),
-                    QvButton(
+                    SqButton(
                       label: 'SIGN IN WITH GOOGLE',
                       onPressed: () async {
                         final err = await ref
@@ -120,7 +120,7 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                   ],
                   const SizedBox(height: AppSpacing.lg),
-                  QvXpBar(level: user?.level ?? 1, xp: user?.xp ?? 0),
+                  SqXpBar(level: user?.level ?? 1, xp: user?.xp ?? 0),
                   const SizedBox(height: AppSpacing.md),
                   Row(
                     children: [
@@ -144,7 +144,7 @@ class ProfileScreen extends ConsumerWidget {
             ),
             if (!isPremium) ...[
               const SizedBox(height: AppSpacing.lg),
-              QvSurface(
+              SqSurface(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -160,7 +160,7 @@ class ProfileScreen extends ConsumerWidget {
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    QvButton(
+                    SqButton(
                       label: 'VIEW PREMIUM',
                       onPressed: () => showPremiumPaywall(context),
                     ),
@@ -175,7 +175,7 @@ class ProfileScreen extends ConsumerWidget {
                 }
                 return Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.lg),
-                  child: QvSurface(
+                  child: SqSurface(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -258,7 +258,7 @@ class ProfileScreen extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Center(child: CircularProgressIndicator()),
               ),
-              error: (err, _) => QvSurface(
+              error: (err, _) => SqSurface(
                 child: Text(
                   'Could not load achievements. Pull to retry later.',
                   style: theme.textTheme.bodyMedium,

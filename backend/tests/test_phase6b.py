@@ -52,14 +52,14 @@ def test_entitlements_status_shape():
         settings.free_unique_questions_per_topic = 30
         settings.is_production = False
         settings.entitlements_dev_toggle = False
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         status = entitlements_status(_user())
         assert status["is_premium"] is False
         assert status["enforce_caps"] is True
         assert status["unique_per_topic_limit"] == 30
         assert status["custom_topics_unlimited"] is False
         assert status["dev_toggle_allowed"] is True
-        assert status["premium_product_id"] == "quizverse_premium"
+        assert status["premium_product_id"] == "speedquiz_premium"
 
         prem = entitlements_status(_user(premium=True))
         assert prem["unique_per_topic_limit"] is None
@@ -70,10 +70,10 @@ def test_share_payload_keys():
     """Document expected finalize share_payload contract."""
     session_id = "11111111-1111-1111-1111-111111111111"
     share_payload = {
-        "text": f"QUIZVERSE\n\nSpace — MEDIUM · casual\n\nScore: 1,200\n"
+        "text": f"SPEEDQUIZ\n\nSpace — MEDIUM · casual\n\nScore: 1,200\n"
         f"Accuracy: 80%\nBest Streak: 4\n\nCan you beat me?\n"
-        f"quizverse://results/{session_id}",
-        "deep_link": f"quizverse://results/{session_id}",
+        f"speedquiz://results/{session_id}",
+        "deep_link": f"speedquiz://results/{session_id}",
         "stats": {
             "score": 1200,
             "accuracy": 80.0,
@@ -85,7 +85,7 @@ def test_share_payload_keys():
         },
     }
     assert set(share_payload.keys()) == {"text", "deep_link", "stats"}
-    assert "quizverse://results/" in share_payload["deep_link"]
+    assert "speedquiz://results/" in share_payload["deep_link"]
     assert share_payload["stats"]["score"] == 1200
 
 

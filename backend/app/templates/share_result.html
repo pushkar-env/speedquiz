@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QuizVerse — {{ result.topic_name }}</title>
+  <title>SpeedQuiz — {{ result.topic_name }}</title>
   <meta name="description" content="Score {{ '{:,}'.format(result.final_score) }} on {{ result.topic_name }}" />
   <style>
     :root {
@@ -91,7 +91,7 @@
 </head>
 <body>
   <main>
-    <p class="brand">QUIZVERSE</p>
+    <p class="brand">SPEEDQUIZ</p>
     <h1>{{ "{:,}".format(result.final_score) }}</h1>
     <p class="meta">
       {{ result.topic_name }} · {{ result.difficulty|upper }} · {{ result.mode.replace('_', ' ') }}
@@ -100,12 +100,12 @@
     <div class="row"><span>Best streak</span><strong>{{ result.best_streak }}</strong></div>
     <div class="row"><span>Questions</span><strong>{{ result.questions_answered }}</strong></div>
     <div class="actions">
-      <a class="btn primary" href="{{ result.deep_link }}">Open in QuizVerse</a>
+      <a class="btn primary" href="{{ result.deep_link }}">Open in SpeedQuiz</a>
       {% if result.web_url %}
       <a class="btn ghost" href="{{ result.web_url }}">Share this page</a>
       {% endif %}
     </div>
-    <p class="hint">If the app doesn’t open, install QuizVerse and try the button again.</p>
+    <p class="hint">If the app doesn’t open, install SpeedQuiz and try the button again.</p>
   </main>
 </body>
 </html>

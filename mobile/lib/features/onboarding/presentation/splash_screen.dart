@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -60,7 +60,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   children: [
                     const Spacer(),
                     Text(
-                      'QUIZVERSE',
+                      'SPEEDQUIZ',
                       style: theme.textTheme.displayMedium?.copyWith(
                         color: AppColors.textPrimaryDark,
                         fontWeight: FontWeight.w800,
@@ -106,7 +106,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                         ),
                       ),
                       const SizedBox(height: AppSpacing.md),
-                      QvButton(
+                      SqButton(
                         label: 'Retry as Guest',
                         onPressed: () => ref
                             .read(authControllerProvider.notifier)

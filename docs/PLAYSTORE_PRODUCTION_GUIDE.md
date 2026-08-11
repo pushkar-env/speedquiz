@@ -1,6 +1,6 @@
-# QuizVerse: Master Play Store Release & 1,000 CCU Production Architecture Guide
+# SpeedQuiz: Master Play Store Release & 1,000 CCU Production Architecture Guide
 
-> **Single Source of Truth** for preparing, testing, hardening, hosting, and publishing QuizVerse to the Google Play Store while smoothly handling **at least 1,000 Concurrent Active Users (CCU)**.
+> **Single Source of Truth** for preparing, testing, hardening, hosting, and publishing SpeedQuiz to the Google Play Store while smoothly handling **at least 1,000 Concurrent Active Users (CCU)**.
 
 ---
 
@@ -21,7 +21,7 @@
 ## 1. Executive Summary & 1,000 CCU Concurrency Analysis
 
 ### 1.1 Architecture Advantage
-QuizVerse is engineered for high throughput:
+SpeedQuiz is engineered for high throughput:
 - **Zero In-Game LLM Latency**: Live LLM calls are **never** triggered during active gameplay. All questions are served directly from pre-validated PostgreSQL tables.
 - **Async Workers**: Background worker processes (`workers.main`) generate and top up the question bank asynchronously when topic inventories fall below low watermarks.
 - **Server-Authoritative Gameplay**: Answering questions, calculating speed/streak bonuses, and awarding achievements/XP are executed in lightweight database transactions and cached via Redis.
@@ -72,7 +72,7 @@ Before releasing to the public, you must build and test an interactive **Test Bu
 | **Daily Challenge & Streaks** | Fixed UTC day questions; streak increments on finish. | Backend date logic / system clock test. |
 | **Leaderboards** | Redis ZSET dual-write with PostgreSQL fallback. | Redis service active. |
 | **In-App Purchases (IAP)** | Paywall UI, purchase verification, entitlement grants. | `BILLING_VERIFY_MODE=stub` (or Play License Testers). |
-| **Share Links & App Links** | Result share card, HTML landing `/r/{id}`, deep link `quizverse://results/{id}`. | `SHARE_PUBLIC_BASE_URL` configured. |
+| **Share Links & App Links** | Result share card, HTML landing `/r/{id}`, deep link `speedquiz://results/{id}`. | `SHARE_PUBLIC_BASE_URL` configured. |
 
 ### 2.2 Step 1: Create the Android Keystore (One-Time)
 A signed build is required to test Google Sign-In, App Links, and IAP properly on actual Android devices.
@@ -125,7 +125,7 @@ To test physical Android devices anywhere without deploying a server yet:
 ```bash
 cd mobile
 flutter build appbundle --release \
-  --dart-define=API_BASE_URL=https://quizverse.app \
+  --dart-define=API_BASE_URL=https://speedquiz.app \
   --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
 
@@ -178,22 +178,22 @@ To achieve 1,000 CCU (250–500 RPS), the backend must be optimized across compu
    - Add `A` record: `@` -> `YOUR_OCI_IP` (Proxied).
    - Set SSL/TLS Encryption mode to **Full (strict)**.
 
-4. **Deploy QuizVerse Stack via Docker Compose**:
-   Clone repository to `/opt/quizverse` and set `.env`:
+4. **Deploy SpeedQuiz Stack via Docker Compose**:
+   Clone repository to `/opt/speedquiz` and set `.env`:
    ```env
    APP_ENV=production
    DEBUG=false
-   CORS_ORIGINS=https://quizverse.app
-   POSTGRES_USER=quizverse
+   CORS_ORIGINS=https://speedquiz.app
+   POSTGRES_USER=speedquiz
    POSTGRES_PASSWORD=STRONG_RANDOM_PASSWORD_HERE
-   POSTGRES_DB=quizverse
-   DATABASE_URL=postgresql+asyncpg://quizverse:STRONG_RANDOM_PASSWORD_HERE@postgres:5432/quizverse
-   DATABASE_URL_SYNC=postgresql+psycopg://quizverse:STRONG_RANDOM_PASSWORD_HERE@postgres:5432/quizverse
+   POSTGRES_DB=speedquiz
+   DATABASE_URL=postgresql+asyncpg://speedquiz:STRONG_RANDOM_PASSWORD_HERE@postgres:5432/speedquiz
+   DATABASE_URL_SYNC=postgresql+psycopg://speedquiz:STRONG_RANDOM_PASSWORD_HERE@postgres:5432/speedquiz
    REDIS_URL=redis://redis:6379/0
    JWT_SECRET=GENERATE_64_CHAR_HEX_SECRET
    LLM_PROVIDER=openai
    LLM_API_KEY=sk-proj-YOUR_KEY
-   SHARE_PUBLIC_BASE_URL=https://quizverse.app
+   SHARE_PUBLIC_BASE_URL=https://speedquiz.app
    BILLING_VERIFY_MODE=stub
    ```
 
@@ -263,7 +263,7 @@ services:
 
 ##### 4. Caddy Reverse Proxy Configuration (`infrastructure/Caddyfile`)
 ```caddy
-quizverse.app {
+speedquiz.app {
     encode zstd gzip
 
     # Handle health endpoints directly
@@ -348,21 +348,21 @@ quizverse.app {
 ### Step 1: Play Console App Setup
 1. Log in to [Google Play Console](https://play.google.com/console).
 2. Click **Create app**:
-   - **App name**: QuizVerse
+   - **App name**: SpeedQuiz
    - **Default language**: English (US)
    - **App or game**: Game
    - **Free or paid**: Free
-3. Verify Application ID matches `mobile/android/app/build.gradle`: **`com.quizverse.app`**.
+3. Verify Application ID matches `mobile/android/app/build.gradle`: **`com.speedquiz.app`**.
 
 ### Step 2: Configure Google Cloud OAuth 2.0 & Service Account
 
 #### A. Google Sign-In Credentials
 1. Go to [Google Cloud Credentials](https://console.cloud.google.com/apis/credentials).
 2. Create **OAuth 2.0 Client ID (Web Application)**:
-   - Name: `QuizVerse Web Backend`
+   - Name: `SpeedQuiz Web Backend`
    - Copy Client ID -> Set on server as `GOOGLE_CLIENT_ID` and in Flutter build as `--dart-define=GOOGLE_SERVER_CLIENT_ID=...`.
 3. Create **OAuth 2.0 Client ID (Android)**:
-   - Package Name: `com.quizverse.app`
+   - Package Name: `com.speedquiz.app`
    - SHA-1 Certificate Fingerprint: Paste Upload & Play Signing SHA-1.
 
 #### B. Google Play Developer API Service Account (for Server-Side IAP Verification)
@@ -386,25 +386,25 @@ Google Play require HTTPS App Links for verification.
 2. Copy the **App signing key certificate SHA-256 fingerprint**.
 3. Update server `.env`:
    ```env
-   APP_LINK_ANDROID_PACKAGE=com.quizverse.app
+   APP_LINK_ANDROID_PACKAGE=com.speedquiz.app
    APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS=UPLOAD_CERT_SHA256,PLAY_SIGNING_CERT_SHA256
    ```
 4. Confirm assetlinks works publicly:
    ```bash
-   curl -fsS https://quizverse.app/.well-known/assetlinks.json
+   curl -fsS https://speedquiz.app/.well-known/assetlinks.json
    ```
-   *Expected Response*: JSON array containing target package `com.quizverse.app` and sha256 fingerprints.
+   *Expected Response*: JSON array containing target package `com.speedquiz.app` and sha256 fingerprints.
 
 ### Step 4: Configure In-App Products in Play Console
 1. Play Console -> **Monetize** -> **In-app products**.
 2. Create Product:
-   - **Product ID**: `quizverse_premium` (must match `IAP_PREMIUM_PRODUCT_ID` in `.env`).
-   - **Name**: QuizVerse Premium Lifetime / Pass.
+   - **Product ID**: `speedquiz_premium` (must match `IAP_PREMIUM_PRODUCT_ID` in `.env`).
+   - **Name**: SpeedQuiz Premium Lifetime / Pass.
    - **Price**: Set local pricing (e.g., $4.99).
    - Status: **Active**.
 
 ### Step 5: Complete Mandatory Store Listing Tasks
-1. **Privacy Policy**: Host a privacy policy (e.g., `https://quizverse.app/privacy`) and enter link.
+1. **Privacy Policy**: Host a privacy policy (e.g., `https://speedquiz.app/privacy`) and enter link.
 2. **App Access**: Declare all features are accessible without special restrictions (or provide test account credentials).
 3. **Ads**: Declare whether app contains ads.
 4. **Content Rating**: Complete questionnaire to obtain IARC rating certificate.
@@ -422,7 +422,7 @@ Google Play require HTTPS App Links for verification.
    cd mobile
    flutter pub get
    flutter build appbundle --release \
-     --dart-define=API_BASE_URL=https://quizverse.app \
+     --dart-define=API_BASE_URL=https://speedquiz.app \
      --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
    ```
 3. Artifact generated at: `mobile/build/app/outputs/bundle/release/app-release.aab`.
@@ -453,7 +453,7 @@ export const options = {
   },
 };
 
-const BASE_URL = __ENV.API_BASE_URL || 'https://quizverse.app';
+const BASE_URL = __ENV.API_BASE_URL || 'https://speedquiz.app';
 
 export default function () {
   // 1. Health check
@@ -471,7 +471,7 @@ export default function () {
 
 Run load test:
 ```bash
-k6 run -e API_BASE_URL=https://quizverse.app scripts/load_test_1000_ccu.js
+k6 run -e API_BASE_URL=https://speedquiz.app scripts/load_test_1000_ccu.js
 ```
 
 ### 5.2 Key Metrics Monitoring Dashboard
@@ -494,5 +494,5 @@ k6 run -e API_BASE_URL=https://quizverse.app scripts/load_test_1000_ccu.js
   - Option A ($0/mo): OCI 4-Core ARM VPS + Cloudflare Free.
   - Option B ($10-20/mo): Hetzner / DigitalOcean Dedicated VPS + Docker Compose.
   - Option C ($60-150+/mo): Managed Cloud Run / AWS RDS + Managed Redis.
-- [ ] **Google Play Store**: App ID `com.quizverse.app`, Google Cloud OAuth Web & Android Client IDs, Play Service Account JSON set on server (`BILLING_VERIFY_MODE=apple_google`), Privacy policy & Data Safety completed, signed AAB uploaded to Internal Testing.
+- [ ] **Google Play Store**: App ID `com.speedquiz.app`, Google Cloud OAuth Web & Android Client IDs, Play Service Account JSON set on server (`BILLING_VERIFY_MODE=apple_google`), Privacy policy & Data Safety completed, signed AAB uploaded to Internal Testing.
 - [ ] **Verification**: `assetlinks.json` publicly returns 200 OK, k6 load test succeeds at 1,000 CCU with P95 < 100ms.

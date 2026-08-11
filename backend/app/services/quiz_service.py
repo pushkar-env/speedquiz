@@ -195,7 +195,10 @@ async def _select_questions(
             db, user_id=prefer_unseen_for_user, topic_id=topic_id
         )
 
-    async def _fetch(*, skip_seen: bool, difficulty_bound: bool) -> list[Question]:
+    unseen_rows: list[Question] = []
+    recycled_rows: list[Question] = []
+
+    async def _fetch(*, skip_seen: bool, difficulty_bound: bool, current_collected: set[UUID]) -> list[Question]:
         stmt = (
             select(Question)
             .options(selectinload(Question.options))
@@ -203,35 +206,57 @@ async def _select_questions(
                 Question.topic_id == topic_id,
                 Question.status == QuestionStatus.ACTIVE,
             )
-            .order_by(func.random())
-            .limit(limit * 3)
         )
         if difficulty_bound:
             stmt = stmt.where(Question.difficulty >= low, Question.difficulty <= high)
-        banned = set(exclude_ids)
+        banned = set(exclude_ids) | current_collected
         if skip_seen:
             banned |= seen_by_user
         if banned:
             stmt = stmt.where(Question.id.notin_(banned))
+
+        if skip_seen:
+            stmt = stmt.order_by(func.random())
+        else:
+            stmt = stmt.order_by(Question.times_served.asc(), func.random())
+
+        stmt = stmt.limit(limit * 3)
         return list((await db.execute(stmt)).scalars().all())
 
-    rows = await _fetch(skip_seen=True, difficulty_bound=True)
-    if len(rows) < limit:
-        for q in await _fetch(skip_seen=True, difficulty_bound=False):
-            if q.id not in {r.id for r in rows}:
-                rows.append(q)
-    if not unique_only:
-        if len(rows) < limit:
-            for q in await _fetch(skip_seen=False, difficulty_bound=True):
-                if q.id not in {r.id for r in rows}:
-                    rows.append(q)
-        if len(rows) < limit:
-            for q in await _fetch(skip_seen=False, difficulty_bound=False):
-                if q.id not in {r.id for r in rows}:
-                    rows.append(q)
+    # Phase 1: Unseen questions in exact difficulty range
+    for q in await _fetch(skip_seen=True, difficulty_bound=True, current_collected=set()):
+        if q.id not in {r.id for r in unseen_rows}:
+            unseen_rows.append(q)
 
-    random.shuffle(rows)
-    return rows[:limit]
+    # Phase 2: Unseen questions in any difficulty range for this topic
+    if len(unseen_rows) < limit:
+        collected = {r.id for r in unseen_rows}
+        for q in await _fetch(skip_seen=True, difficulty_bound=False, current_collected=collected):
+            if q.id not in collected:
+                unseen_rows.append(q)
+
+    random.shuffle(unseen_rows)
+
+    # Phase 3: Recycled questions (if unseen items were fewer than limit)
+    if not unique_only and len(unseen_rows) < limit:
+        needed = limit - len(unseen_rows)
+        collected = {r.id for r in unseen_rows}
+        # Recycled in exact difficulty
+        for q in await _fetch(skip_seen=False, difficulty_bound=True, current_collected=collected):
+            if q.id not in collected and q.id not in {r.id for r in recycled_rows}:
+                recycled_rows.append(q)
+
+        # Recycled in any difficulty
+        if len(recycled_rows) < needed:
+            collected |= {r.id for r in recycled_rows}
+            for q in await _fetch(skip_seen=False, difficulty_bound=False, current_collected=collected):
+                if q.id not in collected:
+                    recycled_rows.append(q)
+
+        random.shuffle(recycled_rows)
+
+    return (unseen_rows + recycled_rows)[:limit]
+
 
 
 def _playable_from_quiz_question(
@@ -767,30 +792,6 @@ async def submit_answer(
                         )
                         db.add(next_qq)
                         await db.flush()
-                    else:
-                        # True exhaustion of unused bank items for this session — reuse least-served.
-                        reused = await _select_questions(
-                            db,
-                            topic_id=session.topic_id,
-                            difficulty=session.difficulty,
-                            exclude_ids=set(),
-                            limit=8,
-                            prefer_unseen_for_user=session.user_id,
-                            unique_only=False,
-                        )
-                        if reused:
-                            # Prefer questions not already in this session when possible
-                            unused = [q for q in reused if q.id not in used_ids]
-                            pick = (unused or reused)[0]
-                            next_qq = QuizQuestion(
-                                id=uuid4(),
-                                session_id=session.id,
-                                question_id=pick.id,
-                                sequence_index=session.current_question_index,
-                                option_order=_shuffle_option_order(),
-                            )
-                            db.add(next_qq)
-                            await db.flush()
 
         if next_qq is None and not run_ended:
             await _finalize_session(db, user, session)

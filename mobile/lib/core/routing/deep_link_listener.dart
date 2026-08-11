@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/routing/deep_links.dart';
+import 'package:speedquiz/core/routing/deep_links.dart';
 
 /// Listens for cold-start + runtime deep links and navigates via [router].
 class DeepLinkListener extends StatefulWidget {

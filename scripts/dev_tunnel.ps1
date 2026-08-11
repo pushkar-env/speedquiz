@@ -1,4 +1,4 @@
-# Expose local QuizVerse API on a public HTTPS URL (any device / any network).
+# Expose local SpeedQuiz API on a public HTTPS URL (any device / any network).
 # Requires: Docker Desktop + API already running (`docker compose up`).
 #
 # Usage (from repo root):
@@ -14,5 +14,6 @@ Write-Host "Starting Cloudflare quick tunnel -> http://host.docker.internal:8000
 Write-Host "Leave this window open while testing. Ctrl+C stops the tunnel."
 Write-Host ""
 
-docker rm -f quizverse-tunnel 2>$null | Out-Null
-docker run --name quizverse-tunnel --rm cloudflare/cloudflared:latest tunnel --url http://host.docker.internal:8000
+try { docker rm -f speedquiz-tunnel 2>$null | Out-Null } catch {}
+docker run --name speedquiz-tunnel --rm cloudflare/cloudflared:latest tunnel --url http://host.docker.internal:8000
+

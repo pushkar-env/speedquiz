@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/network/api_errors.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/quiz/data/quiz_repository.dart';
-import 'package:quizverse/features/quiz/domain/quiz_models.dart';
-import 'package:quizverse/features/quiz/presentation/quiz_results_screen.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/quiz/data/quiz_repository.dart';
+import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
+import 'package:speedquiz/features/quiz/presentation/quiz_results_screen.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 /// Owner results: uses in-memory [QuizResult] when present, otherwise fetches.
 class QuizResultsLoaderScreen extends ConsumerWidget {
@@ -45,7 +45,7 @@ class QuizResultsLoaderScreen extends ConsumerWidget {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: AppSpacing.md),
-                QvButton(
+                SqButton(
                   label: 'GO HOME',
                   onPressed: () => context.go('/home'),
                 ),

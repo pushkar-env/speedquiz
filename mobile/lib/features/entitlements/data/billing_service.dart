@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/features/entitlements/data/entitlements_repository.dart';
-import 'package:quizverse/features/entitlements/domain/entitlement_models.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
+import 'package:speedquiz/features/entitlements/domain/entitlement_models.dart';
 
 sealed class BillingState {
   const BillingState();
@@ -46,7 +46,7 @@ class BillingService extends StateNotifier<BillingState> {
   final Ref _ref;
   final InAppPurchase _iap;
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
-  String _productId = 'quizverse_premium';
+  String _productId = 'speedquiz_premium';
   Completer<EntitlementsMe?>? _pendingBuy;
 
   @override

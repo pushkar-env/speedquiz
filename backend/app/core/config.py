@@ -11,17 +11,17 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "QuizVerse"
+    app_name: str = "SpeedQuiz"
     app_env: str = "development"
     debug: bool = True
     api_prefix: str = "/api/v1"
     cors_origins: str = "*"
 
     database_url: str = (
-        "postgresql+asyncpg://quizverse:quizverse_dev_password@localhost:5432/quizverse"
+        "postgresql+asyncpg://speedquiz:speedquiz_dev_password@localhost:5432/speedquiz"
     )
     database_url_sync: str = (
-        "postgresql+psycopg://quizverse:quizverse_dev_password@localhost:5432/quizverse"
+        "postgresql+psycopg://speedquiz:speedquiz_dev_password@localhost:5432/speedquiz"
     )
     redis_url: str = "redis://localhost:6379/0"
 
@@ -62,8 +62,8 @@ class Settings(BaseSettings):
     entitlements_dev_toggle: bool = False
 
     # IAP — stub verify by default; apple_google uses store adapters
-    iap_premium_product_id: str = "quizverse_premium"
-    iap_android_package: str = "com.quizverse.app"
+    iap_premium_product_id: str = "speedquiz_premium"
+    iap_android_package: str = "com.speedquiz.app"
     billing_verify_mode: str = "stub"  # stub | apple_google
     billing_allow_stub_in_production: bool = False
 
@@ -74,16 +74,16 @@ class Settings(BaseSettings):
     apple_iap_issuer_id: str = ""
     apple_iap_key_id: str = ""
     apple_iap_private_key: str = ""  # PEM body; use \n for newlines in .env
-    apple_iap_bundle_id: str = "com.quizverse.app"
+    apple_iap_bundle_id: str = "com.speedquiz.app"
     apple_iap_environment: str = "Sandbox"  # Sandbox | Production
 
     # Public share landing (empty = omit web_url from share text)
     share_public_base_url: str = ""
 
     # HTTPS App Links / Universal Links association (empty = 503 on well-known)
-    app_link_android_package: str = "com.quizverse.app"
+    app_link_android_package: str = "com.speedquiz.app"
     app_link_android_sha256_cert_fingerprints: str = ""
-    app_link_ios_app_id: str = ""  # TEAMID.com.quizverse.app
+    app_link_ios_app_id: str = ""  # TEAMID.com.speedquiz.app
 
     # Analytics: postgres | null
     analytics_provider: str = "postgres"

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/auth/presentation/auth_controller.dart';
-import 'package:quizverse/features/daily/data/daily_repository.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/daily/data/daily_repository.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -71,78 +71,174 @@ class HomeScreen extends ConsumerWidget {
               AppSpacing.xxl,
             ),
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
+              Builder(
+                builder: (context) {
+                  final level = user?.level ?? 1;
+                  final xp = user?.xp ?? 0;
+                  final threshold = level < 1 ? 500 : level * 500;
+                  final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
+                  final initial = (user?.username.isNotEmpty ?? false)
+                      ? user!.username[0].toUpperCase()
+                      : 'S';
+                  final displayName = user?.displayName ?? user?.username ?? 'Player';
+                  final streak = user?.dailyStreak ?? user?.currentStreak ?? 0;
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.accent.withValues(alpha: 0.35),
-                          AppColors.accent.withValues(alpha: 0.08),
-                        ],
-                      ),
+                      color: dark
+                          ? AppColors.surfaceDark.withValues(alpha: 0.65)
+                          : Colors.white.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: AppColors.accent.withValues(alpha: 0.35),
+                        color: dark
+                            ? Colors.white.withValues(alpha: 0.08)
+                            : AppColors.borderLight,
                       ),
-                    ),
-                    child: Text(
-                      (user?.username.isNotEmpty ?? false)
-                          ? user!.username[0].toUpperCase()
-                          : 'Q',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          user?.displayName ?? user?.username ?? 'Player',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        QvXpBar(
-                          level: user?.level ?? 1,
-                          xp: user?.xp ?? 0,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: dark ? 0.25 : 0.05),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [AppColors.accent, Color(0xFF00B4D8)],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accent.withValues(alpha: 0.35),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            initial,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: const Color(0xFF0D1B2A),
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -0.2,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accent.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: AppColors.accent.withValues(alpha: 0.3),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'LVL $level',
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: AppColors.accent,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(999),
+                                      child: LinearProgressIndicator(
+                                        value: progress,
+                                        minHeight: 4,
+                                        backgroundColor: (dark ? Colors.white : Colors.black)
+                                            .withValues(alpha: 0.08),
+                                        color: AppColors.accent,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '$xp/$threshold XP',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.warning.withValues(alpha: 0.25),
+                                AppColors.warning.withValues(alpha: 0.1),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppColors.warning.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('🔥', style: TextStyle(fontSize: 13)),
+                              const SizedBox(width: 4),
+                              Text(
+                                '$streak',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: AppColors.warning,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(AppRadii.pill),
-                      border: Border.all(
-                        color: AppColors.warning.withValues(alpha: 0.28),
-                      ),
-                    ),
-                    child: Text(
-                      '🔥 ${user?.dailyStreak ?? user?.currentStreak ?? 0}',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: AppColors.warning,
-                      ),
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
               const SizedBox(height: AppSpacing.xl),
               Text(
-                'QUIZVERSE',
+                'SPEEDQUIZ',
                 style: theme.textTheme.displaySmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   letterSpacing: -1.4,
@@ -162,7 +258,7 @@ class HomeScreen extends ConsumerWidget {
               _PlayHero(onPlay: () => context.push('/quiz/setup')),
               const SizedBox(height: AppSpacing.lg),
               dailyAsync.when(
-                loading: () => QvSurface(
+                loading: () => SqSurface(
                   child: Row(
                     children: [
                       Container(
@@ -194,7 +290,7 @@ class HomeScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
-                error: (_, _) => QvSurface(
+                error: (_, _) => SqSurface(
                   onTap: () => ref.invalidate(dailyChallengeProvider),
                   child: Row(
                     children: [
@@ -239,7 +335,7 @@ class HomeScreen extends ConsumerWidget {
                       : daily.isInProgress
                           ? 'Resume · ${daily.topicName}'
                           : '${daily.topicName} · ${daily.questionCount} Qs';
-                  return QvSurface(
+                  return SqSurface(
                     onTap: () => _openDaily(context, ref),
                     child: Row(
                       children: [
@@ -283,7 +379,7 @@ class HomeScreen extends ConsumerWidget {
                 },
               ),
               const SizedBox(height: AppSpacing.xl),
-              const QvSectionHeader(
+              const SqSectionHeader(
                 title: 'Topics',
                 subtitle: 'Jump straight into a challenge',
               ),
@@ -301,7 +397,7 @@ class HomeScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
-              QvSurface(
+              SqSurface(
                 onTap: () => context.push('/custom-topic'),
                 child: Row(
                   children: [
@@ -424,7 +520,7 @@ class _PlayHeroState extends State<_PlayHero>
                 ),
           ),
           const SizedBox(height: AppSpacing.md),
-          QvButton(label: 'PLAY', onPressed: widget.onPlay),
+          SqButton(label: 'PLAY', onPressed: widget.onPlay),
         ],
       ),
     );

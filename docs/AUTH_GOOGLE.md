@@ -1,6 +1,6 @@
 # Google Sign-In setup
 
-QuizVerse uses **Google ID tokens**: the Flutter app signs in with Google, then `POST /api/v1/auth/google` verifies the token and returns QuizVerse JWTs. Guests are **upgraded in place** (progress kept) when a Bearer guest token is present.
+SpeedQuiz uses **Google ID tokens**: the Flutter app signs in with Google, then `POST /api/v1/auth/google` verifies the token and returns SpeedQuiz JWTs. Guests are **upgraded in place** (progress kept) when a Bearer guest token is present.
 
 ## 1. Google Cloud Console
 
@@ -10,7 +10,7 @@ QuizVerse uses **Google ID tokens**: the Flutter app signs in with Google, then 
    - **Web application** (required) — this ID is both:
      - `GOOGLE_CLIENT_ID` on the API (token `aud` check)
      - Flutter `--dart-define=GOOGLE_SERVER_CLIENT_ID=...` (`serverClientId`)
-   - **Android** — Application id `com.quizverse.app`, SHA-1 of your keystore (debug for local, upload for Play).
+   - **Android** — Application id `com.speedquiz.app`, SHA-1 of your keystore (debug for local, upload for Play).
 
 ### Debug SHA-1 (Windows)
 
@@ -66,7 +66,7 @@ Response: same `TokenResponse` as email login (`access_token`, `refresh_token`, 
 
 ## 6. iOS (later)
 
-Create an **iOS** OAuth client (bundle `com.quizverse.app`) and follow [google_sign_in iOS setup](https://pub.dev/packages/google_sign_in). Android-first is enough for the first Play launch.
+Create an **iOS** OAuth client (bundle `com.speedquiz.app`) and follow [google_sign_in iOS setup](https://pub.dev/packages/google_sign_in). Android-first is enough for the first Play launch.
 
 ## Troubleshooting
 

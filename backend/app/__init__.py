@@ -1,3 +1,3 @@
-"""QuizVerse FastAPI application package."""
+"""SpeedQuiz FastAPI application package."""
 
 __version__ = "0.1.0"

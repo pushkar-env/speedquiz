@@ -53,10 +53,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.quizverse.app</string>
+			<string>com.speedquiz.app</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>quizverse</string>
+				<string>speedquiz</string>
 			</array>
 		</dict>
 	</array>

@@ -33,11 +33,11 @@ def _jws(payload: dict) -> str:
 
 def _apple_settings(**overrides):
     base = SimpleNamespace(
-        iap_premium_product_id="quizverse_premium",
+        iap_premium_product_id="speedquiz_premium",
         apple_iap_issuer_id="issuer",
         apple_iap_key_id="key",
         apple_iap_private_key="-----BEGIN PRIVATE KEY-----\nX\n-----END PRIVATE KEY-----",
-        apple_iap_bundle_id="com.quizverse.app",
+        apple_iap_bundle_id="com.speedquiz.app",
         apple_iap_environment="Sandbox",
     )
     for key, value in overrides.items():
@@ -47,9 +47,9 @@ def _apple_settings(**overrides):
 
 def _google_settings(**overrides):
     base = SimpleNamespace(
-        iap_premium_product_id="quizverse_premium",
-        iap_android_package="com.quizverse.app",
-        app_link_android_package="com.quizverse.app",
+        iap_premium_product_id="speedquiz_premium",
+        iap_android_package="com.speedquiz.app",
+        app_link_android_package="com.speedquiz.app",
         google_play_service_account_json='{"type":"service_account","client_email":"a@b.c"}',
     )
     for key, value in overrides.items():
@@ -59,12 +59,12 @@ def _google_settings(**overrides):
 
 def test_decode_signed_transaction():
     payload = {
-        "productId": "quizverse_premium",
+        "productId": "speedquiz_premium",
         "originalTransactionId": "txn_apple_1",
-        "bundleId": "com.quizverse.app",
+        "bundleId": "com.speedquiz.app",
     }
     decoded = decode_signed_transaction(_jws(payload))
-    assert decoded["productId"] == "quizverse_premium"
+    assert decoded["productId"] == "speedquiz_premium"
     assert decoded["originalTransactionId"] == "txn_apple_1"
 
 
@@ -77,7 +77,7 @@ async def test_apple_missing_creds_503():
     )):
         with pytest.raises(HTTPException) as exc:
             await verify_apple_purchase(
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="txn",
             )
     assert exc.value.status_code == 503
@@ -87,10 +87,10 @@ async def test_apple_missing_creds_503():
 async def test_apple_verify_success():
     signed = _jws(
         {
-            "productId": "quizverse_premium",
+            "productId": "speedquiz_premium",
             "originalTransactionId": "orig_1",
             "transactionId": "txn_1",
-            "bundleId": "com.quizverse.app",
+            "bundleId": "com.speedquiz.app",
         }
     )
     response = httpx.Response(
@@ -106,13 +106,13 @@ async def test_apple_verify_success():
         patch("app.payments.store_apple.build_app_store_token", return_value="jwt"),
     ):
         verified = await verify_apple_purchase(
-            product_id="quizverse_premium",
+            product_id="speedquiz_premium",
             purchase_token="txn_1",
             client=client,
         )
 
     assert isinstance(verified, VerifiedPurchase)
-    assert verified.product_id == "quizverse_premium"
+    assert verified.product_id == "speedquiz_premium"
     assert verified.original_transaction_id == "orig_1"
 
 
@@ -122,7 +122,7 @@ async def test_apple_wrong_product_400():
         {
             "productId": "other_sku",
             "originalTransactionId": "orig_1",
-            "bundleId": "com.quizverse.app",
+            "bundleId": "com.speedquiz.app",
         }
     )
     response = httpx.Response(
@@ -139,7 +139,7 @@ async def test_apple_wrong_product_400():
     ):
         with pytest.raises(HTTPException) as exc:
             await verify_apple_purchase(
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="txn_1",
                 client=client,
             )
@@ -154,7 +154,7 @@ async def test_google_missing_creds_503():
     ):
         with pytest.raises(HTTPException) as exc:
             await verify_google_purchase(
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="tok",
             )
     assert exc.value.status_code == 503
@@ -175,14 +175,14 @@ async def test_google_verify_success():
         return_value=_google_settings(),
     ):
         verified = await verify_google_purchase(
-            product_id="quizverse_premium",
+            product_id="speedquiz_premium",
             purchase_token="play_token",
             client=client,
             access_token="ya29.test",
         )
 
     assert verified.original_transaction_id == "GPA.1234"
-    assert verified.product_id == "quizverse_premium"
+    assert verified.product_id == "speedquiz_premium"
 
 
 @pytest.mark.asyncio
@@ -201,7 +201,7 @@ async def test_google_canceled_402():
     ):
         with pytest.raises(HTTPException) as exc:
             await verify_google_purchase(
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="play_token",
                 client=client,
                 access_token="ya29.test",
@@ -213,7 +213,7 @@ async def test_google_canceled_402():
 async def test_billing_apple_google_missing_creds_503():
     db = MagicMock()
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "apple_google"
         settings.is_production = False
         with patch(
@@ -230,7 +230,7 @@ async def test_billing_apple_google_missing_creds_503():
                     db,
                     _user(),
                     platform="ios",
-                    product_id="quizverse_premium",
+                    product_id="speedquiz_premium",
                     purchase_token="tok",
                 )
     assert exc.value.status_code == 503
@@ -245,13 +245,13 @@ async def test_billing_apple_google_grants_on_verified():
     db.flush = AsyncMock()
 
     verified = VerifiedPurchase(
-        product_id="quizverse_premium",
+        product_id="speedquiz_premium",
         original_transaction_id="store_txn_9",
         expires_at=None,
     )
 
     with patch("app.payments.billing.settings") as settings:
-        settings.iap_premium_product_id = "quizverse_premium"
+        settings.iap_premium_product_id = "speedquiz_premium"
         settings.billing_verify_mode = "apple_google"
         settings.is_production = False
         with patch(
@@ -262,7 +262,7 @@ async def test_billing_apple_google_grants_on_verified():
                 db,
                 user,
                 platform="android",
-                product_id="quizverse_premium",
+                product_id="speedquiz_premium",
                 purchase_token="play_tok",
             )
 

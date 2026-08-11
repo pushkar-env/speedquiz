@@ -2,10 +2,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/network/api_errors.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/custom_topics/data/custom_topics_repository.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/custom_topics/data/custom_topics_repository.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 
 class CustomTopicScreen extends ConsumerStatefulWidget {
   const CustomTopicScreen({super.key});
@@ -268,7 +268,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                 AppSpacing.lg,
                 AppSpacing.md,
               ),
-              child: QvButton(label: 'CREATE QUIZ', onPressed: _create),
+              child: SqButton(label: 'CREATE QUIZ', onPressed: _create),
             ),
           ),
         ],

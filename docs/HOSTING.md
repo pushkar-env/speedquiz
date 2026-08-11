@@ -1,20 +1,20 @@
-# Hosting QuizVerse API on a Real Domain
+# Hosting SpeedQuiz API on a Real Domain
 
 > **Master Blueprint**: For complete 1,000 CCU capacity planning, 3 hosting cost tiers ($0 No-Cost, $10–$20 Low-Cost, $60–$150+ Enterprise), and Google Play publishing steps, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.
 
-This document details hosting the QuizVerse backend API on an Ubuntu VPS with Docker Compose and Caddy.
+This document details hosting the SpeedQuiz backend API on an Ubuntu VPS with Docker Compose and Caddy.
 
 ---
 
 ## 1. Stack Architecture for 1,000 CCU
 
-QuizVerse handles **1,000 Concurrent Active Users (250–500 RPS)** easily because live gameplay APIs read validated questions directly from PostgreSQL and Redis without live LLM calls.
+SpeedQuiz handles **1,000 Concurrent Active Users (250–500 RPS)** easily because live gameplay APIs read validated questions directly from PostgreSQL and Redis without live LLM calls.
 
 ```text
 Phone / Play Build
         │  HTTPS
         ▼
-quizverse.app (Caddy Proxy :443)
+speedquiz.app (Caddy Proxy :443)
         │  HTTP Internal
         ▼
 api :8000 (4 Uvicorn Workers)  ──►  PostgreSQL 16 (Tuned Pool) + Redis 7
@@ -55,7 +55,7 @@ In `.env` or database configuration:
 ### C. Reverse Proxy Optimization (`infrastructure/Caddyfile`)
 Enable gzip/zstd compression and keep-alive connection pooling:
 ```caddy
-quizverse.app {
+speedquiz.app {
     encode zstd gzip
 
     handle /api/* {
@@ -79,8 +79,8 @@ quizverse.app {
 
 ```bash
 # Clone repo & create production .env
-git clone https://github.com/YOUR_USER/quizverse.git /opt/quizverse
-cd /opt/quizverse
+git clone https://github.com/YOUR_USER/speedquiz.git /opt/speedquiz
+cd /opt/speedquiz
 cp .env.example .env
 
 # Start production stack with Caddy HTTPS
@@ -91,7 +91,7 @@ docker compose \
   up --build -d
 
 # Verify API health
-curl -fsS https://quizverse.app/health
+curl -fsS https://speedquiz.app/health
 ```
 
 For full setup procedures, see **[PLAYSTORE_PRODUCTION_GUIDE.md](PLAYSTORE_PRODUCTION_GUIDE.md)**.

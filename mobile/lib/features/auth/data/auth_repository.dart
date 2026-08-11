@@ -1,9 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/config/app_config.dart';
-import 'package:quizverse/core/network/dio_client.dart';
-import 'package:quizverse/features/auth/data/auth_token_store.dart';
-import 'package:quizverse/features/auth/domain/auth_models.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/network/dio_client.dart';
+import 'package:speedquiz/features/auth/data/auth_token_store.dart';
+import 'package:speedquiz/features/auth/domain/auth_models.dart';
 
 class AuthRepository {
   AuthRepository(this._dio, this._tokenStore);

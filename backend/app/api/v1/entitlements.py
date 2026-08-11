@@ -17,7 +17,7 @@ class EntitlementsMeOut(BaseModel):
     unique_per_topic_limit: int | None = None
     custom_topics_unlimited: bool
     dev_toggle_allowed: bool
-    premium_product_id: str = "quizverse_premium"
+    premium_product_id: str = "speedquiz_premium"
 
 
 class DevPremiumRequest(BaseModel):

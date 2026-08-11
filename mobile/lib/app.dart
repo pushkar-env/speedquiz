@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/routing/app_router.dart';
-import 'package:quizverse/core/routing/deep_link_listener.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/core/theme/theme_mode_provider.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/routing/deep_link_listener.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/core/theme/theme_mode_provider.dart';
 
-class QuizVerseApp extends ConsumerWidget {
-  const QuizVerseApp({super.key});
+class SpeedQuizApp extends ConsumerWidget {
+  const SpeedQuizApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -16,7 +16,7 @@ class QuizVerseApp extends ConsumerWidget {
     return DeepLinkListener(
       router: router,
       child: MaterialApp.router(
-        title: 'QuizVerse',
+        title: 'SpeedQuiz',
         debugShowCheckedModeBanner: false,
         themeMode: themeMode,
         theme: AppTheme.light(),

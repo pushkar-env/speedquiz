@@ -1,6 +1,6 @@
-# QuizVerse mobile (Flutter)
+# SpeedQuiz mobile (Flutter)
 
-Application id / bundle id: **`com.quizverse.app`**
+Application id / bundle id: **`com.speedquiz.app`**
 
 ## Local run (Android)
 
@@ -22,7 +22,7 @@ Override: `flutter run --dart-define=API_BASE_URL=http://<host>:8000`
 2. Build:
 
 ```bash
-flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
+flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.app
 ```
 
 3. Upload `build/app/outputs/bundle/release/app-release.aab` in Play Console.

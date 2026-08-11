@@ -1,4 +1,4 @@
-# QuizVerse
+# SpeedQuiz
 
 Production-grade AI-powered quiz game for Android and iOS.
 
@@ -74,13 +74,13 @@ Point the app at your machine:
 
 - Android emulator: `http://10.0.2.2:8000`
 - Physical device (any network): public HTTPS tunnel — see [docs/OPEN_AND_RUN.md](docs/OPEN_AND_RUN.md) (`scripts/dev_tunnel.ps1`)
-- Production / Play: `--dart-define=API_BASE_URL=https://quizverse.app`
+- Production / Play: `--dart-define=API_BASE_URL=https://speedquiz.app`
 
 Play Store App Bundle:
 
 ```bash
 # After creating mobile/android/key.properties from key.properties.example
-flutter build appbundle --release --dart-define=API_BASE_URL=https://quizverse.app
+flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.app
 ```
 
 ### Backend tests
@@ -107,7 +107,7 @@ pytest
 12. **Phase 7c** — HTTPS share landing foundation ✅
 13. **Phase 8a** — App Links / Universal Links foundation ✅
 14. **Phase 8b** — Store verification adapters (Apple/Google) ✅
-15. **Phase 8c** — Production app identity (`com.quizverse.app`) ✅
+15. **Phase 8c** — Production app identity (`com.speedquiz.app`) ✅
 16. **Phase 8d** — Android release readiness + deployment docs ✅
 17. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
@@ -125,8 +125,8 @@ See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.m
 - **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
 - **Auth:** guest bootstrap; Profile **Sign in with Google** (`POST /auth/google`) — see [docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)
 - **IAP:** `POST /api/v1/entitlements/purchases/verify` (`stub` default; `apple_google` with `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Flutter store buy/restore when products exist
-- **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `quizverse://` + optional `SHARE_PUBLIC_BASE_URL`
-- **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.quizverse.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready
+- **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `speedquiz://` + optional `SHARE_PUBLIC_BASE_URL`
+- **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.speedquiz.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready
 
 
 ## Question bank (endless unique)

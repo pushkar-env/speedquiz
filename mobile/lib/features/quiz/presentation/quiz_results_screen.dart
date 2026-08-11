@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:quizverse/core/theme/app_theme.dart';
-import 'package:quizverse/features/quiz/domain/quiz_models.dart';
-import 'package:quizverse/shared/widgets/qv_button.dart';
+import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
+import 'package:speedquiz/shared/widgets/sq_button.dart';
 import 'package:share_plus/share_plus.dart';
 
 class QuizResultsScreen extends StatefulWidget {
@@ -44,7 +44,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
     final result = widget.result;
     final text = result.shareText.isNotEmpty
         ? result.shareText
-        : 'QUIZVERSE\n\n${result.topicName}\n'
+        : 'SPEEDQUIZ\n\n${result.topicName}\n'
             'Score: ${formatScore(result.finalScore)}\n'
             'Accuracy: ${result.accuracy.toStringAsFixed(0)}%\n'
             'Best Streak: ${result.bestStreak}';
@@ -101,7 +101,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                   Expanded(
                     child: ListView(
                       children: [
-                        QvSurface(
+                        SqSurface(
                           child: Column(
                             children: [
                               _StatRow(
@@ -191,12 +191,12 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                       ],
                     ),
                   ),
-                  QvButton(
+                  SqButton(
                     label: 'PLAY AGAIN',
                     onPressed: () => context.go('/quiz/setup'),
                   ),
                   const SizedBox(height: 10),
-                  QvGhostButton(
+                  SqGhostButton(
                     label: 'SHARE RESULT',
                     onPressed: _shareResult,
                   ),

@@ -7,7 +7,7 @@ class EntitlementsMe extends Equatable {
     required this.customTopicsUnlimited,
     required this.devToggleAllowed,
     this.uniquePerTopicLimit,
-    this.premiumProductId = 'quizverse_premium',
+    this.premiumProductId = 'speedquiz_premium',
   });
 
   final bool isPremium;
@@ -25,7 +25,7 @@ class EntitlementsMe extends Equatable {
       customTopicsUnlimited: json['custom_topics_unlimited'] as bool? ?? true,
       devToggleAllowed: json['dev_toggle_allowed'] as bool? ?? false,
       premiumProductId:
-          json['premium_product_id'] as String? ?? 'quizverse_premium',
+          json['premium_product_id'] as String? ?? 'speedquiz_premium',
     );
   }
 

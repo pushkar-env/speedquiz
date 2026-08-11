@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/network/api_errors.dart';
-import 'package:quizverse/features/quiz/data/quiz_repository.dart';
-import 'package:quizverse/features/quiz/domain/quiz_models.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
+import 'package:speedquiz/features/quiz/data/quiz_repository.dart';
+import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
 
 sealed class QuizPlayState {
   const QuizPlayState();

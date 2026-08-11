@@ -1,9 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:quizverse/core/config/app_config.dart';
-import 'package:quizverse/core/network/dio_client.dart';
-import 'package:quizverse/features/daily/domain/daily_models.dart';
-import 'package:quizverse/features/quiz/domain/quiz_models.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/network/dio_client.dart';
+import 'package:speedquiz/features/daily/domain/daily_models.dart';
+import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
 
 class DailyRepository {
   DailyRepository(this._dio);

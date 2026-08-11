@@ -1,7 +1,7 @@
 # Suggested first commit message
 
 ```
-Initial QuizVerse monorepo: Phases 1–4 plus endless bank top-ups.
+Initial SpeedQuiz monorepo: Phases 1–4 plus endless bank top-ups.
 
 Flutter game client, FastAPI/Postgres/Redis stack, AI generation pipeline,
 custom topics, Teach Me, and watermark-based unique question growth.
@@ -15,7 +15,7 @@ custom topics, Teach Me, and watermark-based unique question growth.
 ```bash
 git add -A
 git status
-git commit -m "Initial QuizVerse monorepo: Phases 1–4 plus endless bank top-ups."
+git commit -m "Initial SpeedQuiz monorepo: Phases 1–4 plus endless bank top-ups."
 ```
 
 Do not force-add `.env`. Use `.env.example` for shared config templates.
