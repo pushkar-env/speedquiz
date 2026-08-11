@@ -64,13 +64,15 @@ class AuthUser extends Equatable {
     int? dailyStreak,
     int? bestStreak,
     bool? isPremium,
+    String? displayName,
+    String? avatarId,
   }) {
     return AuthUser(
       id: id,
       email: email,
       username: username,
-      displayName: displayName,
-      avatarId: avatarId,
+      displayName: displayName ?? this.displayName,
+      avatarId: avatarId ?? this.avatarId,
       isGuest: isGuest,
       isPremium: isPremium ?? this.isPremium,
       level: level ?? this.level,
@@ -84,8 +86,24 @@ class AuthUser extends Equatable {
     );
   }
 
+  /// Name shown in the UI: the chosen display name, else the generated one.
+  String get name => displayName?.trim().isNotEmpty == true
+      ? displayName!.trim()
+      : username;
+
   @override
-  List<Object?> get props => [id, username, level, xp, currentStreak, dailyStreak];
+  List<Object?> get props => [
+        id,
+        username,
+        displayName,
+        avatarId,
+        level,
+        xp,
+        coins,
+        isPremium,
+        currentStreak,
+        dailyStreak,
+      ];
 }
 
 class AuthSession extends Equatable {

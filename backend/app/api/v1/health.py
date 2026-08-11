@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
 from app.core.config import get_settings
@@ -22,9 +22,8 @@ async def health() -> HealthResponse:
 
 
 @router.get("/ready", response_model=ReadyResponse)
-async def ready() -> ReadyResponse:
+async def ready(response: Response) -> ReadyResponse:
     db_ok = False
-    redis_ok = False
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
@@ -32,14 +31,16 @@ async def ready() -> ReadyResponse:
     except Exception:
         db_ok = False
 
-    try:
-        redis_ok = await redis_ping()
-    except Exception:
-        redis_ok = False
+    redis_ok = await redis_ping()
+    healthy = db_ok and redis_ok
 
-    status = "ready" if db_ok and redis_ok else "degraded"
+    # Readiness has to be machine-readable: a 200 tells the platform to keep
+    # sending traffic to an instance that cannot reach its database.
+    if not healthy:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
     return ReadyResponse(
-        status=status,
+        status="ready" if healthy else "degraded",
         database=db_ok,
         redis=redis_ok,
         timestamp=datetime.now(timezone.utc),

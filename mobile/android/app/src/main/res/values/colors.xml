@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Must match AppColors.backgroundLight / backgroundDarkBottom in
+         lib/core/theme/app_theme.dart so the native launch window hands off
+         to the Flutter UI without a colour flash. -->
+    <color name="sq_launch_background">#FFF4F7FA</color>
+    <color name="sq_launch_background_dark">#FF070A11</color>
+</resources>

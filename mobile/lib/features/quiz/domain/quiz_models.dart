@@ -318,6 +318,31 @@ class QuizResult extends Equatable {
   List<Object?> get props => [sessionId, finalScore, newAchievements.length];
 }
 
+/// What the results screen needs beyond the result itself: enough to restart
+/// the exact same run, and whether the run pushed the player up a level.
+///
+/// The results route also accepts a bare [QuizResult] (deep links and cold
+/// starts), in which case replay falls back to the setup screen.
+class QuizResultArgs {
+  const QuizResultArgs({
+    required this.result,
+    this.topicId,
+    this.mode,
+    this.difficulty,
+    this.adaptive = false,
+    this.leveledUp = false,
+  });
+
+  final QuizResult result;
+  final String? topicId;
+  final String? mode;
+  final String? difficulty;
+  final bool adaptive;
+  final bool leveledUp;
+
+  bool get canReplay => topicId != null;
+}
+
 class AchievementUnlock extends Equatable {
   const AchievementUnlock({
     required this.id,

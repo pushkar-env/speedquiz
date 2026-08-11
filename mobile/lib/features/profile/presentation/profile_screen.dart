@@ -1,451 +1,191 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
-import 'package:speedquiz/core/theme/theme_mode_provider.dart';
 import 'package:speedquiz/features/achievements/data/achievements_repository.dart';
-import 'package:speedquiz/features/achievements/domain/achievement_models.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
-import 'package:speedquiz/features/entitlements/presentation/premium_paywall_sheet.dart';
-import 'package:speedquiz/shared/widgets/sq_button.dart';
+import 'package:speedquiz/features/profile/presentation/widgets/profile_widgets.dart';
+import 'package:speedquiz/features/shell/presentation/main_shell.dart';
+import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
+/// Profile hub. Details, achievements and premium each live on their own
+/// screen — this page is the identity summary plus the way into them.
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authControllerProvider);
-    final themeMode = ref.watch(themeModeProvider);
-    final user = auth is AuthAuthenticated ? auth.user : null;
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
+    final p = theme.sq;
+    final user = ref.watch(currentUserProvider);
     final achievementsAsync = ref.watch(achievementsProvider);
     final entitlementsAsync = ref.watch(entitlementsProvider);
-    final dailyStreak = user?.dailyStreak ?? user?.currentStreak ?? 0;
     final isPremium =
         entitlementsAsync.valueOrNull?.isPremium ?? user?.isPremium ?? false;
 
+    final unlocked = achievementsAsync.valueOrNull?.unlockedCount;
+    final totalAchievements = achievementsAsync.valueOrNull?.total;
+
     return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          children: [
-            Text(
-              'Profile',
-              style: theme.textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w800,
+      backgroundColor: Colors.transparent,
+      body: SqBackdrop(
+        intensity: 0.5,
+        child: SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            color: p.accent,
+            backgroundColor: p.surfaceElevated,
+            onRefresh: () async {
+              ref.invalidate(achievementsProvider);
+              ref.invalidate(entitlementsProvider);
+              await ref.read(authControllerProvider.notifier).refreshMe();
+            },
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                MainShell.contentBottomPadding(context),
               ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadii.lg),
-                gradient: dark
-                    ? const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF163028), Color(0xFF101822)],
-                      )
-                    : null,
-                color: dark ? null : AppColors.surfaceLight,
-                border: Border.all(
-                  color: dark
-                      ? AppColors.accent.withValues(alpha: 0.22)
-                      : AppColors.borderLight,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.accent.withValues(alpha: 0.16),
-                      border: Border.all(
-                        color: AppColors.accent.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(
-                      (user?.username.isNotEmpty ?? false)
-                          ? user!.username[0].toUpperCase()
-                          : 'Q',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    user?.username ?? 'Guest',
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: dark ? AppColors.textPrimaryDark : null,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _PlanBadge(isPremium: isPremium),
-                  const SizedBox(height: 4),
-                  Text(
-                    user?.isGuest == true
-                        ? 'Guest · progress saved & upgradable'
-                        : (user?.email ?? ''),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: dark ? AppColors.textSecondaryDark : null,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  if (user?.isGuest == true) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    SqButton(
-                      label: 'SIGN IN WITH GOOGLE',
-                      onPressed: () async {
-                        final err = await ref
-                            .read(authControllerProvider.notifier)
-                            .signInWithGoogle();
-                        if (!context.mounted) return;
-                        if (err == 'cancelled') return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              err ?? 'Signed in with Google',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                  const SizedBox(height: AppSpacing.lg),
-                  SqXpBar(level: user?.level ?? 1, xp: user?.xp ?? 0),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
+              children: [
+                SqStagger(
+                  child: Row(
                     children: [
                       Expanded(
-                        child: _Metric(
+                        child: Text(
+                          'Profile',
+                          style: theme.textTheme.displaySmall,
+                        ),
+                      ),
+                      SqIconButton(
+                        icon: Icons.settings_outlined,
+                        tooltip: 'Settings',
+                        onPressed: () => context.push(Routes.settings),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                SqStagger(
+                  index: 1,
+                  child: ProfileIdentityCard(
+                    user: user,
+                    isPremium: isPremium,
+                    onTap: () => context.push(Routes.profileEdit),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SqStagger(
+                  index: 2,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ProfileMetric(
                           label: 'Coins',
                           value: '${user?.coins ?? 0}',
+                          glyph: '🪙',
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: _Metric(
+                        child: ProfileMetric(
                           label: 'Daily streak',
-                          value: '$dailyStreak',
+                          value:
+                              '${user?.dailyStreak ?? user?.currentStreak ?? 0}',
+                          glyph: '🔥',
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ProfileMetric(
+                          label: 'Best streak',
+                          value: '${user?.bestStreak ?? 0}',
+                          glyph: '🏅',
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            if (!isPremium) ...[
-              const SizedBox(height: AppSpacing.lg),
-              SqSurface(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Upgrade',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Unlock unlimited unique questions and custom topics when caps go live.',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    SqButton(
-                      label: 'VIEW PREMIUM',
-                      onPressed: () => showPremiumPaywall(context),
-                    ),
-                  ],
                 ),
-              ),
-            ],
-            entitlementsAsync.when(
-              data: (ent) {
-                if (!ent.devToggleAllowed) {
-                  return const SizedBox.shrink();
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.lg),
-                  child: SqSurface(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Dev entitlements',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          ent.enforceCaps
-                              ? 'Caps ON · free limit ${ent.uniquePerTopicLimit ?? 30}/topic'
-                              : 'Caps OFF · free unlimited (flag ready)',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            isPremium ? 'Premium enabled' : 'Enable Premium',
-                          ),
-                          value: isPremium,
-                          onChanged: (enabled) async {
-                            try {
-                              final updated = await ref
-                                  .read(entitlementsRepositoryProvider)
-                                  .setDevPremium(enabled: enabled);
-                              ref.invalidate(entitlementsProvider);
-                              ref
-                                  .read(authControllerProvider.notifier)
-                                  .applyProgress(isPremium: updated.isPremium);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      updated.isPremium
-                                          ? 'Premium enabled (dev)'
-                                          : 'Back to Free (dev)',
-                                    ),
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Toggle failed: $e')),
-                                );
-                              }
-                            }
-                          },
-                        ),
-                      ],
+                const SizedBox(height: AppSpacing.xl),
+                SqStagger(
+                  index: 3,
+                  child: ProfileNavTile(
+                    icon: Icons.badge_outlined,
+                    title: 'Profile details',
+                    subtitle: 'Name, avatar and how you appear on boards',
+                    onTap: () => context.push(Routes.profileEdit),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SqStagger(
+                  index: 4,
+                  child: ProfileNavTile(
+                    icon: Icons.emoji_events_outlined,
+                    title: 'Achievements',
+                    subtitle: unlocked == null
+                        ? 'Track everything you have unlocked'
+                        : '$unlocked of $totalAchievements unlocked',
+                    tint: AppColors.gold,
+                    onTap: () => context.push(Routes.achievements),
+                    trailing: unlocked == null
+                        ? null
+                        : SqBadge(label: '$unlocked', dense: true),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SqStagger(
+                  index: 5,
+                  child: ProfileNavTile(
+                    icon: Icons.insights_rounded,
+                    title: 'Statistics',
+                    subtitle: 'Accuracy, speed and topic mastery',
+                    tint: AppColors.cyan,
+                    onTap: () => context.push(Routes.stats),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SqStagger(
+                  index: 6,
+                  child: ProfileNavTile(
+                    icon: isPremium
+                        ? Icons.workspace_premium_rounded
+                        : Icons.workspace_premium_outlined,
+                    title: isPremium ? 'Premium' : 'Go Premium',
+                    subtitle: isPremium
+                        ? 'Thanks for supporting SpeedQuiz'
+                        : 'Unlimited questions and custom topics',
+                    tint: AppColors.gold,
+                    onTap: () => context.push(Routes.premium),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SqStagger(
+                  index: 7,
+                  child: ProfileNavTile(
+                    icon: Icons.tune_rounded,
+                    title: 'Settings',
+                    subtitle: 'Appearance, sound and account',
+                    tint: AppColors.violet,
+                    onTap: () => context.push(Routes.settings),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                Center(
+                  child: Text(
+                    'SpeedQuiz · v${AppConfig.appVersion}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: p.textFaint,
                     ),
                   ),
-                );
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, _) => const SizedBox.shrink(),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            Text('Appearance', style: theme.textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.sm),
-            SegmentedButton<ThemeMode>(
-              segments: const [
-                ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
-                ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                ButtonSegment(value: ThemeMode.system, label: Text('System')),
+                ),
               ],
-              selected: {themeMode},
-              onSelectionChanged: (value) {
-                ref.read(themeModeProvider.notifier).setMode(value.first);
-              },
             ),
-            const SizedBox(height: AppSpacing.xl),
-            Text('Achievements', style: theme.textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.sm),
-            achievementsAsync.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (err, _) => SqSurface(
-                child: Text(
-                  'Could not load achievements. Pull to retry later.',
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-              data: (list) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${list.unlockedCount} / ${list.total} unlocked',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  ...list.items.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _AchievementTile(item: item),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PlanBadge extends StatelessWidget {
-  const _PlanBadge({required this.isPremium});
-
-  final bool isPremium;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: (isPremium ? AppColors.warning : AppColors.accent)
-            .withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(AppRadii.pill),
-        border: Border.all(
-          color: (isPremium ? AppColors.warning : AppColors.accent)
-              .withValues(alpha: 0.35),
-        ),
-      ),
-      child: Text(
-        isPremium ? 'PREMIUM' : 'FREE',
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: isPremium ? AppColors.warning : AppColors.accent,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.1,
-        ),
-      ),
-    );
-  }
-}
-
-class _AchievementTile extends StatelessWidget {
-  const _AchievementTile({required this.item});
-
-  final AchievementItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
-    final locked = !item.unlocked;
-
-    return Opacity(
-      opacity: locked ? 0.55 : 1,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadii.md),
-          color: dark ? AppColors.surfaceDark : AppColors.surfaceLight,
-          border: Border.all(
-            color: item.unlocked
-                ? AppColors.accent.withValues(alpha: 0.35)
-                : (dark ? AppColors.borderDark : AppColors.borderLight),
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.accent.withValues(alpha: 0.12),
-              ),
-              child: Text(
-                locked ? '🔒' : _achievementIcon(item.icon),
-                style: const TextStyle(fontSize: 18),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(item.description, style: theme.textTheme.bodyMedium),
-                  if (item.unlocked)
-                    Text(
-                      [
-                        if (item.xpReward > 0) '+${item.xpReward} XP',
-                        if (item.coinsReward > 0) '+${item.coinsReward} coins',
-                      ].join(' · '),
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: AppColors.accent,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _achievementIcon(String icon) {
-  switch (icon) {
-    case 'flag':
-      return '🏁';
-    case 'check':
-      return '✅';
-    case 'fire':
-      return '🔥';
-    case 'bolt':
-      return '⚡';
-    case 'brain':
-      return '🧠';
-    case 'infinity':
-      return '∞';
-    case 'star':
-      return '⭐';
-    case 'calendar':
-      return '📅';
-    case 'planet':
-      return '🪐';
-    case 'sigma':
-      return '∑';
-    case 'robot':
-      return '🤖';
-    default:
-      return '🏆';
-  }
-}
-
-class _Metric extends StatelessWidget {
-  const _Metric({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-        ],
       ),
     );
   }

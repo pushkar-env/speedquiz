@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/features/quiz/data/quiz_repository.dart';
@@ -21,23 +22,18 @@ class QuizPlayLoading extends QuizPlayState {
 class QuizPlayActive extends QuizPlayState {
   const QuizPlayActive({
     required this.session,
-    required this.remainingMs,
     this.feedback,
     this.submitting = false,
     this.selectedOptionIndex,
-    this.autoAdvanceRemainingMs,
   });
 
   final QuizSession session;
-  final int remainingMs;
   final AnswerFeedback? feedback;
   final bool submitting;
   final int? selectedOptionIndex;
 
-  /// Speedrun-only: countdown before auto-advancing (null when not counting).
-  final int? autoAdvanceRemainingMs;
-
   bool get isSpeedrun => session.mode == 'speedrun';
+  bool get answered => feedback != null;
 }
 
 class QuizPlayFinished extends QuizPlayState {
@@ -55,6 +51,14 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
   QuizPlayController(this._repo) : super(const QuizPlayIdle());
 
   final QuizRepository _repo;
+
+  /// Countdown values live outside [state] on purpose: the tickers run at
+  /// 10-20Hz, and pushing them through the state notifier would rebuild the
+  /// whole question tree — options, prompt and all — several times a second.
+  /// Only the timer widgets listen to these.
+  final ValueNotifier<int> remainingMs = ValueNotifier<int>(0);
+  final ValueNotifier<int?> autoAdvanceMs = ValueNotifier<int?>(null);
+
   Timer? _ticker;
   Timer? _autoAdvanceTicker;
   DateTime? _questionStartedAt;
@@ -81,17 +85,22 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
           );
       _beginQuestion(session);
     } catch (error) {
-      state = QuizPlayError(
-        _friendlyError(error),
-        isEntitlementCap: isEntitlementUniqueCap(error),
-      );
+      _fail(error);
     }
+  }
+
+  void _fail(Object error) {
+    if (_disposed) return;
+    state = QuizPlayError(
+      _friendlyError(error),
+      isEntitlementCap: isEntitlementUniqueCap(error),
+    );
   }
 
   String _friendlyError(Object error) {
     if (isEntitlementUniqueCap(error)) {
-      return 'Free unique-question limit reached for this topic. '
-          'Go Premium (Profile) to keep playing.';
+      return 'You have hit the free unique-question limit for this topic. '
+          'Go Premium to keep playing it.';
     }
     return apiErrorMessage(
       error,
@@ -106,46 +115,46 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
     _ticker = null;
     _autoAdvanceTicker?.cancel();
     _autoAdvanceTicker = null;
+    autoAdvanceMs.value = null;
   }
 
   void _beginQuestion(QuizSession session) {
     _cancelTimers();
     final question = session.currentQuestion;
     if (question == null) {
-      state = const QuizPlayError('No question available');
+      state = const QuizPlayError('No question available.');
       return;
     }
+
     _questionStartedAt = DateTime.now();
-    state = QuizPlayActive(
-      session: session,
-      remainingMs: question.timeLimitMs,
-    );
+    remainingMs.value = question.timeLimitMs;
+    state = QuizPlayActive(session: session);
+
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
       final current = state;
       if (current is! QuizPlayActive ||
-          current.feedback != null ||
+          current.answered ||
           current.submitting) {
         return;
       }
       final started = _questionStartedAt;
       if (started == null) return;
+
+      final limit = current.session.currentQuestion?.timeLimitMs ?? 0;
       final elapsed = DateTime.now().difference(started).inMilliseconds;
-      final remaining = (current.session.currentQuestion!.timeLimitMs - elapsed)
-          .clamp(0, current.session.currentQuestion!.timeLimitMs);
-      if (remaining <= 0) {
+      final left = (limit - elapsed).clamp(0, limit);
+      remainingMs.value = left;
+
+      if (left <= 0) {
         _ticker?.cancel();
         submit(timedOut: true);
-        return;
       }
-      state = QuizPlayActive(session: current.session, remainingMs: remaining);
     });
   }
 
   Future<void> submit({int? optionIndex, bool timedOut = false}) async {
     final current = state;
-    if (current is! QuizPlayActive ||
-        current.submitting ||
-        current.feedback != null) {
+    if (current is! QuizPlayActive || current.submitting || current.answered) {
       return;
     }
     final question = current.session.currentQuestion;
@@ -154,7 +163,6 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
     _ticker?.cancel();
     state = QuizPlayActive(
       session: current.session,
-      remainingMs: current.remainingMs,
       submitting: true,
       selectedOptionIndex: optionIndex,
     );
@@ -171,8 +179,9 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
         clientElapsedMs: elapsed,
         timedOut: timedOut,
       );
+      if (_disposed) return;
 
-      // Keep the answered question on-screen for inline feedback.
+      // Keep the answered question on screen so feedback has context.
       final updatedSession = current.session.copyWith(
         score: feedback.score,
         streak: feedback.streak,
@@ -185,44 +194,28 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
       );
 
       final isSpeedrun = updatedSession.mode == 'speedrun';
+      remainingMs.value = 0;
+      autoAdvanceMs.value = isSpeedrun ? _speedrunAutoAdvanceMs : null;
+
       state = QuizPlayActive(
         session: updatedSession,
-        remainingMs: 0,
         feedback: feedback,
         selectedOptionIndex: optionIndex,
-        autoAdvanceRemainingMs:
-            isSpeedrun && !feedback.runEnded ? _speedrunAutoAdvanceMs : null,
       );
-
-      if (feedback.runEnded) {
-        if (isSpeedrun) {
-          state = QuizPlayActive(
-            session: updatedSession,
-            remainingMs: 0,
-            feedback: feedback,
-            selectedOptionIndex: optionIndex,
-            autoAdvanceRemainingMs: _speedrunAutoAdvanceMs,
-          );
-          _startSpeedrunAutoAdvance(toResults: true);
-        }
-        // Other modes: wait for SEE RESULTS tap.
-        return;
-      }
 
       if (isSpeedrun) {
-        _startSpeedrunAutoAdvance();
+        _startSpeedrunAutoAdvance(toResults: feedback.runEnded);
       }
+      // Other modes wait for an explicit NEXT / SEE RESULTS tap.
     } catch (error) {
-      state = QuizPlayError(
-        _friendlyError(error),
-        isEntitlementCap: isEntitlementUniqueCap(error),
-      );
+      _fail(error);
     }
   }
 
   void _startSpeedrunAutoAdvance({bool toResults = false}) {
     _autoAdvanceTicker?.cancel();
     final started = DateTime.now();
+
     _autoAdvanceTicker =
         Timer.periodic(const Duration(milliseconds: 50), (timer) async {
       if (_disposed) {
@@ -230,58 +223,66 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
         return;
       }
       final current = state;
-      if (current is! QuizPlayActive || current.feedback == null) {
+      if (current is! QuizPlayActive || !current.answered) {
         timer.cancel();
         return;
       }
+
       final elapsed = DateTime.now().difference(started).inMilliseconds;
-      final remaining =
+      final left =
           (_speedrunAutoAdvanceMs - elapsed).clamp(0, _speedrunAutoAdvanceMs);
-      if (remaining <= 0) {
+      autoAdvanceMs.value = left;
+
+      if (left <= 0) {
         timer.cancel();
         if (toResults || current.feedback!.runEnded) {
-          final result = await _repo.getResult(current.session.id);
-          if (!_disposed) state = QuizPlayFinished(result);
+          await _loadResult(current.session.id);
         } else {
           await continueAfterFeedback();
         }
-        return;
       }
-      state = QuizPlayActive(
-        session: current.session,
-        remainingMs: current.remainingMs,
-        feedback: current.feedback,
-        selectedOptionIndex: current.selectedOptionIndex,
-        autoAdvanceRemainingMs: remaining,
-      );
     });
+  }
+
+  Future<void> _loadResult(String sessionId) async {
+    try {
+      final result = await _repo.getResult(sessionId);
+      if (!_disposed) state = QuizPlayFinished(result);
+    } catch (error) {
+      _fail(error);
+    }
   }
 
   Future<void> continueAfterFeedback() async {
     _autoAdvanceTicker?.cancel();
+    autoAdvanceMs.value = null;
+
     final current = state;
-    if (current is! QuizPlayActive || current.feedback == null) return;
+    if (current is! QuizPlayActive || !current.answered) return;
     final feedback = current.feedback!;
+
     if (feedback.runEnded) {
-      final result = await _repo.getResult(current.session.id);
-      if (!_disposed) state = QuizPlayFinished(result);
+      await _loadResult(current.session.id);
       return;
     }
+
     final next = feedback.nextQuestion;
     if (next == null) {
-      state = const QuizPlayError('No next question');
+      state = const QuizPlayError('No next question was returned.');
       return;
     }
-    final session = current.session.copyWith(
-      score: feedback.score,
-      streak: feedback.streak,
-      bestStreak: feedback.bestStreak,
-      lives: feedback.lives,
-      timeRemainingMs: feedback.timeRemainingMs,
-      questionNumber: next.sequenceIndex + 1,
-      currentQuestion: next,
+
+    _beginQuestion(
+      current.session.copyWith(
+        score: feedback.score,
+        streak: feedback.streak,
+        bestStreak: feedback.bestStreak,
+        lives: feedback.lives,
+        timeRemainingMs: feedback.timeRemainingMs,
+        questionNumber: next.sequenceIndex + 1,
+        currentQuestion: next,
+      ),
     );
-    _beginQuestion(session);
   }
 
   Future<void> endRun() async {
@@ -293,12 +294,7 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
       final result = await _repo.finishSession(current.session.id);
       if (!_disposed) state = QuizPlayFinished(result);
     } catch (error) {
-      if (!_disposed) {
-        state = QuizPlayError(
-          _friendlyError(error),
-          isEntitlementCap: isEntitlementUniqueCap(error),
-        );
-      }
+      _fail(error);
     }
   }
 
@@ -306,6 +302,8 @@ class QuizPlayController extends StateNotifier<QuizPlayState> {
   void dispose() {
     _disposed = true;
     _cancelTimers();
+    remainingMs.dispose();
+    autoAdvanceMs.dispose();
     super.dispose();
   }
 }

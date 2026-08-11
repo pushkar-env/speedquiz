@@ -21,4 +21,10 @@ COPY backend /app
 EXPOSE 8000
 
 # PORT is injected by Railway (and similar PaaS). Default 8000 for local Docker.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# WEB_CONCURRENCY sets uvicorn workers — remember total DB connections are
+# (DB_POOL_SIZE + DB_MAX_OVERFLOW) x workers x replicas.
+# --proxy-headers is required behind a reverse proxy (Railway, Caddy), or
+# every request appears to come from the proxy's own IP.
+# The migration step takes a Postgres advisory lock, so parallel replica boots
+# serialise safely instead of racing Alembic.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 20"]

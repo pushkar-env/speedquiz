@@ -1,335 +1,371 @@
-# Deploy SpeedQuiz on Railway
+# Deploy SpeedQuiz — step by step
 
-Railway gives you **HTTPS out of the box** (no Caddy/VPS required). You run **four pieces**:
+End-to-end guide for putting the whole stack online with HTTPS, so the Android
+app works on mobile data and you can drop the Cloudflare tunnel.
 
-| Railway resource | Role | Public? |
-|------------------|------|---------|
-| **Postgres** plugin | Database | No |
-| **Redis** plugin | Cache / rate limits / leaderboards | No |
-| **api** service | FastAPI | Yes (HTTPS URL) |
-| **worker** service | Background AI / bank top-ups | No |
+Two supported shapes:
 
-Flutter talks only to the **api** HTTPS URL.
+| | Recommended | Railway-only |
+|---|---|---|
+| Postgres | **Neon** (free tier, built-in pooler, PITR backups) | Railway Postgres plugin |
+| Redis | **Upstash** (free tier) | Railway Redis plugin |
+| API + worker | Railway | Railway |
+| Cost | ~$5–10/mo | ~$10–20/mo |
+| Survives a DB restart | Yes | No failover |
 
-```text
-Phone
-  │ HTTPS
-  ▼
-api.up.railway.app  (or custom domain)
-  ├── Postgres
-  └── Redis
-worker (private) ──► Postgres + Redis + OpenAI
-```
+The recommended shape is what the rest of this guide uses. Railway's database
+plugins are single containers with no connection pooler and a thin backup
+story — fine for a smoke test, not what you want holding real user progress.
 
 VPS alternative: [HOSTING.md](HOSTING.md). Env meanings: [ENV_PROVIDERS.md](ENV_PROVIDERS.md).
 
----
-
-## Prerequisites
-
-- [Railway](https://railway.app) account
-- This repo on GitHub/GitLab (or Railway CLI deploy from local)
-- OpenAI API key (for generation; gameplay itself does not call the LLM)
-
----
-
-## 1. Create a Railway project
-
-1. Dashboard → **New Project**
-2. **Deploy from GitHub** → select the SpeedQuiz repo  
-   (or empty project and add services manually)
-
-You will add **Postgres**, **Redis**, then two services from the same repo (`api` + `worker`).
-
----
-
-## 2. Add Postgres
-
-1. In the project → **+ New** → **Database** → **PostgreSQL**
-2. Open the Postgres service → **Variables**
-3. Note `DATABASE_URL` (Railway format looks like  
-   `postgresql://postgres:…@….railway.internal:5432/railway`)
-
-You will **not** paste that raw into the app as-is — FastAPI needs SQLAlchemy dialects (next section).
-
----
-
-## 3. Add Redis
-
-1. **+ New** → **Database** → **Redis**
-2. Note `REDIS_URL` / `REDIS_PRIVATE_URL`  
-   Prefer the **private** URL when both api and worker are in the same Railway project (cheaper, internal networking).
-
----
-
-## 4. Create the API service
-
-1. **+ New** → **GitHub Repo** (same SpeedQuiz repo) — name it **`api`**
-2. **Settings** → **Build**:
-   - **Builder:** Dockerfile
-   - **Dockerfile path:** `infrastructure/docker/Dockerfile.api`
-   - **Watch paths / root:** repository root (so `COPY backend` works)
-3. **Settings** → **Networking**:
-   - **Generate domain** (gives `https://something.up.railway.app`)
-   - Or attach a **custom domain** (see §8)
-4. **Settings** → **Health check** (optional): path `/health`
-5. Do **not** override the start command unless needed — the Dockerfile runs:
-
 ```text
-alembic upgrade head && uvicorn … --port $PORT
+Phone ──HTTPS──► Railway `api` service ──► Neon Postgres (pooled)
+                                       └─► Upstash Redis
+                 Railway `worker` (private) ──► same DB + Redis + OpenAI
 ```
-
-Railway sets `PORT` automatically.
 
 ---
 
-## 5. Create the worker service
+## 0. Before you start
 
-1. **+ New** → **GitHub Repo** (same repo) — name it **`worker`**
-2. **Settings** → **Build**:
-   - **Builder:** Dockerfile
-   - **Dockerfile path:** `infrastructure/docker/Dockerfile.worker`
-3. **Networking:** leave **private** (no public domain)
-4. Start command is already `python -m workers.main` in the Dockerfile
-
----
-
-## 6. Environment variables
-
-Set variables on **both** `api` and `worker` unless noted.  
-In Railway you can use **variable references** (e.g. `${{Postgres.DATABASE_URL}}`) so you don’t copy secrets by hand.
-
-### 6.1 Database URLs (required)
-
-Railway’s `DATABASE_URL` is usually `postgresql://…`.  
-SpeedQuiz needs:
-
-| Variable | Value |
-|----------|--------|
-| `DATABASE_URL` | Same URL with scheme **`postgresql+asyncpg://`** |
-| `DATABASE_URL_SYNC` | Same URL with scheme **`postgresql+psycopg://`** |
-
-**How to set in Railway (recommended):**
-
-1. On **api** (and **worker**), add:
-
-```env
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-DATABASE_URL_SYNC=${{Postgres.DATABASE_URL}}
-```
-
-2. Then either:
-
-**Option A — shared variable + two overrides**  
-Create a project shared var is awkward for scheme swap. Easier:
-
-**Option B — explicit transforms** (set once after copying from Postgres):
-
-If Postgres gives:
-
-```text
-postgresql://postgres:SECRET@host:5432/railway
-```
-
-Set:
-
-```env
-DATABASE_URL=postgresql+asyncpg://postgres:SECRET@host:5432/railway
-DATABASE_URL_SYNC=postgresql+psycopg://postgres:SECRET@host:5432/railway
-```
-
-Use the **internal** host (`.railway.internal`) for api/worker in the same project. Use the **public** proxy URL only if connecting from outside Railway.
-
-### 6.2 Redis (required)
-
-```env
-REDIS_URL=${{Redis.REDIS_URL}}
-```
-
-If the plugin exposes `REDIS_PRIVATE_URL`, prefer that for api/worker.
-
-### 6.3 Core app (required on api + worker)
-
-```env
-APP_NAME=SpeedQuiz
-APP_ENV=production
-DEBUG=false
-API_PREFIX=/api/v1
-LOG_LEVEL=INFO
-
-# Long random string (openssl rand -hex 32)
-JWT_SECRET=
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-JWT_REFRESH_TOKEN_EXPIRE_DAYS=30
-
-# Restrict if you have a web origin; mobile apps don’t need CORS wide open
-CORS_ORIGINS=*
-
-LLM_PROVIDER=openai
-LLM_API_KEY=
-LLM_MODEL_GENERATE=gpt-4o-mini
-LLM_MODEL_VALIDATE=gpt-4o-mini
-LLM_MODEL_CLASSIFY=gpt-4o-mini
-
-ENTITLEMENTS_ENFORCE_QUESTION_CAPS=false
-ENTITLEMENTS_DEV_TOGGLE=false
-FREE_UNIQUE_QUESTIONS_PER_TOPIC=30
-
-BILLING_VERIFY_MODE=stub
-BILLING_ALLOW_STUB_IN_PRODUCTION=false
-IAP_PREMIUM_PRODUCT_ID=speedquiz_premium
-IAP_ANDROID_PACKAGE=com.speedquiz.app
-
-ANALYTICS_PROVIDER=postgres
-```
-
-Generate `JWT_SECRET` locally:
+- A GitHub repo with this project pushed
+- Accounts: [Railway](https://railway.app), [Neon](https://neon.tech), [Upstash](https://upstash.com)
+- An OpenAI API key (only the worker needs it — gameplay never calls an LLM)
+- A JWT secret:
 
 ```bash
 openssl rand -hex 32
 ```
 
-### 6.4 Public URL (required on api; useful on worker too)
+Keep that value. The API **refuses to boot** in production with the placeholder
+secret, by design.
 
-After Railway generates a domain (or you attach a custom one):
+---
 
-```env
-# Temporary Railway domain example:
-SHARE_PUBLIC_BASE_URL=https://your-api.up.railway.app
+## 1. Postgres on Neon
 
-# After custom domain:
-# SHARE_PUBLIC_BASE_URL=https://speedquiz.app
+1. [console.neon.tech](https://console.neon.tech) → **New Project** → pick the region closest to your users.
+2. Open **Connection Details**.
+3. Toggle **Connection pooling ON**. The host gains a `-pooler` suffix — you want that one.
+
+You get something like:
+
+```text
+postgresql://neondb_owner:PASSWORD@ep-cool-thing-123456-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
 ```
 
-Also set App Link package (fingerprints later when Play signing exists):
+This project needs two variants of it, because SQLAlchemy picks its driver from
+the URL scheme:
+
+| Variable | Scheme | Used by |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://` | the app at runtime |
+| `DATABASE_URL_SYNC` | `postgresql+psycopg://` | Alembic migrations |
+
+**Drop `?sslmode=require` from the asyncpg URL.** asyncpg does not understand
+that parameter and will fail to connect; it negotiates TLS on its own. Keep it
+on the `psycopg` one.
 
 ```env
+DATABASE_URL=postgresql+asyncpg://neondb_owner:PASSWORD@ep-...-pooler.us-east-2.aws.neon.tech/neondb
+DATABASE_URL_SYNC=postgresql+psycopg://neondb_owner:PASSWORD@ep-...-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+DB_DISABLE_PREPARED_STATEMENTS=true
+```
+
+That last flag is **required** on a pooled endpoint. Connections are multiplexed
+between transactions, so server-side prepared statements have to be off or you
+get `prepared statement "__asyncpg_stmt_x__" already exists` once traffic
+overlaps.
+
+> Neon's free tier scales to zero. The first request after an idle period pays
+> a ~1s cold start. Fine for testing; upgrade when it stops being fine.
+
+---
+
+## 2. Redis on Upstash
+
+1. [console.upstash.com](https://console.upstash.com) → **Create Database** → same region as Neon.
+2. Copy the connection string from the **Redis** tab (the `rediss://…` one).
+
+```env
+REDIS_URL=rediss://default:PASSWORD@apn1-xxxx.upstash.io:6379
+```
+
+Note `rediss://` with two S's — that is TLS, and Upstash requires it.
+
+Redis holds rate limits, leaderboard sorted sets and generation locks. It is not
+the source of truth for anything: losing it degrades ranking freshness, not data.
+
+---
+
+## 3. Railway project + API service
+
+1. Railway → **New Project** → **Deploy from GitHub repo** → select this repo.
+2. Rename the created service to **`api`**.
+3. **Settings → Build**:
+   - Builder: **Dockerfile**
+   - Dockerfile path: `infrastructure/docker/Dockerfile.api`
+   - Root directory: **leave empty** (the Dockerfile does `COPY backend`, so it needs repo root as build context)
+4. **Settings → Networking** → **Generate Domain**. You get `https://api-production-xxxx.up.railway.app`.
+5. **Settings → Deploy**:
+   - Health check path: `/health`
+   - Health check timeout: `120` (first boot runs migrations and seeding)
+
+Do **not** override the start command. The Dockerfile already runs migrations
+then uvicorn on Railway's `$PORT`, with `--proxy-headers` set so client IPs
+survive Railway's proxy.
+
+---
+
+## 4. Worker service
+
+1. **+ New** → **GitHub Repo** → same repo → rename to **`worker`**.
+2. **Settings → Build**:
+   - Builder: **Dockerfile**
+   - Dockerfile path: `infrastructure/docker/Dockerfile.worker`
+3. **Networking**: no domain. It is a polling loop, not an HTTP service.
+4. One replica is enough — it takes Redis locks per topic, but there is no
+   benefit to running several.
+
+---
+
+## 5. Environment variables
+
+Set these on **both** `api` and `worker` unless marked otherwise. Railway's
+**Variables → Raw Editor** accepts this whole block pasted at once.
+
+```env
+# --- Core ---
+APP_NAME=SpeedQuiz
+APP_ENV=production
+DEBUG=false
+API_PREFIX=/api/v1
+LOG_LEVEL=INFO
+CORS_ORIGINS=*
+
+# --- Secrets ---
+JWT_SECRET=<paste openssl rand -hex 32 output>
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
+JWT_REFRESH_TOKEN_EXPIRE_DAYS=30
+
+# --- Data ---
+DATABASE_URL=postgresql+asyncpg://...-pooler.../neondb
+DATABASE_URL_SYNC=postgresql+psycopg://...-pooler.../neondb?sslmode=require
+DB_DISABLE_PREPARED_STATEMENTS=true
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=10
+REDIS_URL=rediss://default:...@....upstash.io:6379
+
+# --- Runtime ---
+WEB_CONCURRENCY=2
+
+# --- AI (worker needs this; api can have it too) ---
+LLM_PROVIDER=openai
+LLM_API_KEY=sk-...
+LLM_MODEL_GENERATE=gpt-4o-mini
+LLM_MODEL_VALIDATE=gpt-4o-mini
+LLM_MODEL_CLASSIFY=gpt-4o-mini
+
+# --- Product flags ---
+ENTITLEMENTS_ENFORCE_QUESTION_CAPS=false
+ENTITLEMENTS_DEV_TOGGLE=false
+FREE_UNIQUE_QUESTIONS_PER_TOPIC=30
+BILLING_VERIFY_MODE=stub
+BILLING_ALLOW_STUB_IN_PRODUCTION=false
+IAP_PREMIUM_PRODUCT_ID=speedquiz_premium
+IAP_ANDROID_PACKAGE=com.speedquiz.app
+ANALYTICS_PROVIDER=postgres
+
+# --- Public URL (api; set after step 3 gives you a domain) ---
+SHARE_PUBLIC_BASE_URL=https://api-production-xxxx.up.railway.app
 APP_LINK_ANDROID_PACKAGE=com.speedquiz.app
 APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS=
 APP_LINK_IOS_APP_ID=
-```
 
-### 6.5 Optional / later
-
-```env
-# Google Sign-In (Web client ID) — see AUTH_GOOGLE.md
+# --- Optional ---
 GOOGLE_CLIENT_ID=
-
-GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=
-APPLE_IAP_ISSUER_ID=
-APPLE_IAP_KEY_ID=
-APPLE_IAP_PRIVATE_KEY=
-APPLE_IAP_BUNDLE_ID=com.speedquiz.app
-APPLE_IAP_ENVIRONMENT=Production
 SENTRY_DSN=
 ```
 
-When Play billing is live: set the Google JSON and `BILLING_VERIFY_MODE=apple_google`.
+### Three settings that will refuse to boot production
 
-### 6.6 Variables only the API needs publicly
+The app validates these at startup rather than running insecurely:
 
-All of the above can live on both services. The **worker** must have DB, Redis, JWT (if shared code paths), and **LLM_*** keys. The worker does not need a public domain.
+| Setting | Why it fails |
+|---|---|
+| `JWT_SECRET` still the placeholder, or under 32 chars | anyone could forge tokens |
+| `ENTITLEMENTS_DEV_TOGGLE=true` | exposes `POST /entitlements/dev/premium` — free Premium for any user |
+| `DEBUG=true` | verbose errors and SQL echo in production |
 
----
-
-## 7. Deploy and verify
-
-1. Trigger **Deploy** on `api` and `worker` (or push to the connected branch).
-2. Open **api** → **HTTP Logs**; confirm Alembic + Uvicorn start.
-3. Visit:
-
-```text
-https://YOUR-API.up.railway.app/health
-https://YOUR-API.up.railway.app/ready
-https://YOUR-API.up.railway.app/docs
-```
-
-4. On a phone (any network): open `/health` in the browser — must return JSON.
-
-### Seed data (topics / bank)
-
-The API **seeds reference data + curated bank on startup** (see `app.main` lifespan). After the first successful deploy you should see topics without a manual seed step. If the DB was wiped, redeploy/restart **api**.
+If the container exits immediately after deploy, read the logs — the error names
+the exact problem.
 
 ---
 
-## 8. Custom domain on Railway
+## 6. Deploy and verify
 
-1. Buy `speedquiz.app` (or your domain).
-2. Railway **api** service → **Settings** → **Networking** → **Custom Domain** → add `speedquiz.app` (and/or `www` / `api`).
-3. Railway shows the DNS record to create (usually **CNAME** to `….up.railway.app`, or their documented target).
-4. Wait for certificate **Active**.
-5. Update:
+Trigger a deploy on `api`, then `worker`.
 
-```env
-SHARE_PUBLIC_BASE_URL=https://speedquiz.app
-```
-
-6. Redeploy **api** (so share links / landings use the new base).
-
-Railway handles TLS — you do **not** run Caddy on Railway.
-
----
-
-## 9. Point the Android app at Railway
+Watch the `api` logs for, in order: Alembic migrations, `seed_complete`,
+then Uvicorn listening.
 
 ```bash
-cd mobile
-# Railway-generated domain:
-flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-API.up.railway.app
-
-# Or after custom domain:
-flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.app
+curl https://YOUR-API.up.railway.app/health
 ```
 
-Install/sideload the APK and test guest login on mobile data.
+```bash
+curl https://YOUR-API.up.railway.app/ready
+```
+
+`/ready` returns **200** with `{"status":"ready","database":true,"redis":true}`
+when healthy, and **503** when either dependency is down — so Railway's health
+check actually pulls a broken instance out of rotation.
+
+Confirm the catalog seeded:
+
+```bash
+curl https://YOUR-API.up.railway.app/api/v1/topics
+```
+
+You should get 18 topics. If `items` is empty, check the logs for `seed_failed`.
+
+> With multiple replicas, only one runs the seed — the others log
+> `seed_skipped_lock_held_by_another_replica`. That is correct behaviour, not
+> an error.
+
+Finally, open `/health` in the **phone's browser** before touching the app. It
+separates "backend unreachable" from "app misconfigured".
 
 ---
 
-## 10. Railway vs local Compose — mapping
+## 7. Point the app at it
 
-| Local Docker | Railway |
-|--------------|---------|
-| `postgres` service | Postgres plugin |
-| `redis` service | Redis plugin |
-| `api` + Caddy | `api` service + Railway HTTPS |
-| `worker` | `worker` service |
-| `.env` file | Service / shared **Variables** |
-| `docker-compose.prod.yml` | Dockerfile CMD (migrations + uvicorn `$PORT`) |
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-API.up.railway.app
+```
+
+With Google Sign-In (see [AUTH_GOOGLE.md](AUTH_GOOGLE.md)):
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-API.up.railway.app --dart-define=GOOGLE_SERVER_CLIENT_ID=YOUR-WEB-CLIENT-ID.apps.googleusercontent.com
+```
+
+Install it and play a run. If topics load and a quiz scores, the stack is wired
+correctly end to end.
 
 ---
 
-## 11. Checklist
+## 8. Load test before you trust it
 
-- [ ] Project + Postgres + Redis
-- [ ] `api` service with `Dockerfile.api`, public domain
-- [ ] `worker` service with `Dockerfile.worker`, private
-- [ ] `DATABASE_URL` / `DATABASE_URL_SYNC` with `+asyncpg` / `+psycopg`
-- [ ] `REDIS_URL`, `JWT_SECRET`, `LLM_API_KEY`, `APP_ENV=production`
-- [ ] `SHARE_PUBLIC_BASE_URL` = public HTTPS URL
-- [ ] `/health` works on phone
-- [ ] Flutter built with matching `API_BASE_URL`
-- [ ] (Optional) `GOOGLE_CLIENT_ID` + Flutter `GOOGLE_SERVER_CLIENT_ID` for Sign in with Google
-- [ ] (Later) custom domain + Play SHA-256 fingerprints + `apple_google` billing
+Never take a capacity claim on faith — including the ones in these docs.
+
+Install [k6](https://k6.io/docs/get-started/installation/), then:
+
+```bash
+k6 run -e BASE_URL=https://YOUR-API.up.railway.app scripts/loadtest.js
+```
+
+Simulate 1,000 concurrent players:
+
+```bash
+k6 run -e BASE_URL=https://YOUR-API.up.railway.app -e PROFILE=peak scripts/loadtest.js
+```
+
+Find where it actually breaks:
+
+```bash
+k6 run -e BASE_URL=https://YOUR-API.up.railway.app -e PROFILE=breakpoint scripts/loadtest.js
+```
+
+The script runs the real journey — guest auth, topics, session, ten answers with
+human think time, finish, leaderboard. Thresholds fail the run if answer latency
+p95 exceeds 400 ms or the error rate exceeds 1%.
+
+**This writes real guest accounts and sessions.** Point it at a staging Neon
+branch, not the database your users are on. Neon branching makes that a
+one-click copy.
+
+Reading the output: VUs are not RPS. A player answers every 6–13 s, so 1,000 VUs
+is roughly 100–150 req/s — which is what 1,000 real concurrent users looks like.
+
+---
+
+## 9. Scaling when you need it
+
+Do this in order, and only in response to numbers from §8.
+
+1. **`WEB_CONCURRENCY=4`** on a larger `api` instance. Cheapest win.
+2. **Railway replicas** (Settings → Replicas). Stateless, so this is safe —
+   migrations are advisory-locked and seeding is idempotent.
+3. **Watch connection maths** every time you scale:
+   ```text
+   (DB_POOL_SIZE + DB_MAX_OVERFLOW) x WEB_CONCURRENCY x replicas + worker
+   ```
+   Behind Neon's pooler you have plenty of headroom, but the number is still
+   worth knowing.
+4. **Neon compute size** when database CPU is the bottleneck.
+
+The worker does not need scaling. It is a background top-up loop; it can be down
+for an hour and gameplay is unaffected because questions are served from the
+bank.
+
+---
+
+## 10. Custom domain
+
+1. Railway → `api` → **Settings → Networking → Custom Domain** → add `api.yourdomain.com`.
+2. Create the CNAME Railway shows you at your DNS provider.
+3. Wait for the certificate to go **Active**.
+4. Update `SHARE_PUBLIC_BASE_URL` to the new HTTPS URL and redeploy, so share
+   links and the App Links association file use it.
+5. Rebuild the app with the new `API_BASE_URL`.
+
+Railway terminates TLS for you. Do not run Caddy here — that is only for the VPS
+path in [HOSTING.md](HOSTING.md).
+
+---
+
+## 11. Backups and operations
+
+- **Neon** keeps automatic history; set the retention window in project settings and confirm point-in-time restore works *before* you need it.
+- **Upstash** persistence is on by default; nothing here is irreplaceable.
+- **Railway** keeps deploy history — use **Rollback** rather than force-pushing a fix.
+- Set `SENTRY_DSN` once you have real users. Unhandled exceptions already log with a request id (`X-Request-ID`, echoed on every response) — Sentry just makes them findable.
 
 ---
 
 ## 12. Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| Build fails on `COPY backend` | Dockerfile path set but build context not repo root |
-| App listens wrong port / 502 | Must use `${PORT}` — use current `Dockerfile.api` |
-| DB connection errors | Wrong scheme (`asyncpg`/`psycopg`); using public URL with bad SSL; typo in password |
-| Redis errors | `REDIS_URL` not set on that service |
-| Worker idle / bank never grows | Worker not deployed or missing `LLM_API_KEY` / DB vars |
-| Guest login timeout on phone | APK still points at tunnel/LAN — rebuild with Railway HTTPS URL |
-| Alembic errors on boot | Check api logs; ensure Postgres is running and URL is reachable internally |
+| Symptom | Cause / fix |
+|---|---|
+| Container exits instantly, log says "Unsafe production configuration" | Read the listed items — placeholder `JWT_SECRET`, `ENTITLEMENTS_DEV_TOGGLE=true`, or `DEBUG=true` |
+| `invalid dsn: invalid connection option "sslmode"` | `?sslmode=require` left on the **asyncpg** URL. Remove it there; keep it on `DATABASE_URL_SYNC` |
+| `prepared statement "__asyncpg_stmt_x__" already exists` | Pooled endpoint without `DB_DISABLE_PREPARED_STATEMENTS=true` |
+| `FATAL: sorry, too many clients already` | Connection maths in §9.3 exceeded, or you are on a direct (non-pooled) endpoint |
+| Build fails on `COPY backend` | Root directory set on the service — clear it, the build context must be repo root |
+| 502 from Railway | App not listening on `$PORT`. Do not override the start command |
+| `/api/v1/topics` returns `{"items": []}` | Seeding failed — grep logs for `seed_failed` |
+| `/ready` returns 503 | `database` / `redis` in the body tells you which one; check that service's URL |
+| Worker idle, bank never grows | `LLM_API_KEY` missing on **worker**, or the service is not deployed |
+| App times out on the phone | APK still built against the old tunnel/LAN URL — rebuild with `API_BASE_URL` |
+| Google Sign-In cancels immediately | `GOOGLE_SERVER_CLIENT_ID` missing at build time, or SHA-1 not registered — see [AUTH_GOOGLE.md](AUTH_GOOGLE.md) |
 
 ---
 
-## 13. Cost notes
+## 13. Checklist
 
-Railway bills for usage (compute + Postgres + Redis + egress). Start on the free/trial plan for smoke tests, then a hobby plan for always-on API + worker. Monitor the **Usage** tab.
-
-CLI (optional): [Railway CLI](https://docs.railway.app/guides/cli) — `railway login`, `railway link`, `railway up`.
+- [ ] Neon project, **pooled** connection string, both URL variants set
+- [ ] `DB_DISABLE_PREPARED_STATEMENTS=true`
+- [ ] Upstash Redis, `rediss://` URL
+- [ ] `api` service — Dockerfile.api, public domain, `/health` check
+- [ ] `worker` service — Dockerfile.worker, private
+- [ ] `JWT_SECRET` from `openssl rand -hex 32`
+- [ ] `APP_ENV=production`, `DEBUG=false`, `ENTITLEMENTS_DEV_TOGGLE=false`
+- [ ] `SHARE_PUBLIC_BASE_URL` = public HTTPS URL
+- [ ] `/health` and `/ready` green from the phone's browser
+- [ ] `/api/v1/topics` returns a seeded catalog
+- [ ] APK built with matching `API_BASE_URL`, quiz plays end to end
+- [ ] k6 smoke run passes against the deployment
+- [ ] (Later) custom domain, Play SHA-256 fingerprints, `BILLING_VERIFY_MODE=apple_google`

@@ -39,6 +39,9 @@ async def run() -> None:
     ticks = 0
 
     while _running:
+        # redis_ping never raises; a Redis outage degrades the heartbeat
+        # instead of killing the loop and putting the container into a
+        # restart cycle it cannot recover from on its own.
         ok = await redis_ping()
         try:
             processed = await process_queued_jobs()

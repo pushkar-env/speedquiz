@@ -14,13 +14,13 @@ dependencies:
   go_router: ^15.1.2
   dio: ^5.8.0+1
   shared_preferences: ^2.5.3
-  google_fonts: ^6.2.1
   intl: ^0.20.2
   equatable: ^2.0.7
   share_plus: ^13.3.0
   app_links: ^7.2.1
   in_app_purchase: ^3.3.0
   google_sign_in: ^7.2.0
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -29,3 +29,30 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/audio/
+
+  # Typefaces are bundled (not fetched at runtime) so first launch never
+  # flashes a fallback font and the app renders correctly offline.
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-400.ttf
+          weight: 400
+        - asset: assets/fonts/SpaceGrotesk-500.ttf
+          weight: 500
+        - asset: assets/fonts/SpaceGrotesk-600.ttf
+          weight: 600
+        - asset: assets/fonts/SpaceGrotesk-700.ttf
+          weight: 700
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/DMSans-400.ttf
+          weight: 400
+        - asset: assets/fonts/DMSans-500.ttf
+          weight: 500
+        - asset: assets/fonts/DMSans-600.ttf
+          weight: 600
+        - asset: assets/fonts/DMSans-700.ttf
+          weight: 700

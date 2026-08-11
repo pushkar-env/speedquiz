@@ -1,10 +1,10 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 from app.core.config import get_settings
-from app.core.database import Base
+from app.core.database import AdvisoryLock, Base
 from app import models  # noqa: F401 — register models
 
 config = context.config
@@ -37,13 +37,30 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
+        # Every API container runs `alembic upgrade head` on boot. With more
+        # than one replica those runs start simultaneously, and Alembic takes
+        # no lock of its own — so serialise them here. Latecomers block until
+        # the leader finishes, then find themselves already at head and no-op.
+        connection.execute(
+            text("SELECT pg_advisory_lock(:key)"), {"key": AdvisoryLock.MIGRATIONS}
         )
-        with context.begin_transaction():
-            context.run_migrations()
+        # End the implicit transaction; the advisory lock is session-scoped
+        # and survives the commit.
+        connection.commit()
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                compare_type=True,
+            )
+            with context.begin_transaction():
+                context.run_migrations()
+        finally:
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:key)"),
+                {"key": AdvisoryLock.MIGRATIONS},
+            )
+            connection.commit()
 
 
 if context.is_offline_mode():

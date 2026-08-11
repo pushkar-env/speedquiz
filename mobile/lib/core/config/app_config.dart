@@ -21,6 +21,13 @@ abstract final class AppConfig {
 
   static const apiPrefix = '/api/v1';
 
+  /// Shown in Profile. Keep in sync with `pubspec.yaml`, or override per build
+  /// with `--dart-define=APP_VERSION=1.2.0`.
+  static const appVersion = String.fromEnvironment(
+    'APP_VERSION',
+    defaultValue: '0.1.0',
+  );
+
   /// Google Cloud **Web** OAuth client ID (serverClientId for ID tokens).
   /// Pass via `--dart-define=GOOGLE_SERVER_CLIENT_ID=....apps.googleusercontent.com`
   static const googleServerClientId = String.fromEnvironment(

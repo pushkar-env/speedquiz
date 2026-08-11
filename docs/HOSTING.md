@@ -35,22 +35,75 @@ worker (AI Background Top-Up) ──►  PostgreSQL 16 + Redis 7 (+ OpenAI API)
 
 ## 3. High Concurrency Configuration Checklist (1,000 CCU)
 
-### A. Uvicorn Worker Process Scaling (`docker-compose.prod.yml`)
-Run **4 Uvicorn worker processes** on a 4-vCPU server:
+### A. Uvicorn Worker Process Scaling
+
+Worker count is read from `WEB_CONCURRENCY` (see `infrastructure/docker/Dockerfile.api`),
+so on a 4-vCPU server just set it in `.env`:
+
+```env
+WEB_CONCURRENCY=4
+```
+
+Migrations take a Postgres advisory lock, so several replicas may boot at once
+without racing Alembic against each other.
+
+To override the command entirely instead:
+
 ```yaml
 services:
   api:
     restart: always
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --limit-concurrency 1000 --backlog 2048"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000
+             --workers 4 --limit-concurrency 1000 --backlog 2048
+             --proxy-headers --forwarded-allow-ips='*'"
 ```
 
+`--proxy-headers` matters behind Caddy: without it every request looks like it
+came from the proxy's own IP.
+
 ### B. PostgreSQL Connection Pool Tuning
-In `.env` or database configuration:
-- `pool_size = 25` per worker (100 base connections total).
-- `max_overflow = 25` per worker (up to 200 total peak connections).
-- Ensure PostgreSQL `max_connections` is set to `250` or higher in `postgresql.conf`.
+
+Set these in `.env` — they are read by `app/core/database.py`:
+
+```env
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=10
+DB_POOL_TIMEOUT_SECONDS=30
+DB_POOL_RECYCLE_SECONDS=1800
+```
+
+**Do the multiplication before you raise these.** Total server connections are:
+
+```text
+(DB_POOL_SIZE + DB_MAX_OVERFLOW) x uvicorn workers x replicas   + the worker service
+```
+
+With the defaults and `--workers 4`, that is `15 x 4 = 60` connections from the
+API plus 15 from the background worker — comfortably inside PostgreSQL's default
+`max_connections = 100`.
+
+Small numbers are correct here, not timid. Async handlers only hold a connection
+while a query is in flight, so real usage is roughly
+`requests/sec x seconds of DB time per request`. At 200 RPS with ~20 ms of database
+time that is about **4 concurrent connections**. Oversizing the pool does not buy
+throughput; it just moves the failure from "wait briefly for a pooled connection"
+to `FATAL: sorry, too many clients already`, which is an outage.
+
+If you do raise the pool, raise `max_connections` in `postgresql.conf` to match
+**and** give Postgres the RAM for it — every connection is a backend process.
+
+Behind a transaction-mode pooler (PgBouncer, Supavisor, Neon's `-pooler`
+endpoint), also set:
+
+```env
+DB_DISABLE_PREPARED_STATEMENTS=true
+```
+
+Connections are multiplexed between transactions there, so server-side prepared
+statements must be off or queries fail with
+`prepared statement "__asyncpg_stmt_x__" already exists` under load.
 
 ### C. Reverse Proxy Optimization (`infrastructure/Caddyfile`)
 Enable gzip/zstd compression and keep-alive connection pooling:

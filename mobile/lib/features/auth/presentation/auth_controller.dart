@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/features/auth/data/auth_repository.dart';
@@ -8,12 +9,30 @@ sealed class AuthState {
   const AuthState();
 }
 
-class AuthInitial extends AuthState {
-  const AuthInitial();
+/// Restoring a stored session. The splash screen owns this state.
+class AuthBooting extends AuthState {
+  const AuthBooting();
 }
 
-class AuthLoading extends AuthState {
-  const AuthLoading();
+/// No active session — the landing screen owns this state.
+///
+/// [pending] is set while a guest/Google attempt is in flight so the landing
+/// screen can show inline progress without the router bouncing to splash.
+class AuthSignedOut extends AuthState {
+  const AuthSignedOut({
+    this.pending = false,
+    this.message,
+    this.hasStoredSession = false,
+  });
+
+  final bool pending;
+
+  /// Why the last attempt failed, if it did.
+  final String? message;
+
+  /// A token exists on disk but could not be validated (usually offline), so
+  /// retrying is more useful than starting a new guest session.
+  final bool hasStoredSession;
 }
 
 class AuthAuthenticated extends AuthState {
@@ -21,68 +40,97 @@ class AuthAuthenticated extends AuthState {
   final AuthUser user;
 }
 
-class AuthError extends AuthState {
-  const AuthError(this.message);
-  final String message;
+enum GoogleSignInOutcome { success, cancelled, failed }
+
+class GoogleSignInResult {
+  const GoogleSignInResult(this.outcome, [this.message]);
+
+  final GoogleSignInOutcome outcome;
+  final String? message;
+
+  bool get isSuccess => outcome == GoogleSignInOutcome.success;
+  bool get isCancelled => outcome == GoogleSignInOutcome.cancelled;
 }
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this._repo, this._googleAuth) : super(const AuthInitial());
+  AuthController(this._repo, this._googleAuth) : super(const AuthBooting());
 
   final AuthRepository _repo;
   final GoogleAuthService _googleAuth;
 
+  /// Restore a stored session on cold start.
+  ///
+  /// A network failure must never destroy a valid session, so tokens are only
+  /// cleared when the server actually rejects them (handled in the repository
+  /// on 401). Anything else lands on the landing screen with a retry.
   Future<void> bootstrap() async {
-    state = const AuthLoading();
+    state = const AuthBooting();
     try {
       final existing = await _repo.fetchMe();
       if (existing != null) {
         state = AuthAuthenticated(existing);
         return;
       }
-      final session = await _repo.signInAsGuest();
-      state = AuthAuthenticated(session.user);
+      state = const AuthSignedOut();
     } catch (error) {
-      // Last resort: wipe tokens and try a fresh guest session once.
-      try {
-        await _repo.signOut();
-        final session = await _repo.signInAsGuest();
-        state = AuthAuthenticated(session.user);
-      } catch (_) {
-        state = AuthError(apiErrorMessage(error));
-      }
+      state = AuthSignedOut(
+        message: apiErrorMessage(error),
+        hasStoredSession: await _repo.hasStoredSession(),
+      );
     }
   }
 
+  /// Start (or restart) an anonymous session.
   Future<void> continueAsGuest() async {
-    state = const AuthLoading();
+    state = const AuthSignedOut(pending: true);
     try {
       final session = await _repo.signInAsGuest();
       state = AuthAuthenticated(session.user);
     } catch (error) {
-      state = AuthError(apiErrorMessage(error));
+      state = AuthSignedOut(message: apiErrorMessage(error));
     }
   }
 
-  /// Upgrade guest (or sign in) with Google. Returns null on cancel.
-  Future<String?> signInWithGoogle() async {
+  /// Sign in with Google, or upgrade the current guest in place.
+  Future<GoogleSignInResult> signInWithGoogle() async {
     final previous = state;
-    state = const AuthLoading();
+    if (previous is AuthSignedOut) {
+      state = const AuthSignedOut(pending: true);
+    }
     try {
       final idToken = await _googleAuth.obtainIdToken();
       if (idToken == null) {
-        state = previous;
-        return 'cancelled';
+        state = previous is AuthSignedOut ? const AuthSignedOut() : previous;
+        return const GoogleSignInResult(GoogleSignInOutcome.cancelled);
       }
       final session = await _repo.signInWithGoogle(idToken);
       state = AuthAuthenticated(session.user);
-      return null;
+      return const GoogleSignInResult(GoogleSignInOutcome.success);
     } catch (error) {
+      final message = error is StateError
+          ? error.message
+          : apiErrorMessage(error, fallback: 'Google sign-in failed.');
+      // An authenticated user stays authenticated when an upgrade fails.
       state = previous is AuthAuthenticated
           ? previous
-          : AuthError(apiErrorMessage(error));
-      return apiErrorMessage(error);
+          : AuthSignedOut(message: message);
+      return GoogleSignInResult(GoogleSignInOutcome.failed, message);
     }
+  }
+
+  /// Drop the local session and return to the landing screen.
+  ///
+  /// The Google session is cleared too, otherwise the next sign-in silently
+  /// reuses the previous account without showing the picker.
+  Future<void> signOut() async {
+    state = const AuthSignedOut(pending: true);
+    try {
+      await _googleAuth.signOut();
+    } catch (error) {
+      debugPrint('google_sign_out_failed: $error');
+    }
+    await _repo.signOut();
+    state = const AuthSignedOut();
   }
 
   void applyProgress({
@@ -109,6 +157,15 @@ class AuthController extends StateNotifier<AuthState> {
     );
   }
 
+  /// Reflect a profile edit across the app without a round trip.
+  void applyIdentity({String? displayName, String? avatarId}) {
+    final current = state;
+    if (current is! AuthAuthenticated) return;
+    state = AuthAuthenticated(
+      current.user.copyWith(displayName: displayName, avatarId: avatarId),
+    );
+  }
+
   Future<void> refreshMe() async {
     try {
       final user = await _repo.fetchMe();
@@ -116,7 +173,7 @@ class AuthController extends StateNotifier<AuthState> {
         state = AuthAuthenticated(user);
       }
     } catch (_) {
-      // Keep current session if refresh fails.
+      // Keep the current session if refresh fails.
     }
   }
 }
@@ -127,4 +184,10 @@ final authControllerProvider =
     ref.watch(authRepositoryProvider),
     ref.watch(googleAuthServiceProvider),
   );
+});
+
+/// Convenience: the signed-in user, or null.
+final currentUserProvider = Provider<AuthUser?>((ref) {
+  final state = ref.watch(authControllerProvider);
+  return state is AuthAuthenticated ? state.user : null;
 });

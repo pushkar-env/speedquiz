@@ -1,7 +1,12 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Shipped placeholder. Booting production with this would let anyone forge
+# tokens, so it is rejected explicitly below.
+DEFAULT_JWT_SECRET = "change-me-to-a-long-random-secret-in-production"
+MIN_PRODUCTION_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -25,7 +30,34 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
 
-    jwt_secret: str = "change-me-to-a-long-random-secret-in-production"
+    # --- Database connection pool (per process) ---
+    # Real connection use is roughly (concurrent requests x average DB time),
+    # which for this workload is single digits — async handlers only hold a
+    # connection while a query is in flight. Keep these small: total server
+    # connections are (pool_size + max_overflow) x uvicorn workers x replicas,
+    # and Postgres defaults to max_connections=100.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout_seconds: int = 30
+    # Recycle below any proxy/pooler idle timeout so we never hand out a
+    # connection the server has already dropped.
+    db_pool_recycle_seconds: int = 1800
+    # Required behind a transaction-mode pooler (PgBouncer, Supavisor, the
+    # Neon `-pooler` endpoint): connections are multiplexed between
+    # transactions, so server-side prepared statements are not safe.
+    db_disable_prepared_statements: bool = False
+
+    # --- Redis client ---
+    # Redis sits in the answer-submission path (rate limiting), so a hung
+    # socket must fail fast rather than stall request handlers.
+    redis_socket_timeout_seconds: float = 3.0
+    redis_connect_timeout_seconds: float = 3.0
+    redis_max_connections: int = 50
+
+    # Serve /docs, /redoc and /openapi.json. Off in production unless opted in.
+    enable_docs_in_production: bool = False
+
+    jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
     jwt_refresh_token_expire_days: int = 30
@@ -97,6 +129,49 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def docs_enabled(self) -> bool:
+        return (not self.is_production) or self.enable_docs_in_production
+
+    @model_validator(mode="after")
+    def _reject_unsafe_production_config(self) -> "Settings":
+        """Refuse to boot production with settings that are actively unsafe.
+
+        Failing at startup is deliberately louder than shipping a deployment
+        that looks healthy while handing out forgeable tokens or free premium.
+        """
+        if not self.is_production:
+            return self
+
+        problems: list[str] = []
+
+        if self.jwt_secret == DEFAULT_JWT_SECRET:
+            problems.append(
+                "JWT_SECRET is still the shipped placeholder - anyone could "
+                "forge tokens. Generate one with: openssl rand -hex 32"
+            )
+        elif len(self.jwt_secret) < MIN_PRODUCTION_JWT_SECRET_LENGTH:
+            problems.append(
+                f"JWT_SECRET must be at least "
+                f"{MIN_PRODUCTION_JWT_SECRET_LENGTH} characters in production"
+            )
+
+        if self.entitlements_dev_toggle:
+            problems.append(
+                "ENTITLEMENTS_DEV_TOGGLE=true exposes POST "
+                "/entitlements/dev/premium, which would let any user grant "
+                "themselves Premium. Set it to false."
+            )
+
+        if self.debug:
+            problems.append("DEBUG must be false when APP_ENV=production")
+
+        if problems:
+            raise ValueError(
+                "Unsafe production configuration:\n  - " + "\n  - ".join(problems)
+            )
+        return self
 
 
 @lru_cache

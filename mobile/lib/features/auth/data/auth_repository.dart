@@ -37,6 +37,13 @@ class AuthRepository {
     return session;
   }
 
+  /// True when a token is on disk — i.e. a session is worth restoring even if
+  /// the network is currently unreachable.
+  Future<bool> hasStoredSession() async {
+    final token = await _tokenStore.readAccessToken();
+    return token != null && token.isNotEmpty;
+  }
+
   Future<AuthUser?> fetchMe() async {
     final token = await _tokenStore.readAccessToken();
     if (token == null || token.isEmpty) return null;

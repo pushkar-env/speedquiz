@@ -15,6 +15,53 @@ docs/            Product and engineering docs
 scripts/         Dev utilities
 ```
 
+## Client design system
+
+The Flutter client is built on one shared token + widget layer. Screens should
+reach for these instead of hand-rolling colours, timings or feedback.
+
+| Concern | Location |
+|---|---|
+| Colour, type, full `ThemeData` (light + dark) | `mobile/lib/core/theme/app_theme.dart` |
+| Durations and curves | `mobile/lib/core/theme/app_motion.dart` |
+| Haptics (with a global kill switch) | `mobile/lib/core/feedback/haptics.dart` |
+| Sound cues and ambient loop | `mobile/lib/core/feedback/audio_service.dart` |
+| Sound / haptics / music preferences | `mobile/lib/core/settings/app_settings.dart` |
+| Route transitions | `mobile/lib/core/routing/page_transitions.dart` |
+| Buttons, cards, dialogs, toasts, confetti, skeletons, … | `mobile/lib/shared/widgets/` (import `sq_widgets.dart`) |
+
+Notes:
+
+- Resolve colours via `context.sq` (a `SqPalette`) rather than branching on
+  `Theme.of(context).brightness`.
+- Space Grotesk and DM Sans are **bundled** in `mobile/assets/fonts/`, so there
+  is no runtime font fetch and no first-launch fallback flash.
+- Audio in `mobile/assets/audio/` is fully synthesised (see the generator note
+  in `audio_service.dart`); playback is decorative and fails silently.
+- Every animated widget honours the platform *reduce motion* setting.
+- **Dialogs must pop with the dialog's own context.** `showSqDialog` hands its
+  route context to the builder for exactly this reason: popping with the
+  caller's context resolves to the GoRouter navigator and tears the current
+  page off the stack, leaving a blank route.
+
+### Screen map
+
+```text
+/splash            boot, restores a stored session
+/landing           signed-out: play as guest / continue with Google
+/home              hero play, surprise-me, daily challenge, topic rail   ┐
+/explore           search, category rail, trending, grouped topic grid   │ tabs
+/leaderboard       weekly + daily podium and ranks                       │
+/profile           identity hub, links to the screens below              ┘
+/profile/edit      display name + avatar picker (PATCH /users/me)
+/profile/achievements
+/profile/stats     lifetime accuracy, speed, topic mastery
+/premium           full-screen store (also shown as a mid-game sheet)
+/settings          appearance, sound, haptics, account, sign out
+/quiz/*            setup → play → results
+/share/results/:id public share card (reachable signed-out)
+```
+
 ## Quick start
 
 Master Play Store & 1,000 CCU Guide: **[docs/PLAYSTORE_PRODUCTION_GUIDE.md](docs/PLAYSTORE_PRODUCTION_GUIDE.md)**.  
@@ -109,7 +156,9 @@ pytest
 14. **Phase 8b** — Store verification adapters (Apple/Google) ✅
 15. **Phase 8c** — Production app identity (`com.speedquiz.app`) ✅
 16. **Phase 8d** — Android release readiness + deployment docs ✅
-17. **Next** — Play Console upload (keystore + AAB) → internal test → production
+17. **Phase 9** — Design system + landing/sign-out + full UI pass ✅
+18. **Phase 10** — Screen split, profile customisation, audio, random topic ✅
+19. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
 See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md).
 
@@ -123,7 +172,7 @@ See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.m
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
 - **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
-- **Auth:** guest bootstrap; Profile **Sign in with Google** (`POST /auth/google`) — see [docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)
+- **Auth:** landing screen with **Play as Guest** + **Continue with Google** (`POST /auth/google`); Profile links a guest to Google and offers **Sign out** — see [docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)
 - **IAP:** `POST /api/v1/entitlements/purchases/verify` (`stub` default; `apple_google` with `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Flutter store buy/restore when products exist
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `speedquiz://` + optional `SHARE_PUBLIC_BASE_URL`
 - **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.speedquiz.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready

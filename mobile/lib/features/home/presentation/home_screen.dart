@@ -1,37 +1,70 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/daily/data/daily_repository.dart';
-import 'package:speedquiz/shared/widgets/sq_button.dart';
+import 'package:speedquiz/features/daily/domain/daily_models.dart';
+import 'package:speedquiz/features/shell/presentation/main_shell.dart';
+import 'package:speedquiz/features/topics/data/topics_repository.dart';
+import 'package:speedquiz/features/topics/presentation/topic_tile.dart';
+import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
-  Future<void> _openDaily(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  bool _startingDaily = false;
+
+  Future<void> _refresh() async {
+    ref.invalidate(dailyChallengeProvider);
+    ref.invalidate(topicsProvider);
+    await ref.read(authControllerProvider.notifier).refreshMe();
+    await ref.read(topicsProvider.future);
+  }
+
+  Future<void> _openDaily() async {
+    if (_startingDaily) return;
+    setState(() => _startingDaily = true);
     final repo = ref.read(dailyRepositoryProvider);
+
     try {
       final info = await repo.fetchToday();
-      if (!context.mounted) return;
+      if (!mounted) return;
+
       if (info.isCompleted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              info.bestScore != null
-                  ? 'Done for today · score ${info.bestScore}. Come back tomorrow!'
-                  : 'Daily challenge complete. Come back tomorrow!',
-            ),
-          ),
-        );
         ref.invalidate(dailyChallengeProvider);
+        setState(() => _startingDaily = false);
+        await showSqInfo(
+          context,
+          title: 'Today is done',
+          message: info.bestScore != null
+              ? 'You scored ${formatScore(info.bestScore!)} on today’s '
+                  'challenge. A fresh set unlocks tomorrow.'
+              : 'You already cleared today’s challenge. '
+                  'A fresh set unlocks tomorrow.',
+          glyph: '✅',
+          tone: SqDialogTone.success,
+          actionLabel: 'NICE',
+        );
         return;
       }
+
       final session = await repo.start();
-      if (!context.mounted) return;
+      if (!mounted) return;
       ref.invalidate(dailyChallengeProvider);
+      setState(() => _startingDaily = false);
+
       context.push(
-        '/quiz/play',
+        Routes.quizPlay,
         extra: {
           'topicId': session.topicId,
           'topicName': session.topicName,
@@ -41,398 +74,308 @@ class HomeScreen extends ConsumerWidget {
         },
       );
     } catch (error) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Daily challenge unavailable: $error')),
+      if (!mounted) return;
+      setState(() => _startingDaily = false);
+      SqToast.error(
+        context,
+        apiErrorMessage(error, fallback: 'Daily challenge is unavailable.'),
+        actionLabel: 'RETRY',
+        onAction: _openDaily,
       );
     }
   }
 
+  void _openTopic(TopicItem topic) {
+    context.push(
+      Routes.quizSetup,
+      extra: {'topicId': topic.id, 'topicName': topic.name},
+    );
+  }
+
+  /// Zero-decision path into a run: random topic, adaptive difficulty, go.
+  void _surpriseMe() {
+    final topic = ref.read(randomTopicProvider);
+    if (topic == null) {
+      SqToast.warning(context, 'No topic has questions ready yet.');
+      return;
+    }
+    Haptics.success();
+    context.push(
+      Routes.quizPlay,
+      extra: {
+        'topicId': topic.id,
+        'topicName': topic.name,
+        'mode': 'casual',
+        'difficulty': 'medium',
+        'adaptive': true,
+      },
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authControllerProvider);
-    final user = auth is AuthAuthenticated ? auth.user : null;
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
+    final p = theme.sq;
+    final user = ref.watch(currentUserProvider);
     final dailyAsync = ref.watch(dailyChallengeProvider);
+    final topicsAsync = ref.watch(topicsProvider);
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: dark ? AppColors.backgroundDark.wash : null,
-          color: dark ? null : AppColors.backgroundLight,
-        ),
+      backgroundColor: Colors.transparent,
+      body: SqBackdrop(
+        intensity: 0.7,
         child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg,
-              AppSpacing.md,
-              AppSpacing.lg,
-              AppSpacing.xxl,
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            color: p.accent,
+            backgroundColor: p.surfaceElevated,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                MainShell.contentBottomPadding(context),
+              ),
+              children: [
+                SqStagger(
+                  child: _PlayerBar(
+                    user: user,
+                    onTap: () => context.go(Routes.profile),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                SqStagger(
+                  index: 1,
+                  child: Text(
+                    _greeting(),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      letterSpacing: 1.4,
+                      fontWeight: FontWeight.w700,
+                      color: p.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SqStagger(
+                  index: 2,
+                  child: Text(
+                    'Pick a topic.\nClimb the ranks.',
+                    style: theme.textTheme.displaySmall?.copyWith(height: 1.06),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                SqStagger(
+                  index: 3,
+                  child: _PlayHero(
+                    onPlay: () => context.push(Routes.quizSetup),
+                    onSurprise: _surpriseMe,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SqStagger(
+                  index: 4,
+                  child: _DailyCard(
+                    async: dailyAsync,
+                    busy: _startingDaily,
+                    onTap: _openDaily,
+                    onRetry: () => ref.invalidate(dailyChallengeProvider),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xl),
+                SqStagger(
+                  index: 5,
+                  child: SqSectionHeader(
+                    title: 'Jump back in',
+                    subtitle: 'Topics with the deepest question banks',
+                    actionLabel: 'ALL',
+                    onAction: () => context.go(Routes.explore),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SqStagger(
+                  index: 6,
+                  child: _TopicShortcuts(
+                    async: topicsAsync,
+                    onTap: _openTopic,
+                    onRetry: () => ref.invalidate(topicsProvider),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SqStagger(
+                  index: 7,
+                  child: _CustomTopicCard(
+                    onTap: () => context.push(Routes.customTopic),
+                  ),
+                ),
+              ],
             ),
-            children: [
-              Builder(
-                builder: (context) {
-                  final level = user?.level ?? 1;
-                  final xp = user?.xp ?? 0;
-                  final threshold = level < 1 ? 500 : level * 500;
-                  final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
-                  final initial = (user?.username.isNotEmpty ?? false)
-                      ? user!.username[0].toUpperCase()
-                      : 'S';
-                  final displayName = user?.displayName ?? user?.username ?? 'Player';
-                  final streak = user?.dailyStreak ?? user?.currentStreak ?? 0;
+          ),
+        ),
+      ),
+    );
+  }
 
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: dark
-                          ? AppColors.surfaceDark.withValues(alpha: 0.65)
-                          : Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: dark
-                            ? Colors.white.withValues(alpha: 0.08)
-                            : AppColors.borderLight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: dark ? 0.25 : 0.05),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [AppColors.accent, Color(0xFF00B4D8)],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accent.withValues(alpha: 0.35),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            initial,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: const Color(0xFF0D1B2A),
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      displayName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -0.2,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.accent.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: AppColors.accent.withValues(alpha: 0.3),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      'LVL $level',
-                                      style: theme.textTheme.labelSmall?.copyWith(
-                                        color: AppColors.accent,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 5),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(999),
-                                      child: LinearProgressIndicator(
-                                        value: progress,
-                                        minHeight: 4,
-                                        backgroundColor: (dark ? Colors.white : Colors.black)
-                                            .withValues(alpha: 0.08),
-                                        color: AppColors.accent,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '$xp/$threshold XP',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.warning.withValues(alpha: 0.25),
-                                AppColors.warning.withValues(alpha: 0.1),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: AppColors.warning.withValues(alpha: 0.4),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text('🔥', style: TextStyle(fontSize: 13)),
-                              const SizedBox(width: 4),
-                              Text(
-                                '$streak',
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: AppColors.warning,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              Text(
-                'SPEEDQUIZ',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1.4,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Pick a topic. Climb the ranks.',
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: dark
-                      ? AppColors.textSecondaryDark
-                      : AppColors.textSecondaryLight,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              _PlayHero(onPlay: () => context.push('/quiz/setup')),
-              const SizedBox(height: AppSpacing.lg),
-              dailyAsync.when(
-                loading: () => SqSurface(
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.warning.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(AppRadii.sm),
-                        ),
-                        child: const Text('📅', style: TextStyle(fontSize: 22)),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Daily Challenge',
-                              style: theme.textTheme.titleMedium,
-                            ),
-                            Text(
-                              'Loading today’s set…',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                error: (_, _) => SqSurface(
-                  onTap: () => ref.invalidate(dailyChallengeProvider),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.warning.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(AppRadii.sm),
-                        ),
-                        child: const Text('📅', style: TextStyle(fontSize: 22)),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Daily Challenge',
-                              style: theme.textTheme.titleMedium,
-                            ),
-                            Text(
-                              'Tap to retry',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.refresh_rounded,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                      ),
-                    ],
-                  ),
-                ),
-                data: (daily) {
-                  final subtitle = daily.isCompleted
-                      ? (daily.bestScore != null
-                          ? 'Completed · ${daily.bestScore} pts'
-                          : 'Completed · come back tomorrow')
-                      : daily.isInProgress
-                          ? 'Resume · ${daily.topicName}'
-                          : '${daily.topicName} · ${daily.questionCount} Qs';
-                  return SqSurface(
-                    onTap: () => _openDaily(context, ref),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(AppRadii.sm),
-                          ),
-                          child: Text(
-                            daily.topicIcon,
-                            style: const TextStyle(fontSize: 22),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                daily.title,
-                                style: theme.textTheme.titleMedium,
-                              ),
-                              Text(subtitle, style: theme.textTheme.bodyMedium),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          daily.isCompleted
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.chevron_right_rounded,
-                          color: daily.isCompleted
-                              ? AppColors.accent
-                              : theme.colorScheme.onSurface.withValues(alpha: 0.45),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              const SqSectionHeader(
-                title: 'Topics',
-                subtitle: 'Jump straight into a challenge',
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
+  static String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 5) return 'BURNING THE MIDNIGHT OIL';
+    if (hour < 12) return 'GOOD MORNING';
+    if (hour < 17) return 'GOOD AFTERNOON';
+    return 'GOOD EVENING';
+  }
+}
+
+/// Compact player strip: avatar, name, level progress and streak.
+class _PlayerBar extends StatelessWidget {
+  const _PlayerBar({required this.user, required this.onTap});
+
+  final AuthUser? user;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    final level = user?.level ?? 1;
+    final xp = user?.xp ?? 0;
+    final threshold = xpThresholdForLevel(level);
+    final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
+    final displayName = user?.displayName ?? user?.username ?? 'Player';
+    final streak = user?.dailyStreak ?? user?.currentStreak ?? 0;
+    final isPremium = user?.isPremium ?? false;
+
+    return SqPressable(
+      onTap: onTap,
+      pressedScale: 0.985,
+      semanticLabel: 'Open your profile',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: p.surface.withValues(alpha: p.isDark ? 0.6 : 0.9),
+          borderRadius: BorderRadius.circular(AppRadii.xl),
+          border: Border.all(color: p.border),
+          boxShadow: AppShadows.soft(p),
+        ),
+        child: Row(
+          children: [
+            SqAvatar(
+              name: displayName,
+              seed: user?.id,
+              size: 40,
+              premium: isPremium,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _TopicChip(label: 'Science', icon: '🧠', onTap: () => context.push('/quiz/setup')),
-                  _TopicChip(label: 'Astronomy', icon: '🌌', onTap: () => context.push('/quiz/setup')),
-                  _TopicChip(label: 'AI', icon: '🤖', onTap: () => context.push('/quiz/setup')),
-                  _TopicChip(label: 'Programming', icon: '💻', onTap: () => context.push('/quiz/setup')),
-                  _TopicChip(label: 'Gaming', icon: '🎮', onTap: () => context.push('/quiz/setup')),
-                  _TopicChip(label: 'Geography', icon: '🌍', onTap: () => context.push('/quiz/setup')),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      SqBadge(label: 'LVL $level', dense: true),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SqProgressTrack(value: progress, height: 4),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$xp/$threshold',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: p.textFaint,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.lg),
-              SqSurface(
-                onTap: () => context.push('/custom-topic'),
-                child: Row(
-                  children: [
-                    const Icon(Icons.add_circle_outline, color: AppColors.accent),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Custom Topic',
-                            style: theme.textTheme.titleMedium,
-                          ),
-                          Text(
-                            'Create a quiz about anything',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 10),
+            _StreakPill(streak: streak),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: p.textFaint,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
+class _StreakPill extends StatelessWidget {
+  const _StreakPill({required this.streak});
+
+  final int streak;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final active = streak > 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: active
+            ? LinearGradient(
+                colors: [
+                  AppColors.gold.withValues(alpha: 0.28),
+                  AppColors.warning.withValues(alpha: 0.12),
+                ],
+              )
+            : null,
+        color: active ? null : theme.sq.border.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(
+          color: active
+              ? AppColors.gold.withValues(alpha: 0.45)
+              : theme.sq.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            active ? '🔥' : '💤',
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$streak',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: active ? AppColors.gold : theme.sq.textFaint,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The primary call to action — a breathing gradient panel.
 class _PlayHero extends StatefulWidget {
-  const _PlayHero({required this.onPlay});
+  const _PlayHero({required this.onPlay, required this.onSurprise});
 
   final VoidCallback onPlay;
+  final VoidCallback onSurprise;
 
   @override
   State<_PlayHero> createState() => _PlayHeroState();
@@ -440,15 +383,19 @@ class _PlayHero extends StatefulWidget {
 
 class _PlayHeroState extends State<_PlayHero>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  );
 
   @override
-  void initState() {
-    super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pulse.stop();
+    } else if (!_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
   }
 
   @override
@@ -459,104 +406,380 @@ class _PlayHeroState extends State<_PlayHero>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, child) {
-        final t = Curves.easeInOut.transform(_pulse.value);
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadii.lg),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color.lerp(
-                  const Color(0xFF163028),
-                  const Color(0xFF1A3A30),
-                  t,
-                )!,
-                const Color(0xFF101822),
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) {
+          final t = Curves.easeInOut.transform(_pulse.value);
+          return Container(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadii.lg),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: p.isDark
+                    ? [
+                        Color.lerp(
+                          const Color(0xFF14332B),
+                          const Color(0xFF1B4438),
+                          t,
+                        )!,
+                        const Color(0xFF101822),
+                      ]
+                    : [
+                        Color.lerp(
+                          const Color(0xFFE9FBF4),
+                          const Color(0xFFDDF7EC),
+                          t,
+                        )!,
+                        Colors.white,
+                      ],
+              ),
+              border: Border.all(
+                color: p.accent.withValues(alpha: 0.22 + t * 0.16),
+              ),
+              boxShadow: AppShadows.glow(
+                AppColors.accent,
+                strength: 0.10 + t * 0.07,
+              ),
+            ),
+            child: child,
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SqBadge(
+                  label: 'READY',
+                  icon: Icons.bolt_rounded,
+                  dense: true,
+                ),
+                const Spacer(),
+                Text(
+                  'SERVER-SCORED',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: p.textFaint,
+                    letterSpacing: 1.2,
+                  ),
+                ),
               ],
             ),
-            border: Border.all(
-              color: AppColors.accent.withValues(alpha: 0.22 + t * 0.12),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Start a run',
+              style: theme.textTheme.headlineMedium,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.accent.withValues(alpha: 0.08 + t * 0.06),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: child,
-        );
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'READY?',
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  letterSpacing: 1.4,
-                  color: AppColors.accent,
+            const SizedBox(height: 4),
+            Text(
+              'Timed questions, speed bonuses and streak multipliers. '
+              'Five modes to pick from.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: SqButton(
+                    label: 'PLAY',
+                    icon: Icons.play_arrow_rounded,
+                    onPressed: widget.onPlay,
+                  ),
                 ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Start a run',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimaryDark,
+                const SizedBox(width: 10),
+                // One tap, no decisions — random topic, adaptive difficulty.
+                Expanded(
+                  flex: 2,
+                  child: SqButton(
+                    label: 'SURPRISE',
+                    variant: SqButtonVariant.ghost,
+                    onPressed: widget.onSurprise,
+                  ),
                 ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Timed questions. Server-side scoring. Pure focus.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textSecondaryDark,
-                ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          SqButton(label: 'PLAY', onPressed: widget.onPlay),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _TopicChip extends StatelessWidget {
-  const _TopicChip({
-    required this.label,
-    required this.icon,
+class _DailyCard extends StatelessWidget {
+  const _DailyCard({
+    required this.async,
+    required this.busy,
     required this.onTap,
+    required this.onRetry,
   });
 
-  final String label;
-  final String icon;
+  final AsyncValue<DailyChallengeInfo> async;
+  final bool busy;
+  final VoidCallback onTap;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    return async.when(
+      loading: () => const SqShimmer(child: SqSkeletonCard()),
+      error: (_, _) => SqSurface(
+        onTap: onRetry,
+        child: Row(
+          children: [
+            _Glyph(glyph: '📅', tint: AppColors.warning),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Daily Challenge', style: theme.textTheme.titleMedium),
+                  Text('Tap to retry', style: theme.textTheme.bodyMedium),
+                ],
+              ),
+            ),
+            Icon(Icons.refresh_rounded, color: p.textFaint),
+          ],
+        ),
+      ),
+      data: (daily) {
+        final done = daily.isCompleted;
+        final subtitle = done
+            ? (daily.bestScore != null
+                ? 'Cleared · ${formatScore(daily.bestScore!)} pts'
+                : 'Cleared · back tomorrow')
+            : daily.isInProgress
+                ? 'Resume · ${daily.topicName}'
+                : '${daily.topicName} · ${daily.questionCount} questions';
+
+        return SqSurface(
+          onTap: busy ? null : onTap,
+          highlighted: !done,
+          accent: done ? AppColors.success : AppColors.warning,
+          child: Row(
+            children: [
+              _Glyph(
+                glyph: daily.topicIcon,
+                tint: done ? AppColors.success : AppColors.warning,
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            daily.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleMedium,
+                          ),
+                        ),
+                        if (!done) ...[
+                          const SizedBox(width: 8),
+                          const SqBadge(
+                            label: 'TODAY',
+                            color: AppColors.warning,
+                            dense: true,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (busy)
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: p.accent,
+                  ),
+                )
+              else
+                Icon(
+                  done
+                      ? Icons.check_circle_rounded
+                      : Icons.chevron_right_rounded,
+                  color: done ? AppColors.success : p.textFaint,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _Glyph extends StatelessWidget {
+  const _Glyph({required this.glyph, required this.tint});
+
+  final String glyph;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 46,
+      height: 46,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+        border: Border.all(color: tint.withValues(alpha: 0.25)),
+      ),
+      child: Text(glyph, style: const TextStyle(fontSize: 22)),
+    );
+  }
+}
+
+/// Horizontal rail of real, playable topics — tapping one carries the topic
+/// straight through to setup.
+class _TopicShortcuts extends StatelessWidget {
+  const _TopicShortcuts({
+    required this.async,
+    required this.onTap,
+    required this.onRetry,
+  });
+
+  final AsyncValue<List<TopicItem>> async;
+  final ValueChanged<TopicItem> onTap;
+  final VoidCallback onRetry;
+
+  static const _railHeight = 128.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return async.when(
+      loading: () => SizedBox(
+        height: _railHeight,
+        child: SqShimmer(
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 4,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (_, _) => const SqSkeleton(
+              width: 172,
+              height: _railHeight,
+              radius: AppRadii.md,
+            ),
+          ),
+        ),
+      ),
+      error: (error, _) => SqErrorState(
+        title: 'Topics unavailable',
+        message: apiErrorMessage(error, fallback: 'Could not load topics.'),
+        onRetry: onRetry,
+      ),
+      data: (all) {
+        final playable = all.where((t) => t.isPlayable).take(8).toList();
+        if (playable.isEmpty) {
+          return SqSurface(
+            child: Text(
+              'The question bank is still filling up. Check back shortly.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          );
+        }
+
+        return SizedBox(
+          height: _railHeight,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            padding: EdgeInsets.zero,
+            itemCount: playable.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) => SqStagger(
+              index: index,
+              offset: 0,
+              child: TopicFeatureCard(
+                topic: playable[index],
+                onTap: () => onTap(playable[index]),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CustomTopicCard extends StatelessWidget {
+  const _CustomTopicCard({required this.onTap});
+
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
-      color: dark ? AppColors.surfaceDark : AppColors.surfaceLight,
-      borderRadius: BorderRadius.circular(AppRadii.sm),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppRadii.sm),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadii.sm),
-            border: Border.all(
-              color: dark ? AppColors.borderDark : AppColors.borderLight,
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    return SqSurface(
+      onTap: onTap,
+      gradient: LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          AppColors.violet.withValues(alpha: p.isDark ? 0.16 : 0.10),
+          p.surface,
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.violet.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+              border: Border.all(
+                color: AppColors.violet.withValues(alpha: 0.3),
+              ),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.violet,
+              size: 22,
             ),
           ),
-          child: Text('$icon  $label'),
-        ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Custom topic', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  'Describe anything and the AI builds a quiz for it',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: p.textFaint),
+        ],
       ),
     );
   }

@@ -1,37 +1,82 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:speedquiz/core/feedback/audio_service.dart';
+import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
-import 'package:speedquiz/shared/widgets/sq_button.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
-class QuizResultsScreen extends StatefulWidget {
-  const QuizResultsScreen({super.key, required this.result});
+class QuizResultsScreen extends ConsumerStatefulWidget {
+  const QuizResultsScreen({super.key, required this.args});
 
-  final QuizResult result;
+  final QuizResultArgs args;
+
+  QuizResult get result => args.result;
 
   @override
-  State<QuizResultsScreen> createState() => _QuizResultsScreenState();
+  ConsumerState<QuizResultsScreen> createState() => _QuizResultsScreenState();
 }
 
-class _QuizResultsScreenState extends State<QuizResultsScreen>
+class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scoreScale;
-  late final Animation<double> _fade;
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  );
+
+  late final Animation<double> _scoreScale = CurvedAnimation(
+    parent: _controller,
+    curve: const Interval(0.1, 0.75, curve: AppMotion.spring),
+  );
+
+  bool _celebrate = false;
+  bool _sharing = false;
+
+  /// A run worth celebrating: a personal best, a level-up, or an unlock.
+  bool get _isCelebration =>
+      widget.result.isPersonalBest ||
+      widget.args.leveledUp ||
+      widget.result.newAchievements.isNotEmpty;
+
+  /// Restart the same topic and mode without a detour through setup — the
+  /// single biggest thing that keeps a session going.
+  void _playAgain() {
+    final args = widget.args;
+    if (!args.canReplay) {
+      context.go(Routes.quizSetup);
+      return;
+    }
+    context.pushReplacement(
+      Routes.quizPlay,
+      extra: {
+        'topicId': args.topicId,
+        'topicName': widget.result.topicName,
+        'mode': args.mode ?? widget.result.mode,
+        'difficulty': args.difficulty ?? widget.result.difficulty,
+        'adaptive': args.adaptive,
+      },
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _scoreScale = Tween<double>(begin: 0.82, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
-    );
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _controller.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final audio = ref.read(audioServiceProvider);
+      if (!_isCelebration) {
+        audio.play(Sfx.finish);
+        return;
+      }
+      setState(() => _celebrate = true);
+      Haptics.milestone();
+      audio.play(Sfx.unlock);
+    });
   }
 
   @override
@@ -41,236 +86,413 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
   }
 
   Future<void> _shareResult() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
     final result = widget.result;
     final text = result.shareText.isNotEmpty
         ? result.shareText
         : 'SPEEDQUIZ\n\n${result.topicName}\n'
             'Score: ${formatScore(result.finalScore)}\n'
             'Accuracy: ${result.accuracy.toStringAsFixed(0)}%\n'
-            'Best Streak: ${result.bestStreak}';
-    await SharePlus.instance.share(ShareParams(text: text));
+            'Best streak: ${result.bestStreak}';
+    try {
+      await SharePlus.instance.share(ShareParams(text: text));
+    } catch (_) {
+      if (mounted) SqToast.error(context, 'Could not open the share sheet.');
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final result = widget.result;
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
-    final avgSec = (result.averageAnswerMs / 1000).toStringAsFixed(1);
+    final p = theme.sq;
+    final result = widget.result;
     final unlocks = result.newAchievements;
+    final avgSeconds = (result.averageAnswerMs / 1000).toStringAsFixed(1);
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: dark ? AppColors.backgroundDark.wash : null,
-          color: dark ? null : AppColors.backgroundLight,
-        ),
-        child: SafeArea(
-          child: FadeTransition(
-            opacity: _fade,
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+      backgroundColor: Colors.transparent,
+      body: SqBackdrop(
+        intensity: _isCelebration ? 1 : 0.5,
+        colors: _isCelebration
+            ? const [AppColors.gold, AppColors.accent, AppColors.magenta]
+            : null,
+        child: Stack(
+          children: [
+            SafeArea(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'GAME OVER',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      letterSpacing: 2.2,
-                      color: AppColors.warning,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  ScaleTransition(
-                    scale: _scoreScale,
-                    child: Text(
-                      formatScore(result.finalScore),
-                      style: theme.textTheme.displayMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${result.topicName} · ${result.difficulty.toUpperCase()} · ${result.mode.replaceAll('_', ' ')}',
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  const SizedBox(height: AppSpacing.xl),
                   Expanded(
                     child: ListView(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.lg,
+                        AppSpacing.md,
+                      ),
                       children: [
-                        SqSurface(
-                          child: Column(
-                            children: [
-                              _StatRow(
-                                label: 'Best Streak',
-                                icon: '🔥',
-                                value: '${result.bestStreak}',
-                              ),
-                              const Divider(height: 20),
-                              _StatRow(
-                                label: 'Accuracy',
-                                icon: '🎯',
-                                value: '${result.accuracy.toStringAsFixed(0)}%',
-                              ),
-                              const Divider(height: 20),
-                              _StatRow(
-                                label: 'Avg Answer',
-                                icon: '⚡',
-                                value: '${avgSec}s',
-                              ),
-                              const Divider(height: 20),
-                              _StatRow(
-                                label: 'Questions',
-                                icon: '📘',
-                                value: '${result.questionsAnswered}',
-                              ),
-                            ],
+                        SqStagger(
+                          child: Center(
+                            child: SqBadge(
+                              label: result.isPersonalBest
+                                  ? 'NEW PERSONAL BEST'
+                                  : 'RUN COMPLETE',
+                              gradient: result.isPersonalBest
+                                  ? AppColors.premiumGradient
+                                  : null,
+                              icon: result.isPersonalBest
+                                  ? Icons.emoji_events_rounded
+                                  : Icons.flag_rounded,
+                            ),
                           ),
                         ),
+                        if (widget.args.leveledUp) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          SqStagger(
+                            index: 1,
+                            child: _LevelUpBanner(
+                              level: result.level ?? 1,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: AppSpacing.lg),
-                        Row(
-                          children: [
-                            Text(
-                              '+${result.xpEarned} XP',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                color: AppColors.accent,
-                                fontWeight: FontWeight.w800,
+                        ScaleTransition(
+                          scale: Tween<double>(begin: 0.7, end: 1)
+                              .animate(_scoreScale),
+                          child: Center(
+                            child: SqAnimatedCounter(
+                              value: result.finalScore,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.displayLarge?.copyWith(
+                                fontSize: 62,
                               ),
                             ),
-                            const Spacer(),
-                            if (result.isPersonalBest)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      AppColors.warning.withValues(alpha: 0.14),
-                                  borderRadius:
-                                      BorderRadius.circular(AppRadii.pill),
-                                ),
-                                child: Text(
-                                  'NEW BEST',
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: AppColors.warning,
-                                  ),
-                                ),
-                              ),
-                          ],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Center(
+                          child: Text(
+                            '${result.topicName} · '
+                            '${humanizeMode(result.difficulty)} · '
+                            '${humanizeMode(result.mode)}',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium,
+                          ),
                         ),
                         if (!result.isPersonalBest &&
                             result.previousBest > 0) ...[
                           const SizedBox(height: 6),
-                          Text(
-                            'Personal best: ${formatScore(result.previousBest)}',
-                            style: theme.textTheme.bodyMedium,
+                          Center(
+                            child: Text(
+                              'Personal best '
+                              '${formatScore(result.previousBest)}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: p.textFaint,
+                              ),
+                            ),
                           ),
                         ],
+                        const SizedBox(height: AppSpacing.xl),
+                        SqStagger(
+                          index: 1,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _StatTile(
+                                  glyph: '🎯',
+                                  label: 'Accuracy',
+                                  value:
+                                      '${result.accuracy.toStringAsFixed(0)}%',
+                                  tint: AppColors.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _StatTile(
+                                  glyph: '🔥',
+                                  label: 'Best streak',
+                                  value: '${result.bestStreak}',
+                                  tint: AppColors.gold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SqStagger(
+                          index: 2,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _StatTile(
+                                  glyph: '⚡',
+                                  label: 'Avg answer',
+                                  value: '${avgSeconds}s',
+                                  tint: AppColors.cyan,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _StatTile(
+                                  glyph: '📘',
+                                  label: 'Questions',
+                                  value: '${result.questionsAnswered}',
+                                  tint: AppColors.violet,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SqStagger(
+                          index: 3,
+                          child: _XpCard(
+                            xpEarned: result.xpEarned,
+                            level: result.level,
+                            xp: result.xp,
+                          ),
+                        ),
                         if (unlocks.isNotEmpty) ...[
-                          const SizedBox(height: AppSpacing.lg),
-                          Text(
-                            'Unlocked',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
+                          const SizedBox(height: AppSpacing.xl),
+                          SqStagger(
+                            index: 4,
+                            child: SqSectionHeader(
+                              title: 'Unlocked',
+                              subtitle: unlocks.length == 1
+                                  ? 'One new achievement'
+                                  : '${unlocks.length} new achievements',
                             ),
                           ),
-                          const SizedBox(height: AppSpacing.sm),
-                          ...unlocks.map(
-                            (a) => Padding(
+                          const SizedBox(height: AppSpacing.md),
+                          for (var i = 0; i < unlocks.length; i++)
+                            Padding(
                               padding: const EdgeInsets.only(bottom: 10),
-                              child: _UnlockCard(achievement: a),
+                              child: SqStagger(
+                                index: 5 + i,
+                                child: _UnlockCard(achievement: unlocks[i]),
+                              ),
                             ),
-                          ),
                         ],
-                        const SizedBox(height: AppSpacing.lg),
-                        _ShareCardPreview(result: result),
                       ],
                     ),
                   ),
-                  SqButton(
-                    label: 'PLAY AGAIN',
-                    onPressed: () => context.go('/quiz/setup'),
-                  ),
-                  const SizedBox(height: 10),
-                  SqGhostButton(
-                    label: 'SHARE RESULT',
-                    onPressed: _shareResult,
-                  ),
-                  const SizedBox(height: 4),
-                  Center(
-                    child: TextButton(
-                      onPressed: () => context.go('/home'),
-                      child: const Text('HOME'),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg,
+                      0,
+                      AppSpacing.lg,
+                      AppSpacing.sm,
+                    ),
+                    child: Column(
+                      children: [
+                        SqButton(
+                          label: widget.args.canReplay
+                              ? 'PLAY AGAIN'
+                              : 'NEW RUN',
+                          icon: Icons.replay_rounded,
+                          onPressed: _playAgain,
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            if (widget.args.canReplay) ...[
+                              Expanded(
+                                child: SqButton(
+                                  label: 'NEW RUN',
+                                  icon: Icons.tune_rounded,
+                                  variant: SqButtonVariant.ghost,
+                                  onPressed: () =>
+                                      context.go(Routes.quizSetup),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                            Expanded(
+                              child: SqButton(
+                                label: 'SHARE',
+                                icon: Icons.ios_share_rounded,
+                                variant: SqButtonVariant.ghost,
+                                loading: _sharing,
+                                onPressed: _shareResult,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: SqButton(
+                                label: 'HOME',
+                                icon: Icons.home_rounded,
+                                variant: SqButtonVariant.ghost,
+                                onPressed: () => context.go(Routes.home),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+            if (_isCelebration)
+              Positioned.fill(child: SqConfetti(play: _celebrate)),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ShareCardPreview extends StatelessWidget {
-  const _ShareCardPreview({required this.result});
+/// Level-up callout. Rare enough to earn its own gold treatment.
+class _LevelUpBanner extends StatelessWidget {
+  const _LevelUpBanner({required this.level});
 
-  final QuizResult result;
+  final int level;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
 
     return Container(
-      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.gold.withValues(alpha: 0.26),
+            AppColors.warning.withValues(alpha: 0.10),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.45)),
+        boxShadow: AppShadows.glow(AppColors.gold, strength: 0.22),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('🎉', style: TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              'LEVEL UP — you hit level $level',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: AppColors.gold,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  const _StatTile({
+    required this.glyph,
+    required this.label,
+    required this.value,
+    required this.tint,
+  });
+
+  final String glyph;
+  final String label;
+  final String value;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
+        color: p.surface,
         borderRadius: BorderRadius.circular(AppRadii.md),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: dark
-              ? const [Color(0xFF1A2836), Color(0xFF12201A)]
-              : [
-                  AppColors.surfaceLight,
-                  AppColors.accent.withValues(alpha: 0.08),
-                ],
-        ),
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.28),
-        ),
+        border: Border.all(color: p.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'SHARE CARD',
-            style: theme.textTheme.labelLarge?.copyWith(
-              letterSpacing: 1.2,
-              color: AppColors.accent,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              Text(glyph, style: const TextStyle(fontSize: 15)),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: p.textFaint,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
-            result.topicName,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
+            value,
+            style: theme.textTheme.headlineSmall?.copyWith(color: tint),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _XpCard extends StatelessWidget {
+  const _XpCard({required this.xpEarned, this.level, this.xp});
+
+  final int xpEarned;
+  final int? level;
+  final int? xp;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+    final currentLevel = level ?? 1;
+    final currentXp = xp ?? 0;
+    final threshold = xpThresholdForLevel(currentLevel);
+    final progress = threshold <= 0
+        ? 0.0
+        : (currentXp / threshold).clamp(0.0, 1.0);
+
+    return SqSurface(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      highlighted: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SqAnimatedCounter(
+                value: xpEarned,
+                prefix: '+',
+                suffix: ' XP',
+                grouped: false,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: p.accent,
+                ),
+              ),
+              const Spacer(),
+              SqBadge(label: 'LEVEL $currentLevel'),
+            ],
+          ),
+          if (level != null) ...[
+            const SizedBox(height: AppSpacing.md),
+            SqProgressTrack(value: progress, height: 8),
+            const SizedBox(height: 6),
+            Text(
+              '$currentXp / $threshold XP to level ${currentLevel + 1}',
+              style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${formatScore(result.finalScore)} · '
-            '${result.accuracy.toStringAsFixed(0)}% accuracy · '
-            'streak ${result.bestStreak}',
-            style: theme.textTheme.bodyMedium,
-          ),
+          ],
         ],
       ),
     );
@@ -285,37 +507,27 @@ class _UnlockCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
-    final rewardBits = <String>[];
-    if (achievement.xpReward > 0) {
-      rewardBits.add('+${achievement.xpReward} XP');
-    }
-    if (achievement.coinsReward > 0) {
-      rewardBits.add('+${achievement.coinsReward} coins');
-    }
+    final p = theme.sq;
+    final rewards = [
+      if (achievement.xpReward > 0) '+${achievement.xpReward} XP',
+      if (achievement.coinsReward > 0) '+${achievement.coinsReward} coins',
+    ].join(' · ');
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        color: dark ? AppColors.surfaceDark : AppColors.surfaceLight,
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.35),
-        ),
-      ),
+    return SqSurface(
+      accent: AppColors.gold,
+      highlighted: true,
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 46,
+            height: 46,
             alignment: Alignment.center,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.accent.withValues(alpha: 0.14),
+              gradient: AppColors.premiumGradient,
             ),
             child: Text(
-              _iconGlyph(achievement.icon),
+              achievementGlyph(achievement.icon),
               style: const TextStyle(fontSize: 20),
             ),
           ),
@@ -324,85 +536,28 @@ class _UnlockCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  achievement.name,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                Text(achievement.name, style: theme.textTheme.titleSmall),
+                const SizedBox(height: 1),
                 Text(
                   achievement.description,
-                  style: theme.textTheme.bodyMedium,
+                  style: theme.textTheme.bodySmall,
                 ),
-                if (rewardBits.isNotEmpty)
+                if (rewards.isNotEmpty) ...[
+                  const SizedBox(height: 4),
                   Text(
-                    rewardBits.join(' · '),
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: AppColors.accent,
+                    rewards,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: AppColors.gold,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
+                ],
               ],
             ),
           ),
+          Icon(Icons.auto_awesome_rounded, color: p.accent, size: 18),
         ],
       ),
-    );
-  }
-}
-
-String _iconGlyph(String icon) {
-  switch (icon) {
-    case 'flag':
-      return '🏁';
-    case 'check':
-      return '✅';
-    case 'fire':
-      return '🔥';
-    case 'bolt':
-      return '⚡';
-    case 'brain':
-      return '🧠';
-    case 'infinity':
-      return '∞';
-    case 'star':
-      return '⭐';
-    case 'calendar':
-      return '📅';
-    case 'planet':
-      return '🪐';
-    case 'sigma':
-      return '∑';
-    case 'robot':
-      return '🤖';
-    default:
-      return '🏆';
-  }
-}
-
-class _StatRow extends StatelessWidget {
-  const _StatRow({
-    required this.label,
-    required this.icon,
-    required this.value,
-  });
-
-  final String label;
-  final String icon;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text('$icon  $label'),
-        const Spacer(),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-        ),
-      ],
     );
   }
 }
