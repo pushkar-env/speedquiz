@@ -1,0 +1,10 @@
+name = "speedquiz-api"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Publishes to https://speedquiz-api.<your-subdomain>.workers.dev
+workers_dev = true
+
+[vars]
+# The Railway service to forward to. Change this instead of editing worker.js.
+ORIGIN_HOST = "api-production-352e8.up.railway.app"

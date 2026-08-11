@@ -62,12 +62,17 @@ Notes:
 /share/results/:id public share card (reachable signed-out)
 ```
 
-## Quick start
+## Documentation
 
-Master Play Store & 1,000 CCU Guide: **[docs/PLAYSTORE_PRODUCTION_GUIDE.md](docs/PLAYSTORE_PRODUCTION_GUIDE.md)**.  
-Day-to-day open/run/build: **[docs/OPEN_AND_RUN.md](docs/OPEN_AND_RUN.md)**.  
-Deployment quick reference: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.  
-Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.  
+Three guides, each self-contained:
+
+| Guide | Covers |
+|---|---|
+| **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | Architecture, running locally, environment reference, Google Sign-In setup, tests, client design system |
+| **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Railway + Neon + Upstash + Cloudflare Worker, scaling, load testing, troubleshooting, VPS alternative |
+| **[docs/RELEASE.md](docs/RELEASE.md)** | Signing, App Links, IAP verification, Play Console, pre-submission checklist |
+
+## Quick start
 
 ### Prerequisites
 
@@ -87,11 +92,6 @@ Production-style (no reload / no source mounts):
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
-
-Master Play Store launch & 1,000 CCU blueprint: **[docs/PLAYSTORE_PRODUCTION_GUIDE.md](docs/PLAYSTORE_PRODUCTION_GUIDE.md)**.  
-Host API on a real domain: **[docs/HOSTING.md](docs/HOSTING.md)** (VPS) or **[docs/RAILWAY.md](docs/RAILWAY.md)** (Railway).  
-Google Sign-In: **[docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)**.  
-Provider env checklist: **[docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md)**.
 
 Services:
 
@@ -117,11 +117,13 @@ flutter pub get
 flutter run
 ```
 
-Point the app at your machine:
+Point the app at a backend:
 
-- Android emulator: `http://10.0.2.2:8000`
-- Physical device (any network): public HTTPS tunnel — see [docs/OPEN_AND_RUN.md](docs/OPEN_AND_RUN.md) (`scripts/dev_tunnel.ps1`)
-- Production / Play: `--dart-define=API_BASE_URL=https://speedquiz.app`
+- **Android emulator** — nothing to pass; falls back to `http://10.0.2.2:8000`
+- **Physical device, same Wi-Fi** — `--dart-define=API_BASE_URL=http://<your-LAN-ip>:8000`
+- **Physical device, any network** — deploy first, then pass the public URL
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#3-run-the-app) for the details.
 
 Play Store App Bundle:
 
@@ -160,7 +162,7 @@ pytest
 18. **Phase 10** — Screen split, profile customisation, audio, random topic ✅
 19. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
-See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md), and [docs/ENV_PROVIDERS.md](docs/ENV_PROVIDERS.md).
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/RELEASE.md](docs/RELEASE.md).
 
 ## Progression & engagement
 
@@ -172,7 +174,7 @@ See [docs/PROGRESS.md](docs/PROGRESS.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.m
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
 - **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
-- **Auth:** landing screen with **Play as Guest** + **Continue with Google** (`POST /auth/google`); Profile links a guest to Google and offers **Sign out** — see [docs/AUTH_GOOGLE.md](docs/AUTH_GOOGLE.md)
+- **Auth:** landing screen with **Play as Guest** + **Continue with Google** (`POST /auth/google`); Profile links a guest to Google and offers **Sign out** — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#5-google-sign-in)
 - **IAP:** `POST /api/v1/entitlements/purchases/verify` (`stub` default; `apple_google` with `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Flutter store buy/restore when products exist
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `speedquiz://` + optional `SHARE_PUBLIC_BASE_URL`
 - **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.speedquiz.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready

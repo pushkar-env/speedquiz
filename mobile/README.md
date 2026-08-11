@@ -27,10 +27,9 @@ flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.a
 
 3. Upload `build/app/outputs/bundle/release/app-release.aab` in Play Console.
 
-Day-to-day: [docs/OPEN_AND_RUN.md](../docs/OPEN_AND_RUN.md).  
-Google Sign-In: [docs/AUTH_GOOGLE.md](../docs/AUTH_GOOGLE.md).  
-Railway deploy: [docs/RAILWAY.md](../docs/RAILWAY.md).  
-Full Play steps: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).
+Day-to-day, Google Sign-In, design system: [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md).  
+Hosting the API: [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md).  
+Signing and Play submission: [docs/RELEASE.md](../docs/RELEASE.md).
 
 ## iOS
 
