@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
@@ -28,23 +29,23 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
   bool _busy = false;
   String? _selectedPlan;
 
-  static const _benefits = [
-    (
-      Icons.all_inclusive_rounded,
-      'Unlimited questions',
-      'No cap on unique questions in any topic',
-    ),
-    (
-      Icons.auto_awesome_rounded,
-      'Unlimited custom topics',
-      'Generate quizzes on anything, as often as you like',
-    ),
-    (
-      Icons.palette_rounded,
-      'Premium avatars & flair',
-      'Six exclusive avatars, a gold profile ring and a leaderboard badge',
-    ),
-  ];
+  static List<(IconData, String, String)> _benefits(SqStrings l10n) => [
+        (
+          Icons.all_inclusive_rounded,
+          l10n.premiumBenefitQuestionsTitle,
+          l10n.premiumBenefitQuestionsBody,
+        ),
+        (
+          Icons.auto_awesome_rounded,
+          l10n.premiumBenefitCustomTitle,
+          l10n.premiumBenefitCustomBody,
+        ),
+        (
+          Icons.palette_rounded,
+          l10n.premiumBenefitCosmeticsTitle,
+          l10n.premiumBenefitCosmeticsBody,
+        ),
+      ];
 
   @override
   void initState() {
@@ -90,7 +91,7 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
         );
         if (!mounted) return;
         if (me?.isPremium == true) {
-          SqToast.success(context, 'Premium unlocked. Enjoy.');
+          SqToast.success(context, context.l10n.premiumUnlocked);
           _finish();
         }
         return;
@@ -103,10 +104,10 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
         final me = await billing.verifyStubPurchase(planCode: planCode);
         if (!mounted) return;
         if (me.isPremium) {
-          SqToast.success(context, 'Premium unlocked (test purchase)');
+          SqToast.success(context, context.l10n.premiumUnlockedTest);
           _finish();
         } else {
-          SqToast.warning(context, 'Verify returned free — check the server');
+          SqToast.warning(context, context.l10n.premiumVerifyReturnedFree);
         }
         return;
       }
@@ -116,10 +117,10 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
           final me = await billing.verifyStubPurchase(planCode: planCode);
           if (!mounted) return;
           if (me.isPremium) {
-            SqToast.success(context, 'Premium enabled (stub purchase)');
+            SqToast.success(context, context.l10n.premiumEnabledStub);
             _finish();
           } else {
-            SqToast.warning(context, 'Purchase verify returned free');
+            SqToast.warning(context, context.l10n.premiumVerifyReturnedFree);
           }
           return;
         } catch (_) {
@@ -131,18 +132,14 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
               .read(authControllerProvider.notifier)
               .applyProgress(isPremium: updated.isPremium);
           if (!mounted) return;
-          SqToast.success(context, 'Premium enabled (dev)');
+          SqToast.success(context, context.l10n.premiumEnabledDev);
           _finish();
           return;
         }
       }
 
       if (!mounted) return;
-      SqToast.info(
-        context,
-        'Subscriptions are not available on this device yet — '
-        'nothing has been charged.',
-      );
+      SqToast.info(context, context.l10n.premiumNotAvailableHere);
     } catch (error) {
       if (mounted) SqToast.error(context, apiErrorMessage(error));
     } finally {
@@ -164,10 +161,10 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
         final me = await billing.restore();
         if (!mounted) return;
         if (me?.isPremium == true) {
-          SqToast.success(context, 'Purchases restored.');
+          SqToast.success(context, context.l10n.premiumRestored);
           _finish();
         } else {
-          SqToast.info(context, 'No active subscription on this store account.');
+          SqToast.info(context, context.l10n.premiumNoSubscription);
         }
         return;
       }
@@ -176,16 +173,16 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
         final me = await billing.verifyStubPurchase(planCode: _selectedPlan);
         if (!mounted) return;
         if (me.isPremium) {
-          SqToast.success(context, 'Premium restored (stub)');
+          SqToast.success(context, context.l10n.premiumRestoredStub);
           _finish();
         } else {
-          SqToast.info(context, 'Nothing to restore.');
+          SqToast.info(context, context.l10n.premiumNothingToRestore);
         }
         return;
       }
 
       if (mounted) {
-        SqToast.warning(context, 'Restore is unavailable on this device.');
+        SqToast.warning(context, context.l10n.premiumRestoreUnavailable);
       }
     } catch (error) {
       if (mounted) SqToast.error(context, apiErrorMessage(error));
@@ -195,6 +192,7 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
   }
 
   String _primaryLabel({
+    required SqStrings l10n,
     required bool canBuy,
     required bool allowDev,
     required bool stubAllowed,
@@ -202,22 +200,31 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
     required PlanOffer? offer,
   }) {
     if (canBuy) {
-      if (isSwitch) return 'SWITCH TO ${offer?.plan.title.toUpperCase() ?? 'PLAN'}';
+      if (isSwitch) {
+        return l10n.premiumSwitchTo(
+          offer?.plan.title.toUpperCase() ?? l10n.premiumSubscribe,
+        );
+      }
       final price = offer?.price;
-      return price == null ? 'SUBSCRIBE' : 'SUBSCRIBE · $price';
+      return price == null
+          ? l10n.premiumSubscribe
+          : l10n.premiumSubscribeWithPrice(price);
     }
     if (stubAllowed) {
       final title = offer?.plan.title.toUpperCase();
-      return title == null ? 'TEST PURCHASE' : 'TEST PURCHASE · $title';
+      return title == null
+          ? l10n.premiumTestPurchase
+          : l10n.premiumTestPurchaseWith(title);
     }
-    if (allowDev) return 'ENABLE PREMIUM (DEV)';
-    return 'UNAVAILABLE';
+    if (allowDev) return l10n.premiumEnableDev;
+    return l10n.premiumUnavailable;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final benefits = _benefits(context.l10n);
     final entitlements = ref.watch(entitlementsProvider).valueOrNull;
     final billingState = ref.watch(billingServiceProvider);
     final billing = ref.read(billingServiceProvider.notifier);
@@ -261,7 +268,9 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
-          alreadyPremium ? 'You’re Premium' : 'Go Premium',
+          alreadyPremium
+              ? context.l10n.premiumYourePremium
+              : context.l10n.profileGoPremium,
           textAlign: TextAlign.center,
           style: theme.textTheme.headlineSmall,
         ),
@@ -284,8 +293,7 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
           _Notice(
             icon: Icons.science_rounded,
             tone: AppColors.cyan,
-            message: 'Test mode — purchases are simulated on the server and '
-                'nothing is charged. Store products are not connected yet.',
+            message: context.l10n.premiumTestModeNote,
           ),
         ],
 
@@ -294,7 +302,11 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
           _Notice(
             icon: Icons.hourglass_top_rounded,
             tone: AppColors.warning,
-            message: (billingState).message,
+            message: _noticeText(
+              context,
+              (billingState).notice,
+              (billingState).message,
+            ),
           ),
         ] else if (!stubAllowed &&
             billingState is BillingIdle &&
@@ -303,20 +315,24 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
           _Notice(
             icon: Icons.info_outline_rounded,
             tone: AppColors.warning,
-            message: billingState.message!,
+            message: _noticeText(
+              context,
+              billingState.notice,
+              billingState.message!,
+            ),
           ),
         ],
 
         const SizedBox(height: AppSpacing.lg),
-        for (var i = 0; i < _benefits.length; i++)
+        for (var i = 0; i < benefits.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: SqStagger(
               index: i,
               child: _Benefit(
-                icon: _benefits[i].$1,
-                title: _benefits[i].$2,
-                subtitle: _benefits[i].$3,
+                icon: benefits[i].$1,
+                title: benefits[i].$2,
+                subtitle: benefits[i].$3,
               ),
             ),
           ),
@@ -345,13 +361,14 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
 
         if (alreadyPremium && !isSwitch)
           SqButton(
-            label: 'GOT IT',
+            label: context.l10n.gotIt,
             variant: SqButtonVariant.gold,
             onPressed: loading ? null : _finish,
           )
         else ...[
           SqButton(
             label: _primaryLabel(
+              l10n: context.l10n,
               canBuy: canBuy,
               allowDev: allowDev,
               stubAllowed: stubAllowed,
@@ -367,7 +384,7 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
           Center(
             child: TextButton(
               onPressed: loading ? null : _onRestore,
-              child: const Text('Restore purchases'),
+              child: Text(context.l10n.premiumRestorePurchases),
             ),
           ),
 
@@ -380,15 +397,14 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
                 // Without a linked identity a reinstall creates a new account,
                 // and recovering the subscription depends on the store's
                 // restore flow alone.
-                message: 'Sign in with Google so your subscription follows you '
-                    'to a new device.',
+                message: context.l10n.premiumSignInNote,
               ),
             ),
 
           // Both stores require the renewal terms to be visible on the screen
           // that starts the purchase.
           Text(
-            _legalCopy(selectedOffer),
+            _legalCopy(context.l10n, selectedOffer),
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(color: p.textFaint),
           ),
@@ -397,16 +413,34 @@ class _PremiumOfferState extends ConsumerState<PremiumOffer> {
     );
   }
 
-  String _legalCopy(PlanOffer? offer) {
-    final period = offer?.plan.isAnnual == true ? 'year' : 'month';
+  /// Renewal terms. Both stores require these to be visible on the screen
+  /// that starts a purchase, so they follow the reader's language.
+  String _legalCopy(SqStrings l10n, PlanOffer? offer) {
+    final period = offer?.plan.isAnnual == true
+        ? l10n.periodYear
+        : l10n.periodMonth;
     final price = offer?.price;
     final opening = price == null
-        ? 'Your subscription renews automatically'
-        : 'Renews automatically at $price per $period';
-    return '$opening until you cancel. '
-        'Cancel anytime from your ${_storeName()} account — '
-        'cancelling stops the next charge and Premium stays active until the '
-        'end of the period you have paid for.';
+        ? l10n.premiumRenewsAutomatically
+        : l10n.premiumRenewsAt(price, period);
+    return '$opening ${l10n.premiumCancelAnytime(_storeName())}';
+  }
+
+  /// Billing copy the app owns is localized; anything the store said is shown
+  /// exactly as the store said it.
+  String _noticeText(BuildContext context, BillingNotice notice, String raw) {
+    final l10n = context.l10n;
+    return switch (notice) {
+      BillingNotice.openingStore => l10n.billingOpeningStore,
+      BillingNotice.restoring => l10n.billingRestoring,
+      BillingNotice.verifying => l10n.billingVerifying,
+      BillingNotice.couldNotStart => l10n.billingCouldNotStart,
+      BillingNotice.purchaseFailed => l10n.billingPurchaseFailed,
+      BillingNotice.waitingForPayment => l10n.billingWaitingForPayment,
+      BillingNotice.storeUnavailable => l10n.billingStoreUnavailable,
+      BillingNotice.noPlans => l10n.billingNoPlans,
+      BillingNotice.none => raw,
+    };
   }
 
   String _storeName() {
@@ -489,14 +523,17 @@ class _PlanTile extends StatelessWidget {
                         ],
                         if (currentPlan) ...[
                           const SizedBox(width: 8),
-                          _Chip(label: 'CURRENT', color: AppColors.cyan),
+                          _Chip(
+                            label: context.l10n.premiumCurrent,
+                            color: AppColors.cyan,
+                          ),
                         ],
                       ],
                     ),
                     const SizedBox(height: 2),
                     Text(
                       unavailable
-                          ? 'Not available on this device'
+                          ? context.l10n.premiumNotOnThisDevice
                           : offer.plan.subtitle,
                       style: theme.textTheme.bodySmall,
                     ),
@@ -515,7 +552,7 @@ class _PlanTile extends StatelessWidget {
                   ),
                   if (savings != null)
                     Text(
-                      'Save $savings%',
+                      context.l10n.premiumSavePercent(savings),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: AppColors.success,
                       ),

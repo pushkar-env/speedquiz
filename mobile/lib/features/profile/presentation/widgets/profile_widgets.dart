@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/nav.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
@@ -13,12 +14,18 @@ class ProfileIdentityCard extends StatelessWidget {
     required this.isPremium,
     this.onTap,
     this.compact = false,
+    this.animateProgress = false,
   });
 
   final AuthUser? user;
   final bool isPremium;
   final VoidCallback? onTap;
   final bool compact;
+
+  /// Sweep the level ring and XP bar up from empty. The profile hub turns this
+  /// on so opening the tab reads as progress being counted up, rather than a
+  /// static readout the player has to interpret.
+  final bool animateProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +71,7 @@ class ProfileIdentityCard extends StatelessWidget {
               value: progress,
               size: compact ? 82 : 96,
               stroke: 5,
+              fillFromZero: animateProgress,
               gradient: isPremium
                   ? AppColors.premiumGradient
                   : AppColors.brandGradient,
@@ -77,7 +85,7 @@ class ProfileIdentityCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
-              user?.name ?? 'Guest',
+              user?.name ?? context.l10n.profileGuest,
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -90,24 +98,30 @@ class ProfileIdentityCard extends StatelessWidget {
               alignment: WrapAlignment.center,
               children: [
                 SqBadge(
-                  label: 'LEVEL $level',
+                  label: context.l10n.levelBadge(level),
                   icon: Icons.military_tech_rounded,
                 ),
                 SqBadge(
-                  label: isPremium ? 'PREMIUM' : 'FREE',
+                  label: isPremium
+                      ? context.l10n.profilePremiumBadge
+                      : context.l10n.profileFree,
                   color: isPremium ? AppColors.gold : p.accent,
                   gradient: isPremium ? AppColors.premiumGradient : null,
                 ),
                 if (user?.isGuest == true)
                   SqBadge(
-                    label: 'GUEST',
+                    label: context.l10n.profileGuestBadge,
                     color: p.textSecondary,
                     icon: Icons.person_outline_rounded,
                   ),
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            SqProgressTrack(value: progress, height: 7),
+            SqProgressTrack(
+              value: progress,
+              height: 7,
+              fillFromZero: animateProgress,
+            ),
             const SizedBox(height: 6),
             Text(
               '$xp / $threshold XP to level ${level + 1}',
@@ -118,8 +132,19 @@ class ProfileIdentityCard extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return card;
-    return SqPressable(onTap: onTap, pressedScale: 0.99, child: card);
+    // Lights drifting along the edge. Premium gets a warm palette; everyone
+    // else the brand ramp, so the card still breathes without implying status.
+    final lit = SqParticleBorder(
+      radius: AppRadii.lg,
+      count: isPremium ? 5 : 4,
+      colors: isPremium
+          ? const [AppColors.gold, Color(0xFFFFF0C2), Color(0xFFFF9F43)]
+          : null,
+      child: card,
+    );
+
+    if (onTap == null) return lit;
+    return SqPressable(onTap: onTap, pressedScale: 0.99, child: lit);
   }
 }
 
@@ -194,11 +219,16 @@ class ProfileMetric extends StatelessWidget {
     required this.label,
     required this.value,
     required this.glyph,
+    this.glyphWidget,
   });
 
   final String label;
   final String value;
   final String glyph;
+
+  /// Replaces the emoji with a live widget — used for the streak flame.
+  /// [glyph] stays required so every metric keeps a text fallback.
+  final Widget? glyphWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +244,13 @@ class ProfileMetric extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(glyph, style: const TextStyle(fontSize: 16)),
+          SizedBox(
+            height: 19,
+            child: Center(
+              child: glyphWidget ??
+                  Text(glyph, style: const TextStyle(fontSize: 16)),
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             value,
@@ -275,7 +311,7 @@ class SubScreenHeader extends StatelessWidget {
         children: [
           SqIconButton(
             icon: Icons.arrow_back_rounded,
-            tooltip: 'Back',
+            tooltip: context.l10n.profileBack,
             onPressed: () => context.popOrGo(fallback),
           ),
           const SizedBox(width: 12),

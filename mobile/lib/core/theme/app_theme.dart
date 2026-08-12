@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:speedquiz/core/i18n/app_language.dart' show SqScript;
 
 /// SpeedQuiz design tokens — premium game feel without neon clutter.
 ///
@@ -211,9 +212,34 @@ abstract final class AppTheme {
   static const _displayFamily = 'SpaceGrotesk';
   static const _bodyFamily = 'DMSans';
 
-  static ThemeData dark() => _build(Brightness.dark);
+  /// Faces the engine falls back to per-glyph when the bundled family has no
+  /// coverage.
+  ///
+  /// Space Grotesk and DM Sans are Latin-only, so every Devanagari character in
+  /// the Hindi build — the entire UI, and every Hindi question — is drawn from
+  /// this list. Without it the platform picks a fallback of its own, which on
+  /// Android is a different face per OEM skin and on some of them is a
+  /// noticeably heavier one that breaks the type hierarchy.
+  ///
+  /// These are system fonts, not bundled assets: Noto Sans Devanagari ships
+  /// with Android and Kohinoor Devanagari with iOS, so this costs nothing in
+  /// APK size. Naming a font the device does not have is a no-op, which is why
+  /// both platforms' names sit in one list.
+  static const _fontFallback = <String>[
+    'Noto Sans Devanagari',
+    'Kohinoor Devanagari',
+    'Devanagari Sangam MN',
+    'Noto Sans',
+  ];
 
-  static ThemeData light() => _build(Brightness.light);
+  /// [script] tunes type metrics for the active language — see [_fontFallback]
+  /// and [_textTheme]. It defaults to Latin so tests and previews can build a
+  /// theme without threading a language through.
+  static ThemeData dark({SqScript script = SqScript.latin}) =>
+      _build(Brightness.dark, script);
+
+  static ThemeData light({SqScript script = SqScript.latin}) =>
+      _build(Brightness.light, script);
 
   /// Status/navigation bar styling that matches the active brightness.
   static SystemUiOverlayStyle overlayStyle(Brightness brightness) {
@@ -229,7 +255,7 @@ abstract final class AppTheme {
     );
   }
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData _build(Brightness brightness, SqScript script) {
     final p = SqPalette.of(brightness);
     final dark = p.isDark;
     final onAccent = dark ? const Color(0xFF04110C) : Colors.white;
@@ -275,7 +301,7 @@ abstract final class AppTheme {
       ),
     );
 
-    final text = _textTheme(base.textTheme, p);
+    final text = _textTheme(base.textTheme, p, script);
 
     return base.copyWith(
       textTheme: text,
@@ -290,6 +316,7 @@ abstract final class AppTheme {
         iconTheme: IconThemeData(color: p.textPrimary),
         titleTextStyle: text.titleLarge?.copyWith(
           fontFamily: _displayFamily,
+          fontFamilyFallback: _fontFallback,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -511,15 +538,23 @@ abstract final class AppTheme {
     );
   }
 
-  static TextTheme _textTheme(TextTheme base, SqPalette p) {
+  static TextTheme _textTheme(TextTheme base, SqPalette p, SqScript script) {
+    final devanagari = script == SqScript.devanagari;
+
     TextStyle display(TextStyle? s, double size, FontWeight w, double ls) {
       return (s ?? const TextStyle()).copyWith(
         fontFamily: _displayFamily,
+        fontFamilyFallback: _fontFallback,
         fontSize: size,
         fontWeight: w,
-        letterSpacing: ls,
+        // Negative tracking is a Latin display trick; in Devanagari it pulls
+        // matras into the consonants they belong to and the word stops being
+        // legible at a glance. Only tighten when the glyphs can take it.
+        letterSpacing: devanagari ? 0 : ls,
         color: p.textPrimary,
-        height: 1.1,
+        // Devanagari needs more leading: matras and conjuncts extend well above
+        // and below the x-height, and 1.1 collides them with the line above.
+        height: devanagari ? 1.26 : 1.1,
       );
     }
 
@@ -533,10 +568,11 @@ abstract final class AppTheme {
     }) {
       return (s ?? const TextStyle()).copyWith(
         fontFamily: _bodyFamily,
+        fontFamilyFallback: _fontFallback,
         fontSize: size,
         fontWeight: w,
-        letterSpacing: ls,
-        height: height,
+        letterSpacing: devanagari ? 0 : ls,
+        height: devanagari ? height + 0.16 : height,
         color: color ?? p.textPrimary,
       );
     }

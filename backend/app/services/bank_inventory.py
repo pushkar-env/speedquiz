@@ -25,6 +25,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.languages import (
+    DEFAULT_LANGUAGE,
+    ContentLanguage,
+    normalize_language,
+    supported_languages,
+)
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.models import (
@@ -41,22 +47,65 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-async def count_active_questions(db: AsyncSession, topic_id: UUID) -> int:
-    return int(
-        await db.scalar(
-            select(func.count())
-            .select_from(Question)
-            .where(Question.topic_id == topic_id, Question.status == QuestionStatus.ACTIVE)
-        )
-        or 0
+async def count_active_questions(
+    db: AsyncSession,
+    topic_id: UUID,
+    *,
+    language: Optional[ContentLanguage] = None,
+) -> int:
+    """Playable questions for a topic, optionally in one language.
+
+    Every inventory decision is per language: a topic sitting on 900 English
+    questions and 4 Hindi ones is *empty* for a Hindi player, and treating its
+    total as the stock level is what would leave them staring at a dead topic.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Question)
+        .where(Question.topic_id == topic_id, Question.status == QuestionStatus.ACTIVE)
     )
+    if language is not None:
+        stmt = stmt.where(Question.language == normalize_language(language).value)
+    return int(await db.scalar(stmt) or 0)
 
 
-async def _has_inflight_topup(db: AsyncSession, topic_id: UUID) -> bool:
+async def count_active_by_language(
+    db: AsyncSession,
+    topic_ids: list[UUID],
+) -> dict[UUID, dict[str, int]]:
+    """`{topic_id: {"en": 120, "hi": 40}}` for a page of topics, in one query.
+
+    The catalog endpoint needs this for every row it returns; doing it per
+    topic would be a query per topic per request.
+    """
+    if not topic_ids:
+        return {}
+    rows = await db.execute(
+        select(Question.topic_id, Question.language, func.count())
+        .where(
+            Question.topic_id.in_(topic_ids),
+            Question.status == QuestionStatus.ACTIVE,
+        )
+        .group_by(Question.topic_id, Question.language)
+    )
+    counts: dict[UUID, dict[str, int]] = {}
+    for topic_id, language, total in rows:
+        code = normalize_language(language).value
+        bucket = counts.setdefault(topic_id, {})
+        bucket[code] = bucket.get(code, 0) + int(total or 0)
+    return counts
+
+
+async def _has_inflight_topup(
+    db: AsyncSession,
+    topic_id: UUID,
+    language: ContentLanguage,
+) -> bool:
     row = await db.scalar(
         select(GenerationJob.id)
         .where(
             GenerationJob.topic_id == topic_id,
+            GenerationJob.language == normalize_language(language).value,
             GenerationJob.status.in_(
                 [GenerationJobStatus.QUEUED, GenerationJobStatus.RUNNING]
             ),
@@ -73,20 +122,28 @@ async def ensure_minimum_bank(
     difficulty: DifficultyLabel = DifficultyLabel.MEDIUM,
     minimum: Optional[int] = None,
     user: Optional[User] = None,
+    language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> int:
     """Grow a thin bank before play so the session has unique runway."""
     from app.ai.pipeline import run_generation_pipeline
     from app.ai.providers import get_llm_provider
 
+    language = normalize_language(language)
+
     # Custom topics are one-shot generated banks — never grow toward curated target.
     if topic.is_custom:
-        return await count_active_questions(db, topic.id)
+        return await count_active_questions(db, topic.id, language=language)
 
     minimum = minimum or max(settings.topic_bank_session_batch + 10, 30)
-    active = await count_active_questions(db, topic.id)
+    active = await count_active_questions(db, topic.id, language=language)
     if active >= minimum:
         await enqueue_bank_topup(
-            db, topic, difficulty=difficulty, reason="session_start", user=user
+            db,
+            topic,
+            difficulty=difficulty,
+            reason="session_start",
+            user=user,
+            language=language,
         )
         return active
 
@@ -95,6 +152,7 @@ async def ensure_minimum_bank(
     logger.info(
         "bank_sync_fill",
         topic=topic.slug,
+        language=language.value,
         active=active,
         need=need,
         minimum=minimum,
@@ -108,22 +166,35 @@ async def ensure_minimum_bank(
             style="fresh unique trivia — avoid duplicates",
             provider=get_llm_provider(),
             max_attempts=2,
+            language=language,
         )
-        active = await count_active_questions(db, topic.id)
-        topic.question_count = active
+        active = await count_active_questions(db, topic.id, language=language)
+        topic.question_count = await count_active_questions(db, topic.id)
         logger.info(
             "bank_sync_fill_done",
             topic=topic.slug,
+            language=language.value,
             approved=len(outcome.approved),
             active=active,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("bank_sync_fill_failed", topic=topic.slug, error=str(exc))
+        logger.exception(
+            "bank_sync_fill_failed",
+            topic=topic.slug,
+            language=language.value,
+            error=str(exc),
+        )
 
     await enqueue_bank_topup(
-        db, topic, difficulty=difficulty, reason="session_start", user=user, force=True
+        db,
+        topic,
+        difficulty=difficulty,
+        reason="session_start",
+        user=user,
+        force=True,
+        language=language,
     )
-    return await count_active_questions(db, topic.id)
+    return await count_active_questions(db, topic.id, language=language)
 
 
 async def enqueue_bank_topup(
@@ -134,12 +205,14 @@ async def enqueue_bank_topup(
     reason: str = "watermark",
     user: Optional[User] = None,
     force: bool = False,
+    language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> Optional[GenerationJob]:
     """Queue a chunk generation job if the topic bank needs refill."""
     if topic.is_custom:
         return None
 
-    active = await count_active_questions(db, topic.id)
+    language = normalize_language(language)
+    active = await count_active_questions(db, topic.id, language=language)
     target = settings.topic_bank_target_unique
     low = settings.topic_bank_low_watermark
 
@@ -148,7 +221,7 @@ async def enqueue_bank_topup(
     if not force and active >= low and reason in {"session_start", "periodic"}:
         return None
 
-    if await _has_inflight_topup(db, topic.id):
+    if await _has_inflight_topup(db, topic.id, language):
         return None
 
     chunk = min(settings.topic_bank_chunk_size, max(0, target - active))
@@ -157,7 +230,9 @@ async def enqueue_bank_topup(
 
     try:
         redis = await get_redis()
-        lock_key = f"bank_topup_lock:{topic.id}"
+        # Per language: an English top-up in flight must not starve the Hindi
+        # bank of the job that would make the topic playable at all.
+        lock_key = f"bank_topup_lock:{topic.id}:{language.value}"
         acquired = await redis.set(lock_key, "1", nx=True, ex=60)
         if not acquired:
             return None
@@ -180,10 +255,12 @@ async def enqueue_bank_topup(
         requested_by_user_id=user.id if user else None,
         status=GenerationJobStatus.QUEUED,
         requested_count=chunk,
+        language=language.value,
         payload={
             "job_type": "bank_topup",
             "subject": topic.name,
             "difficulty": gen_difficulty.value,
+            "language": language.value,
             "style": "fresh unique trivia — avoid duplicates of common quiz stock",
             "reason": reason,
             "active_before": active,
@@ -196,6 +273,7 @@ async def enqueue_bank_topup(
     logger.info(
         "bank_topup_enqueued",
         topic=topic.slug,
+        language=language.value,
         chunk=chunk,
         active=active,
         reason=reason,
@@ -204,10 +282,16 @@ async def enqueue_bank_topup(
     return job
 
 
-async def maybe_chain_another_topup(db: AsyncSession, topic: Topic) -> Optional[GenerationJob]:
+async def maybe_chain_another_topup(
+    db: AsyncSession,
+    topic: Topic,
+    *,
+    language: ContentLanguage = DEFAULT_LANGUAGE,
+) -> Optional[GenerationJob]:
     """After a successful chunk, optionally queue another while still thin."""
-    active = await count_active_questions(db, topic.id)
-    topic.question_count = active
+    language = normalize_language(language)
+    active = await count_active_questions(db, topic.id, language=language)
+    topic.question_count = await count_active_questions(db, topic.id)
     if active >= settings.topic_bank_target_unique:
         return None
     comfortable = max(settings.topic_bank_low_watermark * 3, 100)
@@ -219,32 +303,41 @@ async def maybe_chain_another_topup(db: AsyncSession, topic: Topic) -> Optional[
         difficulty=DifficultyLabel.MEDIUM,
         reason="chain",
         force=True,
+        language=language,
     )
 
 
 async def scan_and_enqueue_thin_topics(db: AsyncSession, *, limit: int = 5) -> int:
-    """Periodic worker helper: top up the thinnest active topics."""
+    """Periodic worker helper: top up the thinnest active topic banks.
+
+    Sweeps every supported language, not just the default one. A topic is
+    "thin" per language, so a fully stocked English topic still queues work for
+    an empty Hindi bank — that is how a newly added language fills at all.
+    """
     rows = await db.execute(
         select(Topic)
-        .where(Topic.is_active.is_(True))
+        .where(Topic.is_active.is_(True), Topic.is_custom.is_(False))
         .order_by(Topic.question_count.asc())
         .limit(limit * 3)
     )
     topics = list(rows.scalars().all())
+    languages = [profile.language for profile in supported_languages()]
     enqueued = 0
     for topic in topics:
-        active = await count_active_questions(db, topic.id)
-        topic.question_count = active
-        if active >= settings.topic_bank_low_watermark:
-            continue
-        job = await enqueue_bank_topup(
-            db,
-            topic,
-            difficulty=DifficultyLabel.MEDIUM,
-            reason="periodic",
-        )
-        if job:
-            enqueued += 1
-        if enqueued >= limit:
-            break
+        topic.question_count = await count_active_questions(db, topic.id)
+        for language in languages:
+            active = await count_active_questions(db, topic.id, language=language)
+            if active >= settings.topic_bank_low_watermark:
+                continue
+            job = await enqueue_bank_topup(
+                db,
+                topic,
+                difficulty=DifficultyLabel.MEDIUM,
+                reason="periodic",
+                language=language,
+            )
+            if job:
+                enqueued += 1
+            if enqueued >= limit:
+                return enqueued
     return enqueued

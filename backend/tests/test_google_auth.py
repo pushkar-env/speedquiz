@@ -51,6 +51,8 @@ def _user(*, guest: bool = False, email=None, provider=AuthProvider.GUEST, subje
         best_streak=0,
         onboarding_completed=False,
         theme_preference="system",
+        app_language="en",
+        quiz_language="en",
     )
     return SimpleNamespace(
         id=uuid4(),

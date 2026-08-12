@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.ai.providers import GeneratedQuestionDraft, LLMProvider, ValidationResult, get_llm_provider
 from app.core.config import get_settings
+from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.models import (
     DifficultyLabel,
@@ -44,17 +45,50 @@ def sanitize_topic_prompt(raw: str) -> str:
 
 
 def slugify(text: str) -> str:
+    """ASCII slug for a topic. Non-Latin input degrades to a stable digest.
+
+    Slugs are URL and log identifiers, so they stay ASCII. A Hindi subject
+    strips to nothing under that rule, which would collapse every Hindi custom
+    topic onto the same slug stem — hence the content-derived suffix rather
+    than a bare "custom".
+    """
     base = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return (base or "custom")[:80]
+    if base:
+        return base[:80]
+    digest = sha256(text.strip().encode("utf-8")).hexdigest()[:10]
+    return f"custom-{digest}"
 
 
-def content_hash(prompt: str, options: list[str]) -> str:
-    raw = "|".join([prompt.strip().lower(), *[o.strip().lower() for o in options]])
+def content_hash(
+    prompt: str,
+    options: list[str],
+    language: ContentLanguage = DEFAULT_LANGUAGE,
+) -> str:
+    """Exact-duplicate key. Globally unique across the questions table.
+
+    Language is part of the key because some strings are identical in both
+    languages — "NATO?", "Wi-Fi?", a bare formula — and the English row must
+    not block the Hindi bank from ever storing its own copy.
+    """
+    raw = "|".join(
+        [
+            normalize_language(language).value,
+            prompt.strip().lower(),
+            *[o.strip().lower() for o in options],
+        ]
+    )
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
 def fingerprint(prompt: str) -> str:
-    tokens = re.findall(r"[a-z0-9]+", prompt.lower())
+    """Near-duplicate key: the prompt's word bag, order-insensitive.
+
+    ``\\w`` with Unicode semantics rather than ``[a-z0-9]``. The ASCII class
+    matched nothing in Devanagari, so every Hindi prompt hashed the empty
+    string — meaning the second Hindi question ever generated for a topic, and
+    every one after it, was rejected as a duplicate of the first.
+    """
+    tokens = re.findall(r"\w+", prompt.lower(), flags=re.UNICODE)
     return sha256(" ".join(sorted(set(tokens))).encode("utf-8")).hexdigest()[:32]
 
 
@@ -95,16 +129,21 @@ async def _is_duplicate(
     topic_id: UUID,
     prompt: str,
     options: list[str],
+    language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> bool:
-    h = content_hash(prompt, options)
+    h = content_hash(prompt, options, language)
     existing = await db.scalar(select(Question.id).where(Question.content_hash == h))
     if existing:
         return True
 
+    # Near-duplicate check is per (topic, language): the Hindi translation of an
+    # existing English question is a *new* question for a Hindi run, and the
+    # bank has to be able to hold both.
     fp = fingerprint(prompt)
     similar = await db.scalar(
         select(Question.id).where(
             Question.topic_id == topic_id,
+            Question.language == normalize_language(language).value,
             Question.embedding_fingerprint == fp,
             Question.status == QuestionStatus.ACTIVE,
         )
@@ -122,9 +161,15 @@ async def run_generation_pipeline(
     subcategory: Optional[str] = None,
     provider: Optional[LLMProvider] = None,
     max_attempts: int = 2,
+    language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> PipelineOutcome:
     """Generate, validate, dedupe, and persist questions for a topic."""
     llm = provider or get_llm_provider()
+    language = normalize_language(language)
+    # A topic's display name is stored in English; ask for questions *about*
+    # that subject rather than passing the localized name through, so the model
+    # never has to guess which part of the prompt is the subject.
+    topic_name = topic.name
     outcome = PipelineOutcome()
     remaining = max(1, count)
     attempts = 0
@@ -134,11 +179,12 @@ async def run_generation_pipeline(
         batch = min(remaining + 2, settings.generation_batch_size)
         try:
             drafts = await llm.generate_questions(
-                topic=topic.name,
+                topic=topic_name,
                 difficulty=difficulty.value,
                 count=batch,
                 style=style,
                 subcategory=subcategory,
+                language=language,
             )
         except Exception as exc:  # noqa: BLE001 — never crash workers on bad LLM output
             logger.exception("generation_failed", error=str(exc), attempt=attempts)
@@ -146,7 +192,7 @@ async def run_generation_pipeline(
             continue
 
         try:
-            validations = await llm.validate_questions(drafts)
+            validations = await llm.validate_questions(drafts, language=language)
         except Exception as exc:  # noqa: BLE001
             logger.exception("validation_failed", error=str(exc))
             validations = [
@@ -174,7 +220,11 @@ async def run_generation_pipeline(
 
             if approved:
                 dup = await _is_duplicate(
-                    db, topic_id=topic.id, prompt=draft.question, options=draft.options
+                    db,
+                    topic_id=topic.id,
+                    prompt=draft.question,
+                    options=draft.options,
+                    language=language,
                 )
                 if dup:
                     approved = False
@@ -196,19 +246,21 @@ async def run_generation_pipeline(
                 topic_id=topic.id,
                 prompt=draft.question.strip(),
                 explanation=draft.explanation.strip(),
+                language=language.value,
                 source=draft.source or "ai_pipeline",
                 difficulty=difficulty_value,
                 difficulty_label=difficulty_label_for(difficulty_value),
                 correct_option_index=draft.correct_option,
                 quality_score=quality,
                 status=QuestionStatus.ACTIVE,
-                content_hash=content_hash(draft.question, draft.options),
+                content_hash=content_hash(draft.question, draft.options, language),
                 embedding_fingerprint=fingerprint(draft.question),
                 generation_meta={
                     "style": style,
                     "subcategory": subcategory or draft.subcategory,
                     "pipeline": "phase4",
                     "provider": settings.llm_provider,
+                    "language": language.value,
                 },
             )
             db.add(question)
@@ -225,6 +277,7 @@ async def run_generation_pipeline(
     logger.info(
         "pipeline_complete",
         topic=topic.slug,
+        language=language.value,
         approved=len(outcome.approved),
         rejected=len(outcome.rejected),
         attempts=attempts,

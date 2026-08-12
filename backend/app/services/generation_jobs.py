@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.ai.pipeline import run_generation_pipeline, sanitize_topic_prompt, slugify
 from app.ai.providers import get_llm_provider
 from app.core.database import session_scope
+from app.core.languages import ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.models import (
     CustomTopic,
@@ -28,6 +29,15 @@ async def _difficulty_from_payload(payload: dict) -> DifficultyLabel:
         return DifficultyLabel.MEDIUM
 
 
+def _language_for(job: GenerationJob) -> ContentLanguage:
+    """Job column first, payload second — jobs queued before the column
+    existed only carry the language in their payload (and older ones not at
+    all, which normalizes to English, which is what they were)."""
+    return normalize_language(
+        job.language or (job.payload or {}).get("language"),
+    )
+
+
 async def _process_bank_topup(db, job: GenerationJob, llm) -> None:
     if not job.topic_id:
         job.status = GenerationJobStatus.FAILED
@@ -43,6 +53,7 @@ async def _process_bank_topup(db, job: GenerationJob, llm) -> None:
     payload = job.payload or {}
     difficulty = await _difficulty_from_payload(payload)
     style = payload.get("style")
+    language = _language_for(job)
 
     outcome = await run_generation_pipeline(
         db,
@@ -51,6 +62,7 @@ async def _process_bank_topup(db, job: GenerationJob, llm) -> None:
         count=job.requested_count,
         style=style,
         provider=llm,
+        language=language,
     )
     job.approved_count = len(outcome.approved)
     job.rejected_count = len(outcome.rejected)
@@ -61,7 +73,7 @@ async def _process_bank_topup(db, job: GenerationJob, llm) -> None:
         return
 
     job.status = GenerationJobStatus.COMPLETED
-    await maybe_chain_another_topup(db, topic)
+    await maybe_chain_another_topup(db, topic, language=language)
 
 
 async def _process_legacy_custom(db, job: GenerationJob, llm) -> None:
@@ -74,6 +86,9 @@ async def _process_legacy_custom(db, job: GenerationJob, llm) -> None:
     subject = str(payload.get("subject") or (custom.classified_subject if custom else "Custom"))
     difficulty = await _difficulty_from_payload(payload)
     style = payload.get("style")
+    language = normalize_language(
+        job.language or payload.get("language") or (custom.language if custom else None)
+    )
     prompt = sanitize_topic_prompt(
         str(payload.get("prompt") or (custom.sanitized_prompt if custom else subject))
     )
@@ -99,6 +114,7 @@ async def _process_legacy_custom(db, job: GenerationJob, llm) -> None:
         count=job.requested_count,
         style=style,
         provider=llm,
+        language=language,
     )
     job.approved_count = len(outcome.approved)
     job.rejected_count = len(outcome.rejected)
@@ -113,7 +129,7 @@ async def _process_legacy_custom(db, job: GenerationJob, llm) -> None:
     if custom:
         custom.topic_id = topic.id
         custom.status = "ready"
-    await maybe_chain_another_topup(db, topic)
+    await maybe_chain_another_topup(db, topic, language=language)
 
 
 async def process_queued_jobs(limit: int = 3) -> int:

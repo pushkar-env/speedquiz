@@ -11,9 +11,49 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage, normalize_language
 from app.models import QuizResult, QuizSession, QuizSessionStatus, Score, Topic
 
 settings = get_settings()
+
+#: Share-card copy per language. A player who just finished a Hindi run pastes
+#: this into a Hindi conversation, so the card follows the run's language
+#: rather than the reader's — the recipient may not have the app at all.
+#:
+#: English output is byte-identical to the pre-localization text: this is the
+#: string people already recognise in their chat history.
+_SHARE_COPY: dict[ContentLanguage, dict[str, str]] = {
+    ContentLanguage.ENGLISH: {
+        "score": "Score",
+        "accuracy": "Accuracy",
+        "best_streak": "Best Streak",
+        "challenge": "Can you beat me?",
+    },
+    ContentLanguage.HINDI: {
+        "score": "स्कोर",
+        "accuracy": "सटीकता",
+        "best_streak": "सर्वश्रेष्ठ स्ट्रीक",
+        "challenge": "क्या आप मुझे हरा सकते हैं?",
+    },
+}
+
+_MODE_LABELS: dict[ContentLanguage, dict[str, str]] = {
+    ContentLanguage.HINDI: {
+        "casual": "कैज़ुअल",
+        "speedrun": "स्पीडरन",
+        "survival": "सर्वाइवल",
+        "daily": "डेली",
+    },
+}
+
+_DIFFICULTY_LABELS: dict[ContentLanguage, dict[str, str]] = {
+    ContentLanguage.HINDI: {
+        "easy": "आसान",
+        "medium": "मध्यम",
+        "hard": "कठिन",
+        "expert": "विशेषज्ञ",
+    },
+}
 
 
 class SharedResultOut(BaseModel):
@@ -52,22 +92,30 @@ def build_share_payload(
     accuracy: float,
     best_streak: int,
     questions_answered: int,
+    language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> dict:
+    language = normalize_language(language)
+    copy = _SHARE_COPY[language]
     deep = deep_link_for(session_id)
     web = web_url_for(session_id)
     link_line = web or deep
+    difficulty_label = _DIFFICULTY_LABELS.get(language, {}).get(
+        difficulty, difficulty.upper()
+    )
+    mode_label = _MODE_LABELS.get(language, {}).get(mode, mode.replace("_", " "))
     text = (
-        f"SPEEDQUIZ\n\n{topic_name} — {difficulty.upper()} · "
-        f"{mode.replace('_', ' ')}\n\n"
-        f"Score: {score:,}\n"
-        f"Accuracy: {accuracy:.0f}%\n"
-        f"Best Streak: {best_streak}\n\n"
-        f"Can you beat me?\n"
+        f"SPEEDQUIZ\n\n{topic_name} — {difficulty_label} · "
+        f"{mode_label}\n\n"
+        f"{copy['score']}: {score:,}\n"
+        f"{copy['accuracy']}: {accuracy:.0f}%\n"
+        f"{copy['best_streak']}: {best_streak}\n\n"
+        f"{copy['challenge']}\n"
         f"{link_line}"
     )
     payload: dict = {
         "text": text,
         "deep_link": deep,
+        "language": language.value,
         "stats": {
             "score": score,
             "accuracy": accuracy,

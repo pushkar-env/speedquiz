@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/share/data/share_repository.dart';
 import 'package:speedquiz/features/share/domain/share_models.dart';
@@ -36,18 +37,18 @@ class SharedResultScreen extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SqErrorState(
-                      title: 'Card unavailable',
+                      title: context.l10n.sharedCardUnavailable,
                       message: apiErrorMessage(
                         error,
                         fallback:
-                            'This shared result has expired or was removed.',
+                            context.l10n.sharedCardExpired,
                       ),
                       onRetry: () =>
                           ref.invalidate(sharedResultProvider(sessionId)),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     SqButton(
-                      label: 'OPEN SPEEDQUIZ',
+                      label: context.l10n.sharedOpenSpeedQuiz,
                       icon: Icons.bolt_rounded,
                       onPressed: () => context.go(Routes.home),
                     ),
@@ -98,7 +99,10 @@ class _SharedCard extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SqBadge(label: 'SHARED RUN', icon: Icons.share_rounded),
+                      SqBadge(
+                        label: context.l10n.sharedRunBadge,
+                        icon: Icons.share_rounded,
+                      ),
                       const SizedBox(height: AppSpacing.md),
                       SqAnimatedCounter(
                         value: result.finalScore,
@@ -118,19 +122,19 @@ class _SharedCard extends StatelessWidget {
                         children: [
                           Expanded(
                             child: _MiniStat(
-                              label: 'Accuracy',
+                              label: context.l10n.accuracy,
                               value: '${result.accuracy.toStringAsFixed(0)}%',
                             ),
                           ),
                           Expanded(
                             child: _MiniStat(
-                              label: 'Streak',
+                              label: context.l10n.streak,
                               value: '${result.bestStreak}',
                             ),
                           ),
                           Expanded(
                             child: _MiniStat(
-                              label: 'Questions',
+                              label: context.l10n.resultsQuestions,
                               value: '${result.questionsAnswered}',
                             ),
                           ),
@@ -146,7 +150,7 @@ class _SharedCard extends StatelessWidget {
           SqStagger(
             index: 2,
             child: Text(
-              'Think you can beat that?',
+              context.l10n.sharedBeatThat,
               textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium,
             ),
@@ -155,7 +159,7 @@ class _SharedCard extends StatelessWidget {
           SqStagger(
             index: 3,
             child: SqButton(
-              label: 'BEAT THIS SCORE',
+              label: context.l10n.sharedBeatThisScore,
               icon: Icons.bolt_rounded,
               onPressed: () => context.go(Routes.quizSetup),
             ),
@@ -164,7 +168,7 @@ class _SharedCard extends StatelessWidget {
           SqStagger(
             index: 4,
             child: SqButton(
-              label: 'GO HOME',
+              label: context.l10n.resultsGoHome,
               variant: SqButtonVariant.ghost,
               onPressed: () => context.go(Routes.home),
             ),

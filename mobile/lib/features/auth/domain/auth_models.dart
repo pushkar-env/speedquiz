@@ -17,6 +17,8 @@ class AuthUser extends Equatable {
     this.bestStreak = 0,
     this.email,
     this.displayName,
+    this.appLanguage,
+    this.quizLanguage,
   });
 
   final String id;
@@ -34,6 +36,13 @@ class AuthUser extends Equatable {
   final int bestStreak;
   final bool onboardingCompleted;
   final String themePreference;
+
+  /// Language preferences stored on the account. Null against a server that
+  /// predates them — the device's own stored choice is the primary source and
+  /// these only apply to a device that has never chosen (see
+  /// `AppLanguageNotifier.adoptFromProfile`).
+  final String? appLanguage;
+  final String? quizLanguage;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     final daily = json['daily_streak'] as int? ?? json['current_streak'] as int? ?? 0;
@@ -53,6 +62,8 @@ class AuthUser extends Equatable {
       bestStreak: json['best_streak'] as int? ?? 0,
       onboardingCompleted: json['onboarding_completed'] as bool? ?? false,
       themePreference: json['theme_preference'] as String? ?? 'dark',
+      appLanguage: json['app_language'] as String?,
+      quizLanguage: json['quiz_language'] as String?,
     );
   }
 
@@ -83,6 +94,8 @@ class AuthUser extends Equatable {
       bestStreak: bestStreak ?? this.bestStreak,
       onboardingCompleted: onboardingCompleted,
       themePreference: themePreference,
+      appLanguage: appLanguage,
+      quizLanguage: quizLanguage,
     );
   }
 

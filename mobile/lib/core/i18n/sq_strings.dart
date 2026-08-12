@@ -1,0 +1,525 @@
+import 'package:speedquiz/core/i18n/app_language.dart';
+
+/// Every player-visible string in the app, as typed members.
+///
+/// Why an abstract class and not ARB + `gen_l10n`
+/// ----------------------------------------------
+/// A missing translation here is a **compile error**, not a silent fallback to
+/// English at runtime. `flutter analyze` refuses to pass until every language
+/// implements every string, which is the property that actually keeps a second
+/// language from rotting three releases after it ships. It also keeps the build
+/// free of a codegen step and generated files, and lets strings take real Dart
+/// parameters (`int`, `Duration`) instead of stringly-typed placeholders.
+///
+/// The cost is that plural and gender rules are hand-written per language
+/// rather than delegated to ICU. For two languages whose plural rules are the
+/// same (one/other), that is a good trade. If a language with a richer plural
+/// system is ever added, the affected members become methods that take the
+/// count and each language decides — which is what [questionsCount] already
+/// does.
+///
+/// Conventions
+/// -----------
+/// * Members are grouped by screen, in navigation order.
+/// * Getters for fixed text, methods for anything interpolated.
+/// * UPPERCASE in English is a *style* choice made by the widget, not baked
+///   into the string — Devanagari has no case, so `toUpperCase()` on a Hindi
+///   string is a no-op and button labels must read correctly without it.
+abstract class SqStrings {
+  const SqStrings();
+
+  AppLanguage get language;
+
+  // --- Common ------------------------------------------------------------
+  String get appTagline;
+  String get retry;
+  String get cancel;
+  String get close;
+  String get ok;
+  String get done;
+  String get save;
+  String get saving;
+  String get loading;
+  String get somethingWentWrong;
+  String get tryAgain;
+  String get all;
+  String get search;
+  String get comingSoon;
+  String get today;
+  String get points;
+  String get level;
+  String get levelShort;
+  String get xp;
+  String get coins;
+  String get streak;
+  String get bestStreak;
+  String get accuracy;
+  String get score;
+  String get rank;
+  String get you;
+  String get player;
+
+  /// "12 questions" — the noun agrees with [count].
+  String questionsCount(int count);
+
+  /// "3 topics".
+  String topicsCount(int count);
+
+  /// "1.2K questions" — the count is already formatted.
+  String questionsCountCompact(String formatted);
+
+  /// "5 days".
+  String daysCount(int count);
+
+  // --- Languages ---------------------------------------------------------
+  String get appLanguageTitle;
+  String get appLanguageSubtitle;
+  String get quizLanguageTitle;
+  String get quizLanguageSubtitle;
+  String get quizLanguageHint;
+  String languageChanged(String nativeName);
+
+  /// "No Hindi questions for this topic yet" — the empty-bank case.
+  String languageBankEmpty(String nativeName);
+  String languageBankEmptyHint(String nativeName);
+
+  // --- Errors ------------------------------------------------------------
+  String get errorGeneric;
+  String get errorTimeout;
+  String get errorNoConnection;
+  String get errorSessionExpired;
+  String get errorTooManyRequests;
+  String get errorNoQuestion;
+  String get errorNoNextQuestion;
+  String get errorUniqueCap;
+
+  // --- Shell -------------------------------------------------------------
+  String get tabHome;
+  String get tabExplore;
+  String get tabRanks;
+  String get tabProfile;
+  String get pressBackAgainToExit;
+
+  // --- Home --------------------------------------------------------------
+  String get greetingNight;
+  String get greetingMorning;
+  String get greetingAfternoon;
+  String get greetingEvening;
+  String greetingWithName(String greeting, String name);
+  String get homeHeadline;
+  String get homeReady;
+  String get homeServerScored;
+  String get homeStartARun;
+  String get homeStartARunBody;
+  String get homePlay;
+  String get homeSurprise;
+  String get homeOpenProfile;
+  String get homeJumpBackIn;
+  String get homeJumpBackInSubtitle;
+  String get homeTopicsUnavailable;
+  String get homeCouldNotLoadTopics;
+  String get homeBankFilling;
+  String get homeCustomTopic;
+  String get homeCustomTopicBody;
+  String get homeNoTopicReady;
+
+  // --- Daily challenge ---------------------------------------------------
+  String get dailyChallenge;
+  String get dailyTapToRetry;
+  String get dailyUnavailable;
+  String get dailyTodayDone;
+  String dailyTodayDoneWithScore(String score);
+  String get dailyTodayDoneGeneric;
+  String get dailyNice;
+  String dailyCleared(String score);
+  String get dailyClearedNoScore;
+  String dailyResume(String topic);
+  String dailySubtitle(String topic, int questions);
+
+  // --- Quiz setup --------------------------------------------------------
+  String get setupTitle;
+  String get setupClose;
+  String get setupModeCasual;
+  String get setupModeCasualHook;
+  String get setupModeSpeedrun;
+  String get setupModeSpeedrunHook;
+  String get setupModeSurvival;
+  String get setupModeSurvivalHook;
+  String get difficultyEasy;
+  String get difficultyMedium;
+  String get difficultyHard;
+  String get difficultyExpert;
+  String get difficultyAdaptive;
+  String get setupSurpriseMe;
+  String get setupCustomTopic;
+  String setupSearchTopics(int count);
+  String get setupPickATopic;
+  String startWithTopic(String topic);
+  String get setupPickTopicToStart;
+  String get setupNoTopicReady;
+  String setupRandomPicked(String topic);
+  String setupTopicStillWriting(String topic);
+  String get setupBankFilling;
+  String get setupBankFillingBody;
+  String get setupCreateCustomTopic;
+  String setupNoTopicMatches(String query);
+  String get setupNoTopicMatchesBody;
+  String get setupCouldNotLoadTopics;
+  String get setupComingSoonBody;
+  String get setupUnavailableInLanguage;
+
+  // --- Quiz play ---------------------------------------------------------
+  String get playPreparing;
+  String get playPreparingHint;
+  String get playScoringRun;
+  String get playGo;
+  String get playSpeedrunTitle;
+  String get playRuleRight;
+  String get playRuleWrong;
+  String get playRuleTighter;
+  String get playEndRunTitle;
+  String get playEndRunBody;
+  String get playEndRunConfirm;
+  String get playKeepPlaying;
+  String get playEndRun;
+  String get playRunInterrupted;
+  String get playFreeLimitReached;
+  String get playGoPremium;
+  String get playPaywallReason;
+  String get playBackHome;
+  String get playLanguageUnavailableTitle;
+  String questionNumber(int number);
+  String get playRunClock;
+  String overdriveMultiplier(int streak);
+  String get playCorrect;
+  String get playNotQuite;
+  String get playWhy;
+  String get playNext;
+  String get playSeeResults;
+  String get playTeachMe;
+  String get playTeachMeThis;
+  String get playTeaching;
+  String get playTeachError;
+  String get teachWhyCorrect;
+  String get teachWhyWrong;
+  String get teachKeyConcept;
+  String get teachRemember;
+  String livesLeft(int lives);
+
+  // --- Results -----------------------------------------------------------
+  String get resultsNewPersonalBest;
+  String get resultsRunComplete;
+  String personalBestValue(String score);
+  String get resultsAvgAnswer;
+  String get resultsSurvived;
+  String get resultsQuestions;
+  String get resultsUnlocked;
+  String get resultsOneAchievement;
+  String achievementsUnlockedCount(int count);
+  String get resultsPlayAgain;
+  String get resultsNewRun;
+  String get resultsShare;
+  String get resultsHome;
+  String get resultsShareFailed;
+  String levelUpTo(int level);
+  String levelBadge(int level);
+  String get resultsLoading;
+  String get resultsUnavailable;
+  String get resultsCouldNotLoad;
+  String get resultsGoHome;
+  String get resultsOpenSharedCard;
+
+  // --- Explore -----------------------------------------------------------
+  String get exploreTitle;
+  String get exploreSearchHint;
+  String get exploreNothingHere;
+  String get exploreCategoryEmpty;
+  String exploreNoMatch(String query);
+  String get exploreTrendingNow;
+  String get exploreBankFilling;
+  String get exploreRandom;
+  String get explorePlayRandom;
+  String get exploreCouldNotLoad;
+  String get exploreCheckConnection;
+  String exploreReadyToPlay(int count);
+
+  // --- Leaderboard -------------------------------------------------------
+  String get leaderboardTitle;
+  String get leaderboardSubtitle;
+  String get leaderboardWeekly;
+  String get leaderboardDaily;
+  String get leaderboardCouldNotLoad;
+  String get leaderboardUnreachable;
+  String get leaderboardEmpty;
+  String get leaderboardEmptyDaily;
+  String get leaderboardEmptyWeekly;
+  String yourBestIn(String period);
+
+  // --- Profile -----------------------------------------------------------
+  String get profileTitle;
+  String get profileDetails;
+  String get profileDetailsSubtitle;
+  String get profileAchievements;
+  String get profileAchievementsSubtitle;
+  String achievementsProgress(int unlocked, int total);
+  String get profileStatistics;
+  String get profileStatisticsSubtitle;
+  String get profilePremium;
+  String get profileGoPremium;
+  String get profilePremiumThanks;
+  String get profilePremiumPitch;
+  String get profileSettingsSubtitle;
+  String get profileGuest;
+  String get profileFree;
+  String get profilePremiumBadge;
+  String get profileGuestBadge;
+  String get profileBack;
+
+  // --- Profile edit ------------------------------------------------------
+  String get editTitle;
+  String get editSubtitle;
+  String get editDisplayName;
+  String get editDisplayNameSubtitle;
+  String get editDisplayNameHint;
+  String get editAvatar;
+  String get editAvatarSubtitle;
+  String get editPremiumAvatarReason;
+  String get editSaveChanges;
+  String get editSaved;
+  String get editSaveFailed;
+  String editNameTooShort(int minimum);
+
+  // --- Account card ------------------------------------------------------
+  String get accountTitle;
+  String get accountGoogle;
+  String get accountGuest;
+  String get accountUsername;
+  String get accountEmail;
+  String get accountNotLinked;
+  String get accountPlayingSince;
+  String get accountOnThisDevice;
+  String get accountPlayerId;
+  String get accountCopyPlayerId;
+  String get accountPlayerIdCopied;
+  String get accountGuestHint;
+
+  // --- Stats -------------------------------------------------------------
+  String get statsTitle;
+  String get statsSubtitle;
+  String get statsUnavailable;
+  String get statsCouldNotLoad;
+  String get statsNoRuns;
+  String get statsNoRunsBody;
+  String get statsLifetimeAccuracy;
+  String get statsRunsPlayed;
+  String get statsBestScore;
+  String get statsQuestions;
+  String get statsMissed;
+  String get statsTopicMastery;
+  String get statsTopicMasterySubtitle;
+
+  // --- Achievements ------------------------------------------------------
+  String get achievementsTitle;
+  String get achievementsSubtitle;
+  String get achievementsUnavailable;
+  String get achievementsCouldNotLoad;
+  String get achievementsNoneYet;
+  String get achievementsAllUnlocked;
+  String get achievementsNoneYetBody;
+  String get achievementsAllUnlockedBody;
+  String get achievementsCompletionist;
+  String get achievementsFilterAll;
+  String get achievementsFilterUnlocked;
+  String get achievementsFilterLocked;
+
+  // --- Custom topic ------------------------------------------------------
+  String get customTitle;
+  String get customHeadline;
+  String get customBody;
+  String get customPromptHint;
+  List<String> get customSuggestions;
+  String get customDifficulty;
+  String get customMode;
+  String get customStyle;
+  String get customStyleSubtitle;
+  String get customStyleHint;
+  String get customCreate;
+  String get customNeedPrompt;
+  String get customNotEnoughQuestions;
+  String get customFailed;
+  String get customBuilding;
+  String get customBuildingHint;
+  String get customStageUnderstanding;
+  String get customStageWriting;
+  String get customStageChecking;
+  String get customStageShuffling;
+  String customLanguageNote(String nativeName);
+
+  // --- Landing / onboarding ----------------------------------------------
+  String get landingTagline;
+  String get landingWarmingUp;
+  String get landingFeatureModesTitle;
+  String get landingFeatureModesBody;
+  String get landingFeatureDailyTitle;
+  String get landingFeatureDailyBody;
+  String get landingFeatureExplainTitle;
+  String get landingFeatureExplainBody;
+  String get landingPlayAsGuest;
+  String get landingNewGuestRun;
+  String get landingGuestNote;
+  String get landingGoogleUnavailable;
+  String get landingGoogleUnavailableBody;
+  String get landingGoogleFailed;
+  String get landingContinueWithGoogle;
+
+  // --- Welcome sheet -----------------------------------------------------
+  String get welcomeNewPlayer;
+  String welcomeSignedIn(String name);
+  String welcomeBack(String name);
+  String get welcomeWaitingToday;
+  String get welcomeStartPlaying;
+  String get welcomeJumpBackIn;
+  String get welcomeLookAround;
+  String get welcomeGuestBody;
+  String get welcomeAccountBody;
+  String welcomeGuestHandle(String username);
+  String get welcomeCuePickTopic;
+  String get welcomeCueDailyDone;
+  String welcomeCueResumeDaily(String topic);
+  String welcomeCueDaily(String topic);
+
+  // --- Shared result -----------------------------------------------------
+  String get sharedRunBadge;
+  String get sharedCardUnavailable;
+  String get sharedCardExpired;
+  String get sharedOpenSpeedQuiz;
+  String get sharedBeatThat;
+  String get sharedBeatThisScore;
+
+  // --- Premium -----------------------------------------------------------
+  String get premiumUnlockEverything;
+  String get premiumYourePremium;
+  String get premiumBenefitQuestionsTitle;
+  String get premiumBenefitQuestionsBody;
+  String get premiumBenefitCustomTitle;
+  String get premiumBenefitCustomBody;
+  String get premiumBenefitCosmeticsTitle;
+  String get premiumBenefitCosmeticsBody;
+  String get premiumUnlocked;
+  String get premiumUnlockedTest;
+  String get premiumVerifyReturnedFree;
+  String get premiumEnabledStub;
+  String get premiumEnabledDev;
+  String get premiumNotAvailableHere;
+  String get premiumRestored;
+  String get premiumNoSubscription;
+  String get premiumRestoredStub;
+  String get premiumNothingToRestore;
+  String get premiumRestoreUnavailable;
+  String get premiumRestorePurchases;
+  String get premiumSubscribe;
+  String premiumSubscribeWithPrice(String price);
+  String premiumSwitchTo(String plan);
+  String get premiumTestPurchase;
+  String premiumTestPurchaseWith(String plan);
+  String get premiumEnableDev;
+  String get premiumUnavailable;
+  String get premiumTestModeNote;
+  String get premiumSignInNote;
+  String get premiumCurrent;
+  String get premiumNotOnThisDevice;
+  String premiumSavePercent(int percent);
+  String get premiumRenewsAutomatically;
+  String premiumRenewsAt(String price, String period);
+  String premiumCancelAnytime(String store);
+
+  // --- Subscription status -----------------------------------------------
+  String get subPaymentFailed;
+  String get subOnHold;
+  String get subPaused;
+  String get subPaymentProcessing;
+  String get subCancelled;
+  String get subEnded;
+  String get subRefunded;
+  String subActivePlan(String plan);
+  String get subFixPaymentMethod;
+  String get subManageSubscription;
+  String get subCouldNotOpenStore;
+  String get subUpdatePaymentNow;
+  String subUpdatePaymentBy(String date);
+  String get subOnHoldBody;
+  String get subPausedBody;
+  String subProcessingBody(String date);
+  String get subCancelledBodyNoDate;
+  String subCancelledBody(String date);
+  String get subEndedBody;
+  String get subRefundedBody;
+  String get subThanks;
+  String subIntroPriceUntil(String date);
+  String subRenewsOn(String date);
+
+  // --- Misc widgets ------------------------------------------------------
+  String get hotBadge;
+  String get confirm;
+  String get gotIt;
+  String get periodMonth;
+  String get periodYear;
+  String get streakActive;
+  String get streakInactive;
+
+  // --- Speed tiers (speedrun verdict flash) ------------------------------
+  String get speedTierBlitz;
+  String get speedTierFast;
+  String get speedTierClean;
+  String get speedTierClutch;
+
+  // --- Billing progress --------------------------------------------------
+  String get billingOpeningStore;
+  String get billingRestoring;
+  String get billingVerifying;
+  String get billingCouldNotStart;
+  String get billingPurchaseFailed;
+  String get billingWaitingForPayment;
+  String get billingStoreUnavailable;
+  String get billingNoPlans;
+
+  // --- Settings ----------------------------------------------------------
+  String get settingsTitle;
+  String get settingsAppearance;
+  String get settingsAppearanceSubtitle;
+  String get settingsThemeDark;
+  String get settingsThemeLight;
+  String get settingsThemeSystem;
+  String get settingsLanguageSection;
+  String get settingsLanguageSubtitle;
+  String get settingsFeel;
+  String get settingsFeelSubtitle;
+  String get settingsSound;
+  String get settingsSoundSubtitle;
+  String get settingsMusic;
+  String get settingsMusicSubtitle;
+  String get settingsHaptics;
+  String get settingsHapticsSubtitle;
+  String get settingsAccount;
+  String get settingsSaveProgress;
+  String get settingsSaveProgressBody;
+  String get settingsLinkGoogle;
+  String get settingsGoogleUnavailable;
+  String get settingsGoogleUnavailableBody;
+  String get settingsAccountLinked;
+  String get settingsAccountLinkFailed;
+  String get settingsSignedInWithGoogle;
+  String get settingsSignOut;
+  String get settingsSigningOut;
+  String get settingsSignOutTitle;
+  String get settingsSignOutGuestBody;
+  String get settingsSignOutBody;
+  String get settingsSignOutConfirm;
+  String get settingsStay;
+  String get settingsDevEntitlements;
+  String get settingsPremiumEnabled;
+  String get settingsEnablePremium;
+  String get settingsPremiumEnabledDev;
+  String get settingsBackToFreeDev;
+  String settingsVersion(String version);
+}

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/nav.dart';
@@ -60,7 +61,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     final name = _trimmedName;
     if (name.isNotEmpty && name.length < _minName) {
       _saveKey.currentState?.reject();
-      setState(() => _error = 'Names need at least $_minName characters.');
+      setState(() => _error = context.l10n.editNameTooShort(_minName));
       return;
     }
 
@@ -90,7 +91,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
       ref.invalidate(profileProvider);
 
       Haptics.success();
-      SqToast.success(context, 'Profile updated.');
+      SqToast.success(context, context.l10n.editSaved);
       context.popOrGo(Routes.profile);
     } catch (error) {
       if (!mounted) return;
@@ -99,7 +100,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         _saving = false;
         _error = apiErrorMessage(
           error,
-          fallback: 'Could not save your profile. Try again.',
+          fallback: context.l10n.editSaveFailed,
         );
       });
     }
@@ -111,7 +112,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
     final p = theme.sq;
     final user = ref.watch(currentUserProvider);
     final preview = _trimmedName.isEmpty
-        ? (user?.username ?? 'Player')
+        ? (user?.username ?? context.l10n.player)
         : _trimmedName;
 
     return Scaffold(
@@ -121,9 +122,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              const SubScreenHeader(
-                title: 'Profile details',
-                subtitle: 'How you appear on leaderboards',
+              SubScreenHeader(
+                title: context.l10n.editTitle,
+                subtitle: context.l10n.editSubtitle,
               ),
               Expanded(
                 child: ListView(
@@ -169,9 +170,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                     const SizedBox(height: AppSpacing.xl),
                     SqStagger(
                       index: 1,
-                      child: const SqSectionHeader(
-                        title: 'Display name',
-                        subtitle: 'Leave empty to use your handle',
+                      child: SqSectionHeader(
+                        title: context.l10n.editDisplayName,
+                        subtitle: context.l10n.editDisplayNameSubtitle,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -187,8 +188,8 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                           // Keep names renderable and board-safe.
                           FilteringTextInputFormatter.deny(RegExp(r'\s{2,}')),
                         ],
-                        decoration: const InputDecoration(
-                          hintText: 'e.g. Quiz Goblin',
+                        decoration: InputDecoration(
+                          hintText: context.l10n.editDisplayNameHint,
                         ),
                         onChanged: (_) => setState(() => _error = null),
                         onSubmitted: (_) => _save(),
@@ -197,9 +198,9 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                     const SizedBox(height: AppSpacing.md),
                     SqStagger(
                       index: 3,
-                      child: const SqSectionHeader(
-                        title: 'Avatar',
-                        subtitle: 'Pick the look that fits you',
+                      child: SqSectionHeader(
+                        title: context.l10n.editAvatar,
+                        subtitle: context.l10n.editAvatarSubtitle,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -218,7 +219,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                           Haptics.tap();
                           showPremiumPaywall(
                             context,
-                            reason: 'Premium avatars are part of Premium.',
+                            reason: context.l10n.editPremiumAvatarReason,
                           );
                         },
                       ),
@@ -273,7 +274,7 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                   top: false,
                   child: SqButton(
                     key: _saveKey,
-                    label: 'SAVE CHANGES',
+                    label: context.l10n.editSaveChanges,
                     icon: Icons.check_rounded,
                     loading: _saving,
                     onPressed: _saving || !_dirty ? null : _save,

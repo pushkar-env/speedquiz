@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+from app.core.languages import ContentLanguage
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -51,6 +52,10 @@ class UserMeResponse(BaseModel):
     best_streak: int = 0
     onboarding_completed: bool
     theme_preference: str
+    #: Language preferences, so a fresh install of a signed-in account opens in
+    #: the right language without waiting on a second request.
+    app_language: str = ContentLanguage.ENGLISH.value
+    quiz_language: str = ContentLanguage.ENGLISH.value
 
     model_config = {"from_attributes": True}
 

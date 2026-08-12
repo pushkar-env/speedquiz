@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.languages import normalize_language
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import (
@@ -92,6 +93,8 @@ async def create_guest_user(db: AsyncSession, device_info: Optional[str] = None)
             best_streak=profile.best_streak,
             onboarding_completed=profile.onboarding_completed,
             theme_preference=profile.theme_preference,
+            app_language=normalize_language(profile.app_language).value,
+            quiz_language=normalize_language(profile.quiz_language).value,
         ),
     )
 
@@ -235,6 +238,8 @@ def _to_me(user: User, profile: UserProfile) -> UserMeResponse:
         best_streak=profile.best_streak,
         onboarding_completed=profile.onboarding_completed,
         theme_preference=profile.theme_preference,
+        app_language=normalize_language(profile.app_language).value,
+        quiz_language=normalize_language(profile.quiz_language).value,
     )
 
 

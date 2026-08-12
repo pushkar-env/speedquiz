@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/shared/widgets/sq_button.dart';
 
@@ -217,8 +218,8 @@ Future<bool> showSqConfirm(
   BuildContext context, {
   required String title,
   required String message,
-  String confirmLabel = 'CONFIRM',
-  String cancelLabel = 'CANCEL',
+  String? confirmLabel,
+  String? cancelLabel,
   SqDialogTone tone = SqDialogTone.neutral,
   String? glyph,
   IconData? icon,
@@ -231,12 +232,12 @@ Future<bool> showSqConfirm(
       tone: tone,
       glyph: glyph,
       icon: icon ?? (glyph == null ? Icons.help_outline_rounded : null),
-      primaryLabel: confirmLabel,
+      primaryLabel: confirmLabel ?? context.l10n.confirm,
       onPrimary: () {
         Haptics.press();
         Navigator.of(dialogContext).pop(true);
       },
-      secondaryLabel: cancelLabel,
+      secondaryLabel: cancelLabel ?? context.l10n.cancel.toUpperCase(),
       onSecondary: () => Navigator.of(dialogContext).pop(false),
     ),
   );
@@ -248,7 +249,7 @@ Future<void> showSqInfo(
   BuildContext context, {
   required String title,
   required String message,
-  String actionLabel = 'GOT IT',
+  String? actionLabel,
   SqDialogTone tone = SqDialogTone.neutral,
   String? glyph,
   IconData? icon,
@@ -261,7 +262,7 @@ Future<void> showSqInfo(
       tone: tone,
       glyph: glyph,
       icon: icon,
-      primaryLabel: actionLabel,
+      primaryLabel: actionLabel ?? context.l10n.gotIt,
       onPrimary: () => Navigator.of(dialogContext).pop(),
     ),
   );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/shared/widgets/sq_logo.dart';
@@ -72,7 +73,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   const SqWordmark(fontSize: 38),
                   const SizedBox(height: 10),
                   Text(
-                    'Endless AI quizzes. Real game energy.',
+                    context.l10n.landingTagline,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: p.textSecondary,
@@ -92,7 +93,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
-                    'Warming up…',
+                    context.l10n.landingWarmingUp,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: p.textFaint,
                       letterSpacing: 1.2,

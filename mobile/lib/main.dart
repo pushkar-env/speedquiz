@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:speedquiz/app.dart';
+import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/core/settings/app_settings.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/core/theme/theme_mode_provider.dart';
@@ -31,11 +33,24 @@ Future<void> main() async {
         SystemUiMode.edgeToEdge,
       );
 
+      // Locale data for `intl`. The localizations delegate also does this on
+      // every locale change; doing it here as well means the very first frame
+      // can format a date without racing the delegate.
+      await initializeDateFormatting();
+
       final container = ProviderContainer();
       await Future.wait([
         container.read(themeModeProvider.notifier).hydrate(),
         container.read(settingsProvider.notifier).hydrate(),
+        // Before the first frame: hydrating the language later would flash
+        // English chrome at a Hindi player on every cold start.
+        container.read(appLanguageProvider.notifier).hydrate(),
       ]);
+      // After the app language resolves, because a first install with no quiz
+      // language stored defaults to whatever the app itself opened in.
+      await container.read(quizLanguageProvider.notifier).hydrate(
+            fallback: container.read(appLanguageProvider),
+          );
 
       runApp(
         UncontrolledProviderScope(

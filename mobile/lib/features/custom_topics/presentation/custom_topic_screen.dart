@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
+import 'package:speedquiz/core/i18n/language_providers.dart';
+import 'package:speedquiz/core/i18n/widgets/language_picker.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/nav.dart';
@@ -27,28 +30,18 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
   bool _preparing = false;
   String? _error;
 
-  static const _suggestions = [
-    'Elden Ring lore, but brutal',
-    'Formula 1 rules and history',
-    'Ancient Rome for a nerd',
-    'Machine learning fundamentals',
-    'Classic horror cinema',
-  ];
+  List<(String, String)> _difficulties(SqStrings l10n) => [
+        ('easy', l10n.difficultyEasy),
+        ('medium', l10n.difficultyMedium),
+        ('hard', l10n.difficultyHard),
+        ('expert', l10n.difficultyExpert),
+      ];
 
-  static const _difficulties = [
-    ('easy', 'Easy'),
-    ('medium', 'Medium'),
-    ('hard', 'Hard'),
-    ('expert', 'Expert'),
-  ];
-
-  static const _modes = [
-    ('casual', 'Casual'),
-    ('speedrun', 'Speedrun'),
-    ('survival', 'Survival'),
-    ('negative', 'Negative'),
-    ('sudden_death', 'Sudden Death'),
-  ];
+  List<(String, String)> _modes(SqStrings l10n) => [
+        ('casual', l10n.setupModeCasual),
+        ('speedrun', l10n.setupModeSpeedrun),
+        ('survival', l10n.setupModeSurvival),
+      ];
 
   @override
   void dispose() {
@@ -58,10 +51,12 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
   }
 
   Future<void> _create() async {
+    final l10n = context.l10n;
+    final language = ref.read(quizLanguageProvider);
     final prompt = _promptController.text.trim();
     if (prompt.length < 3) {
       _createKey.currentState?.reject();
-      setState(() => _error = 'Tell us what you want to be quizzed on.');
+      setState(() => _error = l10n.customNeedPrompt);
       return;
     }
 
@@ -81,6 +76,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
             style: _styleController.text.trim().isEmpty
                 ? null
                 : _styleController.text.trim(),
+            language: language.code,
           );
       if (!mounted) return;
 
@@ -88,9 +84,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
       if (session == null || result.topicId == null) {
         setState(() {
           _preparing = false;
-          _error =
-              'We could not build enough good questions for that. '
-              'Try a clearer or broader topic.';
+          _error = l10n.customNotEnoughQuestions;
         });
         return;
       }
@@ -103,6 +97,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
           'topicName': result.topicName ?? result.classifiedSubject,
           'mode': _mode,
           'difficulty': _difficulty,
+          'language': language.code,
           'session': session,
         },
       );
@@ -112,7 +107,8 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
         _preparing = false;
         _error = apiErrorMessage(
           error,
-          fallback: 'Could not prepare your challenge. Please try again.',
+          fallback: l10n.customFailed,
+          strings: l10n,
         );
       });
     }
@@ -122,6 +118,8 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
+    final quizLanguage = ref.watch(quizLanguageProvider);
 
     if (_preparing) return const _GeneratingView();
 
@@ -144,13 +142,13 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                   children: [
                     SqIconButton(
                       icon: Icons.close_rounded,
-                      tooltip: 'Close',
+                      tooltip: l10n.close,
                       onPressed: () => context.popOrGo(Routes.home),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Custom topic',
+                        l10n.customTitle,
                         style: theme.textTheme.titleLarge,
                       ),
                     ),
@@ -168,7 +166,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                   children: [
                     SqStagger(
                       child: Text(
-                        'What do you want to\nbe quizzed on?',
+                        l10n.customHeadline,
                         style: theme.textTheme.headlineMedium?.copyWith(
                           height: 1.15,
                         ),
@@ -178,8 +176,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                     SqStagger(
                       index: 1,
                       child: Text(
-                        'Describe anything — games, science, lore, hobbies. '
-                        'The AI writes and validates the questions.',
+                        l10n.customBody,
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
@@ -195,10 +192,8 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                         onChanged: (_) {
                           if (_error != null) setState(() => _error = null);
                         },
-                        decoration: const InputDecoration(
-                          hintText:
-                              'e.g. Ask me difficult questions about Elden '
-                              'Ring lore',
+                        decoration: InputDecoration(
+                          hintText: l10n.customPromptHint,
                         ),
                       ),
                     ),
@@ -208,7 +203,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          for (final suggestion in _suggestions)
+                          for (final suggestion in l10n.customSuggestions)
                             _SuggestionChip(
                               label: suggestion,
                               onTap: () {
@@ -223,9 +218,37 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.lg),
+                    // The bank is generated on demand, so a custom topic is
+                    // the one place where *any* language is always available —
+                    // there is no existing stock to be missing from.
                     SqStagger(
                       index: 4,
-                      child: const SqSectionHeader(title: 'Difficulty'),
+                      child: SqSectionHeader(
+                        title: l10n.quizLanguageTitle,
+                        subtitle: l10n.customLanguageNote(
+                          quizLanguage.nativeLabel,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SqStagger(
+                      index: 5,
+                      child: SqLanguagePicker(
+                        selected: quizLanguage,
+                        tint: AppColors.violet,
+                        onChanged: (language) {
+                          if (language == quizLanguage) return;
+                          Haptics.tap();
+                          ref
+                              .read(quizLanguageProvider.notifier)
+                              .setLanguage(language);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    SqStagger(
+                      index: 6,
+                      child: SqSectionHeader(title: l10n.customDifficulty),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     SqStagger(
@@ -234,7 +257,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          for (final (value, label) in _difficulties)
+                          for (final (value, label) in _difficulties(l10n))
                             _Pill(
                               label: label,
                               selected: _difficulty == value,
@@ -248,8 +271,8 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                     SqStagger(
-                      index: 6,
-                      child: const SqSectionHeader(title: 'Mode'),
+                      index: 8,
+                      child: SqSectionHeader(title: l10n.customMode),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     SqStagger(
@@ -258,7 +281,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          for (final (value, label) in _modes)
+                          for (final (value, label) in _modes(l10n))
                             _Pill(
                               label: label,
                               selected: _mode == value,
@@ -273,9 +296,9 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                     const SizedBox(height: AppSpacing.lg),
                     SqStagger(
                       index: 8,
-                      child: const SqSectionHeader(
-                        title: 'Style',
-                        subtitle: 'Optional — how should the questions feel?',
+                      child: SqSectionHeader(
+                        title: l10n.customStyle,
+                        subtitle: l10n.customStyleSubtitle,
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
@@ -285,8 +308,8 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                         controller: _styleController,
                         maxLength: 120,
                         style: theme.textTheme.bodyLarge,
-                        decoration: const InputDecoration(
-                          hintText: 'e.g. lore-heavy, trivia, practical',
+                        decoration: InputDecoration(
+                          hintText: l10n.customStyleHint,
                         ),
                       ),
                     ),
@@ -340,7 +363,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                   top: false,
                   child: SqButton(
                     key: _createKey,
-                    label: 'CREATE QUIZ',
+                    label: l10n.customCreate,
                     icon: Icons.auto_awesome_rounded,
                     onPressed: _create,
                   ),
@@ -365,18 +388,20 @@ class _GeneratingView extends StatefulWidget {
 
 class _GeneratingViewState extends State<_GeneratingView>
     with SingleTickerProviderStateMixin {
-  static const _stages = [
-    ('🧭', 'Understanding your topic'),
-    ('✍️', 'Writing candidate questions'),
-    ('🔍', 'Fact-checking every answer'),
-    ('🎲', 'Shuffling the good ones in'),
-  ];
+  static const _glyphs = ['🧭', '✍️', '🔍', '🎲'];
+
+  static List<String> _stageLabels(SqStrings l10n) => [
+        l10n.customStageUnderstanding,
+        l10n.customStageWriting,
+        l10n.customStageChecking,
+        l10n.customStageShuffling,
+      ];
 
   late final AnimationController _controller =
       AnimationController(vsync: this, duration: const Duration(seconds: 3))
         ..addStatusListener((status) {
           if (status == AnimationStatus.completed && mounted) {
-            setState(() => _stage = (_stage + 1) % _stages.length);
+            setState(() => _stage = (_stage + 1) % _glyphs.length);
             _controller.forward(from: 0);
           }
         });
@@ -399,6 +424,7 @@ class _GeneratingViewState extends State<_GeneratingView>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final stages = _stageLabels(context.l10n);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -422,7 +448,7 @@ class _GeneratingViewState extends State<_GeneratingView>
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   Text(
-                    'Building your quiz',
+                    context.l10n.customBuilding,
                     style: theme.textTheme.headlineSmall,
                     textAlign: TextAlign.center,
                   ),
@@ -444,12 +470,12 @@ class _GeneratingViewState extends State<_GeneratingView>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          _stages[_stage].$1,
+                          _glyphs[_stage],
                           style: const TextStyle(fontSize: 17),
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          _stages[_stage].$2,
+                          stages[_stage],
                           style: theme.textTheme.bodyLarge,
                         ),
                       ],
@@ -457,8 +483,7 @@ class _GeneratingViewState extends State<_GeneratingView>
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   Text(
-                    'This one runs a real model, so it takes a few seconds. '
-                    'Everything after this is served instantly.',
+                    context.l10n.customBuildingHint,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: p.textFaint,

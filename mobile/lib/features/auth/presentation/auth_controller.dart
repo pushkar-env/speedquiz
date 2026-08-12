@@ -23,13 +23,19 @@ class AuthSignedOut extends AuthState {
   const AuthSignedOut({
     this.pending = false,
     this.message,
+    this.error,
     this.hasStoredSession = false,
   });
 
   final bool pending;
 
-  /// Why the last attempt failed, if it did.
+  /// Why the last attempt failed, if it did — already worded, in English.
   final String? message;
+
+  /// The failure itself, so a screen with a `BuildContext` can word it in the
+  /// player's language instead. This controller has none, and it outlives a
+  /// language change, so it stores the cause rather than a sentence.
+  final Object? error;
 
   /// A token exists on disk but could not be validated (usually offline), so
   /// retrying is more useful than starting a new guest session.
@@ -99,6 +105,7 @@ class AuthController extends StateNotifier<AuthState> {
     } catch (error) {
       state = AuthSignedOut(
         message: apiErrorMessage(error),
+        error: error,
         hasStoredSession: await _repo.hasStoredSession(),
       );
     }
@@ -115,7 +122,7 @@ class AuthController extends StateNotifier<AuthState> {
       );
       state = AuthAuthenticated(session.user);
     } catch (error) {
-      state = AuthSignedOut(message: apiErrorMessage(error));
+      state = AuthSignedOut(message: apiErrorMessage(error), error: error);
     }
   }
 
@@ -139,14 +146,20 @@ class AuthController extends StateNotifier<AuthState> {
       state = AuthAuthenticated(session.user);
       return const GoogleSignInResult(GoogleSignInOutcome.success);
     } catch (error) {
+      // A StateError here is a *build* misconfiguration (no client id, no ID
+      // token) and its text is aimed at whoever built the APK, so it is shown
+      // verbatim. Anything else falls through as null, which lets the screen
+      // supply localized copy — this controller has no BuildContext of its
+      // own and outlives a language change.
       final message = error is StateError
           ? error.message
-          : apiErrorMessage(error, fallback: 'Google sign-in failed.');
+          : apiErrorMessage(error, fallback: '');
       // An authenticated user stays authenticated when an upgrade fails.
+      final surfaced = message.isEmpty ? null : message;
       state = previous is AuthAuthenticated
           ? previous
-          : AuthSignedOut(message: message);
-      return GoogleSignInResult(GoogleSignInOutcome.failed, message);
+          : AuthSignedOut(message: surfaced, error: error);
+      return GoogleSignInResult(GoogleSignInOutcome.failed, surfaced);
     }
   }
 

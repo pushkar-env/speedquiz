@@ -84,6 +84,92 @@ TOPICS = [
     ("art-and-design", "Art & Design", "academic", "🎨", False),
 ]
 
+#: Curated Hindi names, keyed by slug. Kept separate from the tuples above so
+#: adding a language is a new dict, not a reshaped table — and so a slug with
+#: no entry simply falls back to its English name instead of breaking the seed.
+CATEGORY_NAMES_HI = {
+    "science": "विज्ञान",
+    "technology": "तकनीक",
+    "history": "इतिहास",
+    "entertainment": "मनोरंजन",
+    "gaming": "गेमिंग",
+    "sports": "खेल",
+    "lifestyle": "जीवनशैली",
+    "academic": "शैक्षणिक",
+}
+
+TOPIC_NAMES_HI = {
+    # Science
+    "science": "विज्ञान",
+    "physics": "भौतिकी",
+    "chemistry": "रसायन विज्ञान",
+    "biology": "जीव विज्ञान",
+    "astronomy": "खगोल विज्ञान",
+    "space-exploration": "अंतरिक्ष अन्वेषण",
+    "human-body": "मानव शरीर",
+    "earth-and-climate": "पृथ्वी और जलवायु",
+    # Technology
+    "artificial-intelligence": "आर्टिफिशियल इंटेलिजेंस",
+    "programming": "प्रोग्रामिंग",
+    "technology": "तकनीक",
+    "cybersecurity": "साइबर सुरक्षा",
+    "internet-culture": "इंटरनेट संस्कृति",
+    "gadgets": "गैजेट्स",
+    # History
+    "history": "इतिहास",
+    "ancient-civilizations": "प्राचीन सभ्यताएँ",
+    "world-wars": "विश्व युद्ध",
+    "indian-history": "भारतीय इतिहास",
+    "inventions": "आविष्कार",
+    # Entertainment
+    "movies": "फ़िल्में",
+    "literature": "साहित्य",
+    "music": "संगीत",
+    "television": "टेलीविज़न",
+    "anime-and-manga": "एनिमे और मंगा",
+    # Gaming
+    "gaming": "गेमिंग",
+    "esports": "ई-स्पोर्ट्स",
+    "game-history": "गेम इतिहास",
+    "board-games": "बोर्ड गेम्स",
+    # Sports
+    "sports": "खेल",
+    "cricket": "क्रिकेट",
+    "football": "फ़ुटबॉल",
+    "olympics": "ओलंपिक",
+    "motorsport": "मोटरस्पोर्ट",
+    # Lifestyle
+    "finance": "वित्त",
+    "food-and-drink": "खान-पान",
+    "travel": "यात्रा",
+    "health-and-fitness": "स्वास्थ्य और फिटनेस",
+    # Academic
+    "mathematics": "गणित",
+    "geography": "भूगोल",
+    "psychology": "मनोविज्ञान",
+    "general-knowledge": "सामान्य ज्ञान",
+    "philosophy": "दर्शनशास्त्र",
+    "economics": "अर्थशास्त्र",
+    "languages": "भाषाएँ",
+    "art-and-design": "कला और डिज़ाइन",
+}
+
+
+def _topic_name_i18n(slug: str) -> dict[str, str]:
+    hindi = TOPIC_NAMES_HI.get(slug)
+    return {"hi": hindi} if hindi else {}
+
+
+def _topic_description_i18n(slug: str) -> dict[str, str]:
+    hindi = TOPIC_NAMES_HI.get(slug)
+    return {"hi": f"{hindi} के सवालों से खुद को परखें।"} if hindi else {}
+
+
+def _category_name_i18n(slug: str) -> dict[str, str]:
+    hindi = CATEGORY_NAMES_HI.get(slug)
+    return {"hi": hindi} if hindi else {}
+
+
 ACHIEVEMENTS = [
     ("first_quiz", "First Quiz", "Complete your first quiz", "flag", "progress", {"type": "quizzes_completed", "value": 1}, 50, 10),
     ("correct_10", "10 Correct", "Answer 10 questions correctly", "check", "progress", {"type": "correct_answers", "value": 10}, 75, 15),
@@ -150,7 +236,13 @@ async def seed_reference_data() -> None:
         if not existing:
             category_map: dict[str, TopicCategory] = {}
             for slug, name, icon, order in CATEGORIES:
-                cat = TopicCategory(slug=slug, name=name, icon=icon, sort_order=order)
+                cat = TopicCategory(
+                    slug=slug,
+                    name=name,
+                    icon=icon,
+                    sort_order=order,
+                    name_i18n=_category_name_i18n(slug),
+                )
                 db.add(cat)
                 category_map[slug] = cat
             await db.flush()
@@ -165,13 +257,50 @@ async def seed_reference_data() -> None:
                         is_trending=trending,
                         popularity_score=100 if trending else 50,
                         description=f"Challenge yourself with {name} quizzes.",
+                        name_i18n=_topic_name_i18n(slug),
+                        description_i18n=_topic_description_i18n(slug),
                     )
                 )
 
+        translated = await refresh_catalog_translations(db)
         created = await upsert_achievements(db)
         logger.info(
             "seed_complete",
             topics=len(TOPICS),
             achievements=len(ACHIEVEMENTS),
             achievements_created=created,
+            translations_refreshed=translated,
         )
+
+
+async def refresh_catalog_translations(db) -> int:
+    """Push curated translations onto existing rows, by slug.
+
+    Runs on every boot, not just the first: translations are content that ships
+    with a deploy, and a database seeded before a language existed would
+    otherwise stay English forever. Only writes when the value actually
+    changes, so a steady state costs one SELECT per table and no UPDATEs.
+    """
+    updated = 0
+
+    for category in (await db.execute(select(TopicCategory))).scalars().all():
+        names = _category_name_i18n(category.slug)
+        if names and dict(category.name_i18n or {}) != names:
+            category.name_i18n = names
+            updated += 1
+
+    for topic in (await db.execute(select(Topic))).scalars().all():
+        if topic.is_custom:
+            # A custom topic's name is already in the language it was
+            # generated in; there is nothing curated to overwrite it with.
+            continue
+        names = _topic_name_i18n(topic.slug)
+        descriptions = _topic_description_i18n(topic.slug)
+        if names and dict(topic.name_i18n or {}) != names:
+            topic.name_i18n = names
+            updated += 1
+        if descriptions and dict(topic.description_i18n or {}) != descriptions:
+            topic.description_i18n = descriptions
+            updated += 1
+
+    return updated

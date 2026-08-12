@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.pipeline import run_generation_pipeline, sanitize_topic_prompt, slugify
 from app.ai.providers import get_llm_provider
 from app.core.config import get_settings
+from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.models import (
@@ -25,6 +26,7 @@ from app.models import (
     QuestionStatus,
     Topic,
     User,
+    UserProfile,
 )
 from app.schemas.custom_topics import CreateCustomTopicRequest, CustomTopicResponse
 from app.schemas.quiz import CreateQuizSessionRequest
@@ -34,8 +36,21 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-def cache_key_for(prompt: str, difficulty: DifficultyLabel, style: Optional[str]) -> str:
-    raw = f"{prompt.strip().lower()}|{difficulty.value}|{(style or '').strip().lower()}"
+def cache_key_for(
+    prompt: str,
+    difficulty: DifficultyLabel,
+    style: Optional[str],
+    language: ContentLanguage = DEFAULT_LANGUAGE,
+) -> str:
+    """Reuse key for an already-generated custom bank.
+
+    Language is part of the key: "quiz me on the Mughals" in Hindi must not be
+    answered with the English bank someone generated an hour earlier.
+    """
+    raw = (
+        f"{prompt.strip().lower()}|{difficulty.value}|"
+        f"{(style or '').strip().lower()}|{normalize_language(language).value}"
+    )
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -62,7 +77,11 @@ async def _enforce_daily_quota(db: AsyncSession, user: User) -> None:
         )
 
 
-async def _find_cached_topic(db: AsyncSession, key: str) -> Optional[Topic]:
+async def _find_cached_topic(
+    db: AsyncSession,
+    key: str,
+    language: ContentLanguage,
+) -> Optional[Topic]:
     # Prefer a reusable custom topic bank for the same cache key.
     row = await db.scalar(
         select(CustomTopic)
@@ -79,10 +98,16 @@ async def _find_cached_topic(db: AsyncSession, key: str) -> Optional[Topic]:
     topic = await db.scalar(select(Topic).where(Topic.id == row.topic_id, Topic.is_active.is_(True)))
     if not topic:
         return None
+    # Belt and braces: the cache key already encodes the language, but a bank
+    # reused across a key-format change must still be playable in it.
     active = await db.scalar(
         select(func.count())
         .select_from(Question)
-        .where(Question.topic_id == topic.id, Question.status == QuestionStatus.ACTIVE)
+        .where(
+            Question.topic_id == topic.id,
+            Question.status == QuestionStatus.ACTIVE,
+            Question.language == language.value,
+        )
     )
     if (active or 0) < 5:
         return None
@@ -94,6 +119,7 @@ async def _start_session_for_topic(
     user: User,
     topic: Topic,
     payload: CreateCustomTopicRequest,
+    language: ContentLanguage,
 ) -> object:
     return await quiz_service.create_session(
         db,
@@ -102,8 +128,23 @@ async def _start_session_for_topic(
             topic_id=topic.id,
             mode=payload.mode,
             difficulty=payload.difficulty,
+            language=language,
         ),
     )
+
+
+async def _resolve_language(
+    db: AsyncSession,
+    user: User,
+    payload: CreateCustomTopicRequest,
+) -> ContentLanguage:
+    """Requested language, else the one this player last played in."""
+    if payload.language is not None:
+        return normalize_language(payload.language)
+    profile = user.profile or await db.scalar(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    return normalize_language(profile.quiz_language if profile else None)
 
 
 async def create_custom_topic_quiz(
@@ -115,13 +156,14 @@ async def create_custom_topic_quiz(
     if len(sanitized) < 3:
         raise HTTPException(status_code=400, detail="Please describe what you want to be quizzed on")
 
+    language = await _resolve_language(db, user, payload)
     llm = get_llm_provider()
-    classification = await llm.classify_topic(sanitized)
+    classification = await llm.classify_topic(sanitized, language=language)
     subject = str(classification.get("subject") or sanitized)[:120]
-    key = cache_key_for(sanitized, payload.difficulty, payload.style)
+    key = cache_key_for(sanitized, payload.difficulty, payload.style, language)
 
     # Cache reuse first — does not burn the daily free quota.
-    cached_topic = await _find_cached_topic(db, key)
+    cached_topic = await _find_cached_topic(db, key, language)
     if cached_topic:
         custom = CustomTopic(
             id=uuid4(),
@@ -135,6 +177,7 @@ async def create_custom_topic_quiz(
             cache_key=key,
             status="ready",
             topic_id=cached_topic.id,
+            language=language.value,
         )
         db.add(custom)
         job = GenerationJob(
@@ -144,10 +187,12 @@ async def create_custom_topic_quiz(
             status=GenerationJobStatus.COMPLETED,
             requested_count=payload.requested_count,
             approved_count=cached_topic.question_count,
+            language=language.value,
             payload={
                 "prompt": sanitized,
                 "subject": subject,
                 "difficulty": payload.difficulty.value,
+                "language": language.value,
                 "style": payload.style,
                 "cache_hit": True,
                 "reused_topic_id": str(cached_topic.id),
@@ -157,13 +202,14 @@ async def create_custom_topic_quiz(
         )
         db.add(job)
         await db.flush()
-        session = await _start_session_for_topic(db, user, cached_topic, payload)
+        session = await _start_session_for_topic(db, user, cached_topic, payload, language)
         return CustomTopicResponse(
             id=custom.id,
             status=custom.status,
             classified_subject=subject,
             topic_id=cached_topic.id,
             topic_name=cached_topic.name,
+            language=language.value,
             cache_hit=True,
             job_id=job.id,
             approved_count=cached_topic.question_count,
@@ -185,6 +231,7 @@ async def create_custom_topic_quiz(
         requested_count=payload.requested_count,
         cache_key=key,
         status="preparing",
+        language=language.value,
     )
     db.add(custom)
     await db.flush()
@@ -195,10 +242,12 @@ async def create_custom_topic_quiz(
         requested_by_user_id=user.id,
         status=GenerationJobStatus.QUEUED,
         requested_count=payload.requested_count,
+        language=language.value,
         payload={
             "prompt": sanitized,
             "subject": subject,
             "difficulty": payload.difficulty.value,
+            "language": language.value,
             "style": payload.style,
             "cache_hit": False,
             "quota_exempt": False,
@@ -232,6 +281,7 @@ async def create_custom_topic_quiz(
             count=payload.requested_count,
             style=payload.style,
             provider=llm,
+            language=language,
         )
         job.approved_count = len(outcome.approved)
         job.rejected_count = len(outcome.rejected)
@@ -259,13 +309,14 @@ async def create_custom_topic_quiz(
         except Exception:  # noqa: BLE001
             pass
 
-        session = await _start_session_for_topic(db, user, topic, payload)
+        session = await _start_session_for_topic(db, user, topic, payload, language)
         return CustomTopicResponse(
             id=custom.id,
             status=custom.status,
             classified_subject=subject,
             topic_id=topic.id,
             topic_name=topic.name,
+            language=language.value,
             cache_hit=False,
             job_id=job.id,
             approved_count=job.approved_count,

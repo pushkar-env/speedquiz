@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
@@ -56,7 +57,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   void _surpriseMe() {
     final topic = ref.read(randomTopicProvider);
     if (topic == null) {
-      SqToast.warning(context, 'No topic has questions ready yet.');
+      SqToast.warning(context, context.l10n.homeNoTopicReady);
       return;
     }
     Haptics.success();
@@ -67,6 +68,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
     final topics = ref.watch(topicsProvider);
 
     return Scaffold(
@@ -81,10 +83,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: SqErrorState(
-                  title: 'Could not load topics',
-                  message: apiErrorMessage(
+                  title: l10n.exploreCouldNotLoad,
+                  message: localizedApiErrorMessage(
+                    context,
                     error,
-                    fallback: 'Check your connection and try again.',
+                    fallback: l10n.exploreCheckConnection,
                   ),
                   onRetry: () => ref.invalidate(topicsProvider),
                 ),
@@ -123,7 +126,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    'Explore',
+                                    l10n.exploreTitle,
                                     style: theme.textTheme.displaySmall,
                                   ),
                                 ),
@@ -132,8 +135,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${all.where((t) => t.isPlayable).length} topics '
-                              'ready to play',
+                              l10n.exploreReadyToPlay(
+                                all.where((t) => t.isPlayable).length,
+                              ),
                               style: theme.textTheme.bodyMedium,
                             ),
                             const SizedBox(height: AppSpacing.md),
@@ -161,13 +165,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         hasScrollBody: false,
                         child: SqEmptyState(
                           icon: '🔍',
-                          title: 'Nothing here yet',
+                          title: l10n.exploreNothingHere,
                           message: _query.isEmpty
-                              ? 'This category has no topics stocked yet.'
-                              : 'No topic matches “$_query”. Build it '
-                                  'yourself as a custom topic.',
+                              ? l10n.exploreCategoryEmpty
+                              : l10n.exploreNoMatch(_query),
                           action: SqButton(
-                            label: 'CREATE CUSTOM TOPIC',
+                            label: l10n.setupCreateCustomTopic,
                             expand: false,
                             icon: Icons.auto_awesome_rounded,
                             onPressed: () => context.push(Routes.customTopic),
@@ -178,7 +181,10 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                       // Trending only makes sense on the unfiltered view;
                       // inside a category it just repeats the list below.
                       if (!_filtering && trending.isNotEmpty) ...[
-                        const _SectionLabel(title: 'Trending now', glyph: '🔥'),
+                        _SectionLabel(
+                          title: l10n.exploreTrendingNow,
+                          glyph: '🔥',
+                        ),
                         SliverToBoxAdapter(
                           child: _TrendingRail(
                             topics: trending,
@@ -195,8 +201,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         _TopicGrid(items: group.topics, onTap: _open),
                       ],
                       if (soon.isNotEmpty) ...[
-                        const _SectionLabel(
-                          title: 'Bank filling up',
+                        _SectionLabel(
+                          title: l10n.exploreBankFilling,
                           glyph: '⏳',
                         ),
                         _TopicGrid(items: soon, onTap: _open, muted: true),
@@ -231,7 +237,7 @@ class _SurpriseButton extends StatelessWidget {
     return SqPressable(
       onTap: onTap,
       pressedScale: 0.9,
-      semanticLabel: 'Play a random topic',
+      semanticLabel: context.l10n.explorePlayRandom,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
@@ -247,10 +253,10 @@ class _SurpriseButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('🎲', style: TextStyle(fontSize: 15)),
+            Text('🎲', style: TextStyle(fontSize: 15)),
             const SizedBox(width: 6),
             Text(
-              'RANDOM',
+              context.l10n.exploreRandom,
               style: theme.textTheme.labelMedium?.copyWith(
                 color: theme.sq.isDark
                     ? AppColors.violet
@@ -282,13 +288,13 @@ class _CategoryRail extends StatelessWidget {
     if (categories.isEmpty) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 44,
+      height: 44 + context.scriptExtraHeight,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
         children: [
           _CategoryChip(
-            label: 'All',
+            label: context.l10n.all,
             glyph: '🗂',
             selected: selected == null,
             onTap: () => onSelect(null),
@@ -379,7 +385,7 @@ class _SearchField extends StatelessWidget {
       textInputAction: TextInputAction.search,
       style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
-        hintText: 'Search topics…',
+        hintText: context.l10n.exploreSearchHint,
         prefixIcon: Icon(Icons.search_rounded, color: p.textFaint, size: 20),
         suffixIcon: ValueListenableBuilder<TextEditingValue>(
           valueListenable: controller,
@@ -453,7 +459,7 @@ class _TrendingRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 128,
+      height: 128 + context.scriptExtraHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
@@ -489,11 +495,14 @@ class _TopicGrid extends StatelessWidget {
     return SliverPadding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 220,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.22,
+          // Taller tiles in Devanagari: the same two lines of text occupy a
+          // taller line box, and a fixed ratio that fits English clips it.
+          childAspectRatio:
+              context.appLanguage.script == SqScript.devanagari ? 1.06 : 1.22,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) => SqStagger(

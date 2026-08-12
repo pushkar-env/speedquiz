@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/achievements/data/achievements_repository.dart';
 import 'package:speedquiz/features/achievements/domain/achievement_models.dart';
@@ -100,6 +102,13 @@ void main() {
           builder: (context) => MediaQuery(
             data: MediaQuery.of(context).copyWith(disableAnimations: true),
             child: MaterialApp.router(
+              localizationsDelegates: const [
+                SqLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              supportedLocales: AppLanguage.supportedLocales,
               theme: AppTheme.dark(),
               routerConfig: container.read(appRouterProvider),
             ),

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/game_labels.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
@@ -14,6 +16,8 @@ import 'package:speedquiz/features/entitlements/presentation/premium_paywall_she
 import 'package:speedquiz/features/leaderboard/data/leaderboard_repository.dart';
 import 'package:speedquiz/features/profile/data/profile_repository.dart';
 import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
+import 'package:speedquiz/features/quiz/domain/speedrun_rules.dart';
+import 'package:speedquiz/features/quiz/domain/survival_rules.dart';
 import 'package:speedquiz/features/quiz/presentation/quiz_play_controller.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
@@ -24,6 +28,7 @@ class QuizPlayScreen extends ConsumerStatefulWidget {
     required this.mode,
     required this.difficulty,
     this.adaptive = false,
+    this.language,
     this.topicName,
     this.existingSession,
   });
@@ -32,6 +37,11 @@ class QuizPlayScreen extends ConsumerStatefulWidget {
   final String mode;
   final String difficulty;
   final bool adaptive;
+
+  /// Content language chosen on the setup screen. Null lets the server use the
+  /// player's last choice, which is what deep links and the daily do.
+  final String? language;
+
   final String? topicName;
   final QuizSession? existingSession;
 
@@ -50,6 +60,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
             mode: widget.mode,
             difficulty: widget.difficulty,
             adaptive: widget.adaptive,
+            language: widget.language,
             existingSession: widget.existingSession,
           );
     });
@@ -60,13 +71,13 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
   Future<void> _confirmQuit() async {
     if (ref.read(quizPlayControllerProvider) is! QuizPlayActive) return;
 
+    final l10n = context.l10n;
     final quit = await showSqConfirm(
       context,
-      title: 'End this run?',
-      message: 'Your score so far is banked and the run is scored now. '
-          'You cannot resume it afterwards.',
-      confirmLabel: 'END RUN',
-      cancelLabel: 'KEEP PLAYING',
+      title: l10n.playEndRunTitle,
+      message: l10n.playEndRunBody,
+      confirmLabel: l10n.playEndRunConfirm,
+      cancelLabel: l10n.playKeepPlaying,
       tone: SqDialogTone.warning,
       glyph: '🚪',
     );
@@ -127,19 +138,23 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
           intensity: 0.4,
           child: SafeArea(
             child: switch (state) {
-              QuizPlayIdle() || QuizPlayLoading() => const _PreparingView(),
-              QuizPlayFinished() => const _PreparingView(
-                  message: 'Scoring your run…',
+              QuizPlayIdle() || QuizPlayLoading() => _PreparingView(
+                  message: context.l10n.playPreparing,
                 ),
-              QuizPlayError(:final message, :final isEntitlementCap) =>
-                _ErrorView(
+              QuizPlayCountdown(:final beat) => _CountInView(beat: beat),
+              QuizPlayFinished() => _PreparingView(
+                  message: context.l10n.playScoringRun,
+                ),
+              QuizPlayError(:final message, :final failure) => _ErrorView(
                   message: message,
-                  isEntitlementCap: isEntitlementCap,
+                  failure: failure,
+                  language: widget.language,
                   onRetry: () => controller.start(
                     topicId: widget.topicId,
                     mode: widget.mode,
                     difficulty: widget.difficulty,
                     adaptive: widget.adaptive,
+                    language: widget.language,
                   ),
                 ),
               QuizPlayActive(
@@ -147,15 +162,17 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
                 :final feedback,
                 :final submitting,
                 :final selectedOptionIndex,
+                :final tightened,
               ) =>
                 _QuestionView(
                   session: session,
                   feedback: feedback,
                   submitting: submitting,
                   selectedOptionIndex: selectedOptionIndex,
+                  tightened: tightened,
                   audio: ref.read(audioServiceProvider),
                   remainingMs: controller.remainingMs,
-                  autoAdvanceMs: controller.autoAdvanceMs,
+                  runClockMs: controller.runClockMs,
                   topicName: widget.topicName ?? session.topicName,
                   onSelect: (i) => controller.submit(optionIndex: i),
                   onNext: controller.continueAfterFeedback,
@@ -171,7 +188,7 @@ class _QuizPlayScreenState extends ConsumerState<QuizPlayScreen> {
 }
 
 class _PreparingView extends StatelessWidget {
-  const _PreparingView({this.message = 'Preparing your challenge…'});
+  const _PreparingView({required this.message});
 
   final String message;
 
@@ -193,9 +210,120 @@ class _PreparingView extends StatelessWidget {
           Text(message, style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
-            'Questions are served from the bank, not generated live.',
+            context.l10n.playPreparingHint,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Speedrun's count-in. The beat is dead time the run needs anyway, so it also
+/// carries the three rules that decide whether the player survives.
+class _CountInView extends ConsumerStatefulWidget {
+  const _CountInView({required this.beat});
+
+  final int beat;
+
+  @override
+  ConsumerState<_CountInView> createState() => _CountInViewState();
+}
+
+class _CountInViewState extends ConsumerState<_CountInView> {
+  @override
+  void initState() {
+    super.initState();
+    _cue();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CountInView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.beat != widget.beat) _cue();
+  }
+
+  void _cue() {
+    final audio = ref.read(audioServiceProvider);
+    if (widget.beat == 0) {
+      Haptics.milestone();
+      audio.play(Sfx.streak);
+    } else {
+      Haptics.tap();
+      audio.play(Sfx.tick);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+    final go = widget.beat == 0;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 132,
+              child: AnimatedSwitcher(
+                duration: AppMotion.fast,
+                switchInCurve: AppMotion.spring,
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: Tween<double>(begin: 1.6, end: 1).animate(animation),
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Text(
+                  go ? context.l10n.playGo : '${widget.beat}',
+                  key: ValueKey(widget.beat),
+                  style: theme.textTheme.displayLarge?.copyWith(
+                    fontSize: go ? 88 : 116,
+                    color: go ? AppColors.accent : p.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              context.l10n.playSpeedrunTitle,
+              style: theme.textTheme.labelMedium?.copyWith(
+                letterSpacing: 3,
+                color: AppColors.gold,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _RuleLine(glyph: '✅', text: context.l10n.playRuleRight),
+            _RuleLine(glyph: '❌', text: context.l10n.playRuleWrong),
+            _RuleLine(glyph: '⏱', text: context.l10n.playRuleTighter),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RuleLine extends StatelessWidget {
+  const _RuleLine({required this.glyph, required this.text});
+
+  final String glyph;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(glyph, style: const TextStyle(fontSize: 14)),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(text, style: theme.textTheme.bodyMedium),
           ),
         ],
       ),
@@ -206,16 +334,44 @@ class _PreparingView extends StatelessWidget {
 class _ErrorView extends StatelessWidget {
   const _ErrorView({
     required this.message,
-    required this.isEntitlementCap,
+    required this.failure,
     required this.onRetry,
+    this.language,
   });
 
+  /// The server's own wording, used when the client has nothing better.
   final String message;
-  final bool isEntitlementCap;
+  final QuizPlayFailure failure;
   final VoidCallback onRetry;
+  final String? language;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final capped = failure == QuizPlayFailure.entitlementCap;
+    final languageMissing =
+        failure == QuizPlayFailure.contentLanguageUnavailable;
+    final nativeName = AppLanguage.fromCode(language).nativeLabel;
+
+    // Prefer copy the client owns; fall back to the server's message only for
+    // failures we have no specific words for.
+    final (title, body) = switch (failure) {
+      QuizPlayFailure.entitlementCap => (
+          l10n.playFreeLimitReached,
+          l10n.errorUniqueCap,
+        ),
+      QuizPlayFailure.contentLanguageUnavailable => (
+          l10n.languageBankEmpty(nativeName),
+          l10n.languageBankEmptyHint(nativeName),
+        ),
+      QuizPlayFailure.noQuestion => (l10n.playRunInterrupted, l10n.errorNoQuestion),
+      QuizPlayFailure.noNextQuestion => (
+          l10n.playRunInterrupted,
+          l10n.errorNoNextQuestion,
+        ),
+      QuizPlayFailure.unknown => (l10n.playRunInterrupted, message),
+    };
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -223,25 +379,32 @@ class _ErrorView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             SqErrorState(
-              title: isEntitlementCap ? 'Free limit reached' : 'Run interrupted',
-              message: message,
-              onRetry: isEntitlementCap ? null : onRetry,
+              title: title,
+              message: body,
+              // Retrying a language the bank cannot serve just fails again;
+              // the way out is a different topic or language, back on setup.
+              onRetry: capped || languageMissing ? null : onRetry,
             ),
             const SizedBox(height: AppSpacing.md),
-            if (isEntitlementCap)
+            if (capped)
               SqButton(
-                label: 'GO PREMIUM',
+                label: l10n.playGoPremium,
                 variant: SqButtonVariant.gold,
                 icon: Icons.workspace_premium_rounded,
                 onPressed: () => showPremiumPaywall(
                   context,
-                  reason: 'You hit the free unique-question limit '
-                      'for this topic.',
+                  reason: l10n.playPaywallReason,
                 ),
+              ),
+            if (languageMissing)
+              SqButton(
+                label: l10n.setupPickATopic,
+                icon: Icons.tune_rounded,
+                onPressed: () => context.go(Routes.quizSetup),
               ),
             const SizedBox(height: 10),
             SqButton(
-              label: 'BACK HOME',
+              label: l10n.playBackHome,
               variant: SqButtonVariant.ghost,
               onPressed: () => context.go(Routes.home),
             ),
@@ -257,13 +420,14 @@ class _QuestionView extends StatefulWidget {
     required this.session,
     required this.submitting,
     required this.remainingMs,
-    required this.autoAdvanceMs,
+    required this.runClockMs,
     required this.topicName,
     required this.audio,
     required this.onSelect,
     required this.onNext,
     required this.onEnd,
     required this.onQuit,
+    this.tightened = false,
     this.feedback,
     this.selectedOptionIndex,
   });
@@ -272,9 +436,10 @@ class _QuestionView extends StatefulWidget {
   final bool submitting;
   final AnswerFeedback? feedback;
   final int? selectedOptionIndex;
+  final bool tightened;
   final AudioService audio;
   final ValueListenable<int> remainingMs;
-  final ValueListenable<int?> autoAdvanceMs;
+  final ValueListenable<int> runClockMs;
   final String topicName;
   final ValueChanged<int> onSelect;
   final VoidCallback onNext;
@@ -301,7 +466,8 @@ class _QuestionViewState extends State<_QuestionView> {
         Haptics.success();
         // A milestone streak gets its own sparkle so momentum is audible.
         widget.audio.play(
-          feedback.streak > 0 && feedback.streak % 5 == 0
+          feedback.milestoneBonus > 0 ||
+                  (feedback.streak > 0 && feedback.streak % 5 == 0)
               ? Sfx.streak
               : Sfx.correct,
         );
@@ -317,9 +483,15 @@ class _QuestionViewState extends State<_QuestionView> {
   _OptionVisualState _optionState(int optionIndex) {
     final feedback = widget.feedback;
     if (feedback == null) {
-      return widget.selectedOptionIndex == optionIndex && widget.submitting
+      if (!widget.submitting) return _OptionVisualState.idle;
+      // Commit to the tap the instant it happens. The verdict needs a server
+      // round trip, and until this the only thing that changed on screen was a
+      // 16px spinner — so the wait read as the app hanging. Dimming the
+      // rejected options immediately makes the choice feel taken, which is the
+      // part the player is actually waiting to see.
+      return widget.selectedOptionIndex == optionIndex
           ? _OptionVisualState.pending
-          : _OptionVisualState.idle;
+          : _OptionVisualState.dimmed;
     }
     if (optionIndex == feedback.correctOptionIndex) {
       return _OptionVisualState.correct;
@@ -337,7 +509,7 @@ class _QuestionViewState extends State<_QuestionView> {
     final question = session.currentQuestion;
 
     if (question == null) {
-      return const Center(child: Text('No question available.'));
+      return Center(child: Text(context.l10n.errorNoQuestion));
     }
 
     return Column(
@@ -347,8 +519,10 @@ class _QuestionViewState extends State<_QuestionView> {
           feedback: widget.feedback,
           topicName: widget.topicName,
           remainingMs: widget.remainingMs,
+          runClockMs: widget.runClockMs,
           timeLimitMs: question.timeLimitMs,
           answered: _answered,
+          tightened: widget.tightened,
           audio: widget.audio,
           onQuit: widget.onQuit,
         ),
@@ -406,28 +580,31 @@ class _QuestionViewState extends State<_QuestionView> {
                   ],
                 ),
               ),
-              if (!_answered) ...[
+              // Speedrun keeps the play surface bare — quitting lives on the
+              // HUD, and a stray tap here would cost a run.
+              if (!_answered && !_isSpeedrun) ...[
                 const SizedBox(height: AppSpacing.sm),
                 Center(
                   child: TextButton.icon(
                     onPressed: widget.onQuit,
                     icon: const Icon(Icons.flag_outlined, size: 16),
-                    label: const Text('End run'),
+                    label: Text(context.l10n.playEndRun),
                   ),
                 ),
               ],
             ],
           ),
         ),
-        _FeedbackPanel(
-          feedback: widget.feedback,
-          questionId: question.questionId,
-          selectedOptionText: _selectedOptionText(question),
-          isSpeedrun: _isSpeedrun,
-          autoAdvanceMs: widget.autoAdvanceMs,
-          onNext: widget.onNext,
-          onEnd: widget.onEnd,
-        ),
+        // Speedrun has no verdict panel at all: the options carry the answer
+        // and the HUD carries the clock, so nothing interrupts the run.
+        if (!_isSpeedrun)
+          _FeedbackPanel(
+            feedback: widget.feedback,
+            questionId: question.questionId,
+            selectedOptionText: _selectedOptionText(question),
+            onNext: widget.onNext,
+            onEnd: widget.onEnd,
+          ),
       ],
     );
   }
@@ -443,26 +620,36 @@ class _QuestionViewState extends State<_QuestionView> {
 }
 
 /// Top gameplay bar: quit, mode, score, streak, lives and the timer ring.
+///
+/// Speedrun swaps the passive time chip for a run clock that owns the top of
+/// the screen — in that mode the clock *is* the game state, so it gets the
+/// weight normally given to the score.
 class _GameHud extends StatelessWidget {
   const _GameHud({
     required this.session,
     required this.topicName,
     required this.remainingMs,
+    required this.runClockMs,
     required this.timeLimitMs,
     required this.answered,
     required this.audio,
     required this.onQuit,
+    this.tightened = false,
     this.feedback,
   });
 
   final QuizSession session;
   final String topicName;
   final ValueListenable<int> remainingMs;
+  final ValueListenable<int> runClockMs;
   final int timeLimitMs;
   final bool answered;
+  final bool tightened;
   final AudioService audio;
   final VoidCallback onQuit;
   final AnswerFeedback? feedback;
+
+  bool get _isSpeedrun => session.mode == 'speedrun';
 
   @override
   Widget build(BuildContext context) {
@@ -472,6 +659,7 @@ class _GameHud extends StatelessWidget {
     final streak = feedback?.streak ?? session.streak;
     final lives = feedback?.lives ?? session.lives;
     final budget = feedback?.timeRemainingMs ?? session.timeRemainingMs;
+    final overdrive = _isSpeedrun && streak >= SpeedrunRules.overdriveStreak;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -486,7 +674,7 @@ class _GameHud extends StatelessWidget {
             children: [
               SqIconButton(
                 icon: Icons.close_rounded,
-                tooltip: 'End run',
+                tooltip: context.l10n.playEndRun,
                 onPressed: onQuit,
               ),
               const SizedBox(width: 12),
@@ -500,12 +688,26 @@ class _GameHud extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.titleSmall,
                     ),
-                    Text(
-                      'Q${session.questionNumber} · '
-                      '${humanizeMode(session.mode)}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: p.textFaint,
-                      ),
+                    Row(
+                      children: [
+                        // Yields to the ramp cue rather than pushing it off
+                        // the edge — the cue is the more urgent of the two.
+                        Flexible(
+                          child: Text(
+                            '${context.l10n.questionNumber(session.questionNumber)} · '
+                            '${localizedMode(context, session.mode)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: p.textFaint,
+                            ),
+                          ),
+                        ),
+                        if (_isSpeedrun && tightened) ...[
+                          const SizedBox(width: 8),
+                          const _TightenedFlag(),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -516,9 +718,22 @@ class _GameHud extends StatelessWidget {
                 timeLimitMs: timeLimitMs,
                 frozen: answered,
                 audio: audio,
+                // Speedrun's per-question ring is the secondary clock; the run
+                // clock below owns the audible countdown.
+                tick: !_isSpeedrun,
               ),
             ],
           ),
+          if (_isSpeedrun) ...[
+            const SizedBox(height: AppSpacing.md),
+            _RunClock(
+              runClockMs: runClockMs,
+              timeDeltaMs: feedback?.timeDeltaMs,
+              speedTier: feedback?.speedTier,
+              answerKey: session.currentQuestion?.quizQuestionId,
+              audio: audio,
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
@@ -530,14 +745,10 @@ class _GameHud extends StatelessWidget {
               ),
               const Spacer(),
               if (lives != null) ...[
-                _HudChip(
-                  glyph: '❤️',
-                  label: '$lives',
-                  tint: AppColors.danger,
-                ),
+                _LivesChip(lives: lives),
                 const SizedBox(width: 8),
               ],
-              if (budget != null) ...[
+              if (budget != null && !_isSpeedrun) ...[
                 _HudChip(
                   glyph: '⏱',
                   label: '${(budget / 1000).ceil()}s',
@@ -545,17 +756,369 @@ class _GameHud extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
-              _HudChip(
-                glyph: '🔥',
-                label: '×$streak',
-                tint: AppColors.gold,
-                emphasised: streak >= 3,
-              ),
+              if (overdrive)
+                _OverdriveChip(streak: streak)
+              else
+                _HudChip(
+                  glyph: '🔥',
+                  label: '×$streak',
+                  tint: AppColors.gold,
+                  emphasised: streak >= 3,
+                ),
             ],
           ),
         ],
       ),
     );
+  }
+}
+
+/// The run clock: a big draining number plus the bar it drains along.
+///
+/// Rebuilt ~20x/second from the controller's notifier, so it deliberately owns
+/// as little of the tree as possible.
+class _RunClock extends StatefulWidget {
+  const _RunClock({
+    required this.runClockMs,
+    required this.audio,
+    this.timeDeltaMs,
+    this.speedTier,
+    this.answerKey,
+  });
+
+  final ValueListenable<int> runClockMs;
+  final AudioService audio;
+  final int? timeDeltaMs;
+  final String? speedTier;
+
+  /// Identity of the answer being flashed, so the burst replays per answer.
+  final String? answerKey;
+
+  @override
+  State<_RunClock> createState() => _RunClockState();
+}
+
+class _RunClockState extends State<_RunClock> {
+  int _lastTickSecond = -1;
+
+  void _maybeTick(int value) {
+    if (value > SpeedrunRules.dangerMs || value <= 0) return;
+    final second = (value / 1000).ceil();
+    if (second == _lastTickSecond) return;
+    _lastTickSecond = second;
+    widget.audio.play(Sfx.tick);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final delta = widget.timeDeltaMs;
+
+    return ValueListenableBuilder<int>(
+      valueListenable: widget.runClockMs,
+      builder: (context, value, _) {
+        _maybeTick(value);
+        final danger = value <= SpeedrunRules.dangerMs;
+        final tint = danger ? AppColors.danger : AppColors.cyan;
+        final ratio = value / SpeedrunRules.clockCapMs;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                // The burst takes the label's slot rather than a slot of its
+                // own: the clock must never be pushed around, and during a
+                // flash the delta is the more useful of the two anyway.
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: delta != null && delta != 0
+                        ? _TimeDeltaBurst(
+                            key: ValueKey('delta_${widget.answerKey}'),
+                            deltaMs: delta,
+                            speedTier: widget.speedTier,
+                          )
+                        : Text(
+                            context.l10n.playRunClock,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              letterSpacing: 1.6,
+                              color: tint,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // Tenths make the drain visible: a whole-second clock looks
+                // stopped for most of every second.
+                Text(
+                  (value / 1000).toStringAsFixed(1),
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    color: danger ? AppColors.danger : theme.sq.textPrimary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  's',
+                  style: theme.textTheme.labelMedium?.copyWith(color: tint),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            SqProgressTrack(
+              value: ratio,
+              height: 7,
+              animate: false,
+              gradient: danger
+                  ? const LinearGradient(
+                      colors: [AppColors.danger, Color(0xFFFF8A5C)],
+                    )
+                  : const LinearGradient(
+                      colors: [AppColors.cyan, AppColors.accent],
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The "+2.4s" / "−3.0s" that fires over the clock when an answer lands. This
+/// is the whole reward loop in one glance, so it is loud on purpose.
+class _TimeDeltaBurst extends StatefulWidget {
+  const _TimeDeltaBurst({super.key, required this.deltaMs, this.speedTier});
+
+  final int deltaMs;
+  final String? speedTier;
+
+  @override
+  State<_TimeDeltaBurst> createState() => _TimeDeltaBurstState();
+}
+
+class _TimeDeltaBurstState extends State<_TimeDeltaBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: SpeedrunRules.flashMs),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final gained = widget.deltaMs > 0;
+    final tint = gained ? AppColors.accent : AppColors.danger;
+    final seconds = (widget.deltaMs.abs() / 1000).toStringAsFixed(1);
+    final tier = gained ? localizedSpeedTier(context, widget.speedTier) : '';
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final t = _controller.value;
+        // Punch in, hold, then drift up and out.
+        final scale = t < 0.25 ? 0.7 + 1.2 * t : 1.0;
+        final opacity = t < 0.7 ? 1.0 : (1 - (t - 0.7) / 0.3).clamp(0.0, 1.0);
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(0, -14 * (t < 0.7 ? 0 : (t - 0.7) / 0.3)),
+            child: Transform.scale(scale: scale, child: child),
+          ),
+        );
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tier.isNotEmpty) ...[
+            Text(
+              tier,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: tint,
+                letterSpacing: 1.4,
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            '${gained ? '+' : '−'}${seconds}s',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontFamily: 'SpaceGrotesk',
+              color: tint,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Streak is hot. Replaces the streak chip so the change is impossible to miss.
+class _OverdriveChip extends StatelessWidget {
+  const _OverdriveChip({required this.streak});
+
+  final int streak;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return SqBreathe(
+      scale: 0.05,
+      period: const Duration(milliseconds: 900),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          gradient: AppColors.heatGradient,
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SqFlame(size: 12, intensity: 1.6),
+            const SizedBox(width: 5),
+            Text(
+              context.l10n.overdriveMultiplier(streak),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.black87,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fires when the question limit steps down, so the ramp is felt rather than
+/// merely suffered. Self-retiring — it is a beat, not a status.
+class _TightenedFlag extends StatefulWidget {
+  const _TightenedFlag();
+
+  @override
+  State<_TightenedFlag> createState() => _TightenedFlagState();
+}
+
+class _TightenedFlagState extends State<_TightenedFlag>
+    with SingleTickerProviderStateMixin {
+  /// A controller rather than a delayed callback so leaving the run mid-beat
+  /// takes the pending work with it.
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1900),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Haptics.milestone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return FadeTransition(
+      // Holds, then fades over the last fifth.
+      opacity: CurvedAnimation(
+        parent: ReverseAnimation(_controller),
+        curve: const Interval(0, 0.2, curve: AppMotion.exit),
+      ),
+      child: Text(
+        '⚡ FASTER',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: AppColors.warning,
+          letterSpacing: 1.2,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+/// Survival lives, as pips rather than a number.
+///
+/// "❤️ 1" and "❤️ 3" look the same at a glance, which wastes the most
+/// important state in the mode. Pips make remaining lives readable without
+/// reading, and the final life gets a pulsing danger treatment plus the
+/// last-stand multiplier — the player should *want* to be there, not just
+/// know they are.
+class _LivesChip extends StatelessWidget {
+  const _LivesChip({required this.lives});
+
+  final int lives;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+    final lastStand = SurvivalRules.isLastStand(lives);
+    final tint = lastStand ? AppColors.danger : AppColors.magenta;
+
+    final chip = AnimatedContainer(
+      duration: AppMotion.fast,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: lastStand ? tint.withValues(alpha: 0.20) : p.surface,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(
+          color: lastStand ? tint.withValues(alpha: 0.6) : p.border,
+        ),
+        boxShadow:
+            lastStand ? AppShadows.glow(tint, strength: 0.3) : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < SurvivalRules.maxLives; i++) ...[
+            if (i > 0) const SizedBox(width: 3),
+            AnimatedScale(
+              duration: AppMotion.fast,
+              curve: Curves.easeOutBack,
+              scale: i < lives ? 1 : 0.7,
+              child: Icon(
+                i < lives
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                size: 13,
+                color: i < lives ? tint : p.textFaint,
+              ),
+            ),
+          ],
+          if (lastStand) ...[
+            const SizedBox(width: 6),
+            Text(
+              '×${SurvivalRules.lastStandMultiplier}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: tint,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    // Only the brink breathes — a chip that always pulses stops meaning
+    // anything.
+    return lastStand ? SqBreathe(scale: 0.05, child: chip) : chip;
   }
 }
 
@@ -613,12 +1176,17 @@ class _TimerRing extends StatefulWidget {
     required this.timeLimitMs,
     required this.frozen,
     required this.audio,
+    this.tick = true,
   });
 
   final ValueListenable<int> remainingMs;
   final int timeLimitMs;
   final bool frozen;
   final AudioService audio;
+
+  /// Whether this ring owns the audible countdown. Off in speedrun, where the
+  /// run clock does it — two clocks ticking at once is just noise.
+  final bool tick;
 
   @override
   State<_TimerRing> createState() => _TimerRingState();
@@ -630,7 +1198,9 @@ class _TimerRingState extends State<_TimerRing> {
   int _lastTickSecond = -1;
 
   void _maybeTick(int seconds, bool low) {
-    if (widget.frozen || !low || seconds <= 0 || seconds > 3) return;
+    if (!widget.tick || widget.frozen || !low || seconds <= 0 || seconds > 3) {
+      return;
+    }
     if (seconds == _lastTickSecond) return;
     _lastTickSecond = seconds;
     widget.audio.play(Sfx.tick);
@@ -815,12 +1385,12 @@ class _OptionTile extends StatelessWidget {
 
 /// Bottom panel that slides in with the verdict, the explanation and the
 /// action that moves the run forward.
+///
+/// Not used by speedrun: there, a panel is the thing that would kill the pace.
 class _FeedbackPanel extends StatelessWidget {
   const _FeedbackPanel({
     required this.feedback,
     required this.questionId,
-    required this.isSpeedrun,
-    required this.autoAdvanceMs,
     required this.onNext,
     required this.onEnd,
     this.selectedOptionText,
@@ -829,8 +1399,6 @@ class _FeedbackPanel extends StatelessWidget {
   final AnswerFeedback? feedback;
   final String questionId;
   final String? selectedOptionText;
-  final bool isSpeedrun;
-  final ValueListenable<int?> autoAdvanceMs;
   final VoidCallback onNext;
   final VoidCallback onEnd;
 
@@ -858,8 +1426,6 @@ class _FeedbackPanel extends StatelessWidget {
               feedback: feedback!,
               questionId: questionId,
               selectedOptionText: selectedOptionText,
-              isSpeedrun: isSpeedrun,
-              autoAdvanceMs: autoAdvanceMs,
               onNext: onNext,
               onEnd: onEnd,
             ),
@@ -872,8 +1438,6 @@ class _FeedbackBody extends StatefulWidget {
     super.key,
     required this.feedback,
     required this.questionId,
-    required this.isSpeedrun,
-    required this.autoAdvanceMs,
     required this.onNext,
     required this.onEnd,
     this.selectedOptionText,
@@ -882,8 +1446,6 @@ class _FeedbackBody extends StatefulWidget {
   final AnswerFeedback feedback;
   final String questionId;
   final String? selectedOptionText;
-  final bool isSpeedrun;
-  final ValueListenable<int?> autoAdvanceMs;
   final VoidCallback onNext;
   final VoidCallback onEnd;
 
@@ -899,9 +1461,7 @@ class _FeedbackBodyState extends State<_FeedbackBody> {
   String? _teachError;
   bool _expanded = false;
 
-  /// Teach Me is a "sit and read" affordance. Speedrun auto-advances in three
-  /// seconds, so offering it there only baits a tap that gets cut off.
-  bool get _canTeach => !widget.isSpeedrun && !widget.feedback.isCorrect;
+  bool get _canTeach => !widget.feedback.isCorrect;
 
   @override
   void dispose() {
@@ -944,7 +1504,7 @@ class _FeedbackBodyState extends State<_FeedbackBody> {
       if (!mounted) return;
       setState(() {
         _loadingTeach = false;
-        _teachError = 'Could not load a deeper explanation right now.';
+        _teachError = context.l10n.playTeachError;
       });
     }
   }
@@ -1002,7 +1562,7 @@ class _FeedbackBodyState extends State<_FeedbackBody> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          correct ? 'Correct' : 'Not quite',
+                          correct ? context.l10n.playCorrect : context.l10n.playNotQuite,
                           style: theme.textTheme.titleLarge?.copyWith(
                             color: tint,
                           ),
@@ -1074,7 +1634,7 @@ class _FeedbackBodyState extends State<_FeedbackBody> {
                     ],
                     const SizedBox(height: AppSpacing.md),
                     Text(
-                      'WHY',
+                      context.l10n.playWhy,
                       style: theme.textTheme.labelSmall?.copyWith(
                         letterSpacing: 1.4,
                         color: p.textFaint,
@@ -1104,8 +1664,8 @@ class _FeedbackBodyState extends State<_FeedbackBody> {
                             children: [
                               SqButton(
                                 label: _loadingTeach
-                                    ? 'TEACHING…'
-                                    : 'TEACH ME THIS',
+                                    ? context.l10n.playTeaching
+                                    : context.l10n.playTeachMeThis,
                                 icon: Icons.school_rounded,
                                 variant: SqButtonVariant.subtle,
                                 height: 46,
@@ -1141,75 +1701,27 @@ class _FeedbackBodyState extends State<_FeedbackBody> {
                 AppSpacing.lg,
                 AppSpacing.md,
               ),
-              child: widget.isSpeedrun
-                  ? _AutoAdvanceBar(
-                      autoAdvanceMs: widget.autoAdvanceMs,
-                      label: feedback.runEnded
-                          ? 'Results in'
-                          : 'Next question in',
-                    )
-                  : Column(
-                      children: [
-                        SqButton(
-                          label: feedback.runEnded ? 'SEE RESULTS' : 'NEXT',
-                          icon: feedback.runEnded
-                              ? Icons.emoji_events_rounded
-                              : Icons.arrow_forward_rounded,
-                          onPressed:
-                              feedback.runEnded ? widget.onEnd : widget.onNext,
-                        ),
-                        if (!feedback.runEnded)
-                          TextButton(
-                            onPressed: widget.onEnd,
-                            child: const Text('End run'),
-                          ),
-                      ],
+              child: Column(
+                children: [
+                  SqButton(
+                    label: feedback.runEnded ? context.l10n.playSeeResults : context.l10n.playNext,
+                    icon: feedback.runEnded
+                        ? Icons.emoji_events_rounded
+                        : Icons.arrow_forward_rounded,
+                    onPressed:
+                        feedback.runEnded ? widget.onEnd : widget.onNext,
+                  ),
+                  if (!feedback.runEnded)
+                    TextButton(
+                      onPressed: widget.onEnd,
+                      child: Text(context.l10n.playEndRun),
                     ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _AutoAdvanceBar extends StatelessWidget {
-  const _AutoAdvanceBar({required this.autoAdvanceMs, required this.label});
-
-  final ValueListenable<int?> autoAdvanceMs;
-  final String label;
-
-  static const _totalMs = 3000;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return ValueListenableBuilder<int?>(
-      valueListenable: autoAdvanceMs,
-      builder: (context, value, _) {
-        final remaining = value ?? _totalMs;
-        final progress = (remaining / _totalMs).clamp(0.0, 1.0);
-        final seconds = (remaining / 1000).ceil().clamp(1, 3);
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '$label $seconds',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleSmall,
-            ),
-            const SizedBox(height: 8),
-            SqProgressTrack(
-              value: progress,
-              height: 8,
-              animate: false,
-              gradient: AppColors.heatGradient,
-            ),
-          ],
-        );
-      },
     );
   }
 }
@@ -1248,7 +1760,7 @@ class _TeachMePanel extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'TEACH ME',
+                  context.l10n.playTeachMe,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: AppColors.violet,
                     letterSpacing: 1.2,
@@ -1278,19 +1790,19 @@ class _TeachMePanel extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _TeachBlock(
-                          title: 'Why the answer is right',
+                          title: context.l10n.teachWhyCorrect,
                           body: result.whyCorrect,
                         ),
                         _TeachBlock(
-                          title: 'Why yours missed',
+                          title: context.l10n.teachWhyWrong,
                           body: result.whyWrong,
                         ),
                         _TeachBlock(
-                          title: 'Key concept',
+                          title: context.l10n.teachKeyConcept,
                           body: result.keyConcept,
                         ),
                         _TeachBlock(
-                          title: 'Remember this',
+                          title: context.l10n.teachRemember,
                           body: result.memorableFact,
                         ),
                       ],

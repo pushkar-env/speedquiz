@@ -4,6 +4,7 @@ Everything needed to run SpeedQuiz locally and understand how it fits together.
 
 - Deploying it: [DEPLOYMENT.md](DEPLOYMENT.md)
 - Shipping to Play: [RELEASE.md](RELEASE.md)
+- App and quiz languages: [LANGUAGES.md](LANGUAGES.md)
 
 ---
 
@@ -40,6 +41,7 @@ limited.
 | AI pipeline — generate → validate → quality score → dedupe → store | `backend/app/ai/`, `workers/` |
 | Question bank top-ups | `backend/app/services/bank_inventory.py` |
 | Mobile client — Riverpod, GoRouter, Dio with JWT refresh | `mobile/lib/` |
+| Languages — app chrome and per-run quiz content, English + Hindi ([LANGUAGES.md](LANGUAGES.md)) | `mobile/lib/core/i18n/`, `backend/app/core/languages.py` |
 
 ### Anti-cheat
 

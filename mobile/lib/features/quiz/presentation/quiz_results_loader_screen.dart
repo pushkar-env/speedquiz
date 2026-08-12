@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
@@ -47,7 +48,7 @@ class QuizResultsLoaderScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  'Loading your result…',
+                  context.l10n.resultsLoading,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ],
@@ -67,24 +68,24 @@ class QuizResultsLoaderScreen extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SqErrorState(
-                      title: 'Result unavailable',
+                      title: context.l10n.resultsUnavailable,
                       message: apiErrorMessage(
                         error,
-                        fallback: 'This run could not be loaded.',
+                        fallback: context.l10n.resultsCouldNotLoad,
                       ),
                       onRetry: () =>
                           ref.invalidate(_ownerResultProvider(sessionId)),
                     ),
                     const SizedBox(height: AppSpacing.md),
                     SqButton(
-                      label: 'GO HOME',
+                      label: context.l10n.resultsGoHome,
                       icon: Icons.home_rounded,
                       onPressed: () => context.go(Routes.home),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     TextButton(
                       onPressed: () => context.go('/share/results/$sessionId'),
-                      child: const Text('Open the shared card instead'),
+                      child: Text(context.l10n.resultsOpenSharedCard),
                     ),
                   ],
                 ),

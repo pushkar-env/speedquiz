@@ -209,6 +209,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               mode: extra['mode'] as String? ?? 'casual',
               difficulty: extra['difficulty'] as String? ?? 'medium',
               adaptive: extra['adaptive'] as bool? ?? false,
+              // Absent for the daily and for deep links, where the server
+              // picks the player's last language rather than the client.
+              language: extra['language'] as String?,
               existingSession: sessionExtra is QuizSession
                   ? sessionExtra
                   : null,

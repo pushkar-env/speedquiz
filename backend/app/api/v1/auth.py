@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status
 
+from app.core.languages import normalize_language
 from app.auth.deps import (
     CurrentUser,
     DbSession,
@@ -93,4 +94,6 @@ async def auth_me(user: CurrentUser) -> UserMeResponse:
         best_streak=profile.best_streak,
         onboarding_completed=profile.onboarding_completed,
         theme_preference=profile.theme_preference,
+        app_language=normalize_language(profile.app_language).value,
+        quiz_language=normalize_language(profile.quiz_language).value,
     )

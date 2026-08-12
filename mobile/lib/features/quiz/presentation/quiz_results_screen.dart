@@ -4,11 +4,21 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/game_labels.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
+
+/// `92300` -> `1:32`. Runs are minutes long at most, so no hours case.
+String _formatDuration(int ms) {
+  final total = (ms / 1000).round();
+  final minutes = total ~/ 60;
+  final seconds = total % 60;
+  return '$minutes:${seconds.toString().padLeft(2, '0')}';
+}
 
 class QuizResultsScreen extends ConsumerStatefulWidget {
   const QuizResultsScreen({super.key, required this.args});
@@ -58,6 +68,8 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
         'mode': args.mode ?? widget.result.mode,
         'difficulty': args.difficulty ?? widget.result.difficulty,
         'adaptive': args.adaptive,
+        // Replay the run you just played, in the language you played it in.
+        'language': widget.result.language,
       },
     );
   }
@@ -89,16 +101,19 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
     if (_sharing) return;
     setState(() => _sharing = true);
     final result = widget.result;
+    final l10n = context.l10n;
+    // The server builds the share card in the *run's* language; this fallback
+    // only runs when it sent nothing, and follows the reader instead.
     final text = result.shareText.isNotEmpty
         ? result.shareText
         : 'SPEEDQUIZ\n\n${result.topicName}\n'
-              'Score: ${formatScore(result.finalScore)}\n'
-              'Accuracy: ${result.accuracy.toStringAsFixed(0)}%\n'
-              'Best streak: ${result.bestStreak}';
+              '${l10n.score}: ${formatScore(result.finalScore)}\n'
+              '${l10n.accuracy}: ${result.accuracy.toStringAsFixed(0)}%\n'
+              '${l10n.bestStreak}: ${result.bestStreak}';
     try {
       await SharePlus.instance.share(ShareParams(text: text));
     } catch (_) {
-      if (mounted) SqToast.error(context, 'Could not open the share sheet.');
+      if (mounted) SqToast.error(context, l10n.resultsShareFailed);
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
@@ -108,9 +123,11 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
     final result = widget.result;
     final unlocks = result.newAchievements;
     final avgSeconds = (result.averageAnswerMs / 1000).toStringAsFixed(1);
+    final isSpeedrun = result.mode == 'speedrun';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -137,8 +154,8 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                           child: Center(
                             child: SqBadge(
                               label: result.isPersonalBest
-                                  ? 'NEW PERSONAL BEST'
-                                  : 'RUN COMPLETE',
+                                  ? l10n.resultsNewPersonalBest
+                                  : l10n.resultsRunComplete,
                               gradient: result.isPersonalBest
                                   ? AppColors.premiumGradient
                                   : null,
@@ -175,8 +192,8 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                         Center(
                           child: Text(
                             '${result.topicName} · '
-                            '${humanizeMode(result.difficulty)} · '
-                            '${humanizeMode(result.mode)}',
+                            '${localizedDifficulty(context, result.difficulty)} · '
+                            '${localizedMode(context, result.mode)}',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium,
                           ),
@@ -186,8 +203,9 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                           const SizedBox(height: 6),
                           Center(
                             child: Text(
-                              'Personal best '
-                              '${formatScore(result.previousBest)}',
+                              l10n.personalBestValue(
+                                formatScore(result.previousBest),
+                              ),
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: p.textFaint,
                               ),
@@ -202,7 +220,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                               Expanded(
                                 child: _StatTile(
                                   glyph: '🎯',
-                                  label: 'Accuracy',
+                                  label: l10n.accuracy,
                                   value:
                                       '${result.accuracy.toStringAsFixed(0)}%',
                                   tint: AppColors.accent,
@@ -212,7 +230,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                               Expanded(
                                 child: _StatTile(
                                   glyph: '🔥',
-                                  label: 'Best streak',
+                                  label: l10n.bestStreak,
                                   value: '${result.bestStreak}',
                                   tint: AppColors.gold,
                                 ),
@@ -228,19 +246,30 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                               Expanded(
                                 child: _StatTile(
                                   glyph: '⚡',
-                                  label: 'Avg answer',
+                                  label: l10n.resultsAvgAnswer,
                                   value: '${avgSeconds}s',
                                   tint: AppColors.cyan,
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
-                                child: _StatTile(
-                                  glyph: '📘',
-                                  label: 'Questions',
-                                  value: '${result.questionsAnswered}',
-                                  tint: AppColors.violet,
-                                ),
+                                // How long you lasted is the whole point of a
+                                // speedrun; every other mode is counting
+                                // questions.
+                                child: isSpeedrun && result.durationMs > 0
+                                    ? _StatTile(
+                                        glyph: '⏱',
+                                        label: l10n.resultsSurvived,
+                                        value:
+                                            _formatDuration(result.durationMs),
+                                        tint: AppColors.violet,
+                                      )
+                                    : _StatTile(
+                                        glyph: '📘',
+                                        label: l10n.resultsQuestions,
+                                        value: '${result.questionsAnswered}',
+                                        tint: AppColors.violet,
+                                      ),
                               ),
                             ],
                           ),
@@ -259,10 +288,12 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                           SqStagger(
                             index: 4,
                             child: SqSectionHeader(
-                              title: 'Unlocked',
+                              title: l10n.resultsUnlocked,
                               subtitle: unlocks.length == 1
-                                  ? 'One new achievement'
-                                  : '${unlocks.length} new achievements',
+                                  ? l10n.resultsOneAchievement
+                                  : l10n.achievementsUnlockedCount(
+                                      unlocks.length,
+                                    ),
                             ),
                           ),
                           const SizedBox(height: AppSpacing.md),
@@ -289,8 +320,8 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                       children: [
                         SqButton(
                           label: widget.args.canReplay
-                              ? 'PLAY AGAIN'
-                              : 'NEW RUN',
+                              ? l10n.resultsPlayAgain
+                              : l10n.resultsNewRun,
                           icon: Icons.replay_rounded,
                           onPressed: _playAgain,
                         ),
@@ -300,7 +331,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                             if (widget.args.canReplay) ...[
                               Expanded(
                                 child: SqButton(
-                                  label: 'NEW RUN',
+                                  label: l10n.resultsNewRun,
                                   icon: Icons.tune_rounded,
                                   variant: SqButtonVariant.ghost,
                                   onPressed: () => context.go(Routes.quizSetup),
@@ -310,7 +341,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                             ],
                             Expanded(
                               child: SqButton(
-                                label: 'SHARE',
+                                label: l10n.resultsShare,
                                 icon: Icons.ios_share_rounded,
                                 variant: SqButtonVariant.ghost,
                                 loading: _sharing,
@@ -320,7 +351,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                             const SizedBox(width: 10),
                             Expanded(
                               child: SqButton(
-                                label: 'HOME',
+                                label: l10n.resultsHome,
                                 icon: Icons.home_rounded,
                                 variant: SqButtonVariant.ghost,
                                 onPressed: () => context.go(Routes.home),
@@ -383,7 +414,7 @@ class _LevelUpBanner extends StatelessWidget {
             const SizedBox(width: 10),
             Flexible(
               child: Text(
-                'LEVEL UP — you hit level $level',
+                context.l10n.levelUpTo(level),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: AppColors.gold,
@@ -489,7 +520,7 @@ class _XpCard extends StatelessWidget {
                 style: theme.textTheme.headlineSmall?.copyWith(color: p.accent),
               ),
               const Spacer(),
-              SqBadge(label: 'LEVEL $currentLevel'),
+              SqBadge(label: context.l10n.levelBadge(currentLevel)),
             ],
           ),
           if (level != null) ...[

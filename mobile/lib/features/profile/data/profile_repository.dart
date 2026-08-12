@@ -22,6 +22,8 @@ class ProfileRepository {
     String? themePreference,
     List<String>? favoriteTopicIds,
     bool? onboardingCompleted,
+    String? appLanguage,
+    String? quizLanguage,
   }) async {
     final body = <String, dynamic>{
       'display_name': ?displayName,
@@ -29,6 +31,8 @@ class ProfileRepository {
       'theme_preference': ?themePreference,
       'favorite_topic_ids': ?favoriteTopicIds,
       'onboarding_completed': ?onboardingCompleted,
+      'app_language': ?appLanguage,
+      'quiz_language': ?quizLanguage,
     };
     final response = await _dio.patch(
       '${AppConfig.apiPrefix}/users/me',

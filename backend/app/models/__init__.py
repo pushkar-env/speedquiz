@@ -24,10 +24,27 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.languages import DEFAULT_LANGUAGE, LANGUAGE_CODE_MAX_LENGTH
 
 
 def utcnow() -> datetime:
     return datetime.utcnow()
+
+
+def language_column(**kwargs):
+    """A BCP-47 primary subtag column, defaulting to the app's base language.
+
+    Every row written before languages existed is English, so the server
+    default backfills them without a data migration. See ``app.core.languages``
+    for why this is a string rather than a Postgres enum.
+    """
+    return mapped_column(
+        String(LANGUAGE_CODE_MAX_LENGTH),
+        default=DEFAULT_LANGUAGE.value,
+        server_default=DEFAULT_LANGUAGE.value,
+        nullable=False,
+        **kwargs,
+    )
 
 
 def pg_enum(enum_cls: type[enum.Enum], name: str, *, create_constraint: bool = True):
@@ -181,6 +198,12 @@ class UserProfile(Base, TimestampMixin):
     favorite_topic_ids: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     theme_preference: Mapped[str] = mapped_column(String(16), default="dark", nullable=False)
+    #: Language the app chrome is drawn in. The client owns this setting; we
+    #: store it so a reinstall or a second device opens in the right language.
+    app_language: Mapped[str] = language_column()
+    #: Content language the quiz setup screen preselects. The run itself is
+    #: governed by `quiz_sessions.language`, which is chosen per run.
+    quiz_language: Mapped[str] = language_column()
 
     user: Mapped[User] = relationship(back_populates="profile")
 
@@ -237,6 +260,9 @@ class TopicCategory(Base, TimestampMixin):
     icon: Mapped[str] = mapped_column(String(64), default="category", nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: ``{"hi": "विज्ञान"}`` — `name` stays the English source of truth and the
+    #: fallback for any language without an entry.
+    name_i18n: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     topics: Mapped[list["Topic"]] = relationship(back_populates="category")
 
@@ -257,6 +283,10 @@ class Topic(Base, TimestampMixin):
     is_trending: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     popularity_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Localized display names keyed by language code — see TopicCategory.
+    name_i18n: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: Localized descriptions keyed by language code.
+    description_i18n: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -303,12 +333,26 @@ class CustomTopic(Base, TimestampMixin):
     requested_count: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     cache_key: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    #: Language the generated bank is written in. Part of `cache_key` too, so
+    #: the same prompt in two languages produces two banks, not one reused one.
+    language: Mapped[str] = language_column()
 
 
 class Question(Base, TimestampMixin):
     __tablename__ = "questions"
     __table_args__ = (
-        Index("ix_questions_topic_difficulty_status", "topic_id", "difficulty", "status"),
+        # The dealing query in quiz_service._select_questions filters on
+        # exactly this prefix — topic, language, status — before narrowing by
+        # difficulty band. Language sits second because every read is now
+        # language-scoped: serving a Hindi run an English question is a bug,
+        # not a fallback.
+        Index(
+            "ix_questions_topic_language_status",
+            "topic_id",
+            "language",
+            "status",
+            "difficulty",
+        ),
         Index("ix_questions_quality_status", "quality_score", "status"),
     )
 
@@ -321,6 +365,9 @@ class Question(Base, TimestampMixin):
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Language this question is *written in*. Never translated at serve time —
+    #: gameplay reads the bank directly and must not call an LLM.
+    language: Mapped[str] = language_column()
     source: Mapped[Optional[str]] = mapped_column(String(255))
     difficulty: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
     difficulty_label: Mapped[DifficultyLabel] = mapped_column(pg_enum(DifficultyLabel, "difficulty_label", create_constraint=False),
@@ -379,6 +426,10 @@ class QuizSession(Base, TimestampMixin):
     difficulty: Mapped[DifficultyLabel] = mapped_column(pg_enum(DifficultyLabel, "difficulty_label", create_constraint=False),
         nullable=False,
     )
+    #: Content language for the whole run. Fixed at creation: a run that
+    #: switched languages mid-way would break both the streak and the bank's
+    #: seen-question bookkeeping.
+    language: Mapped[str] = language_column()
     status: Mapped[QuizSessionStatus] = mapped_column(pg_enum(QuizSessionStatus, "quiz_session_status"),
         default=QuizSessionStatus.PENDING,
         nullable=False,
@@ -738,6 +789,10 @@ class GenerationJob(Base, TimestampMixin):
     approved_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     rejected_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Which language bank this job fills. A column rather than a payload key
+    #: so the "is a top-up already in flight?" check stays a plain indexed
+    #: predicate — that check runs on the session-create path.
+    language: Mapped[str] = language_column()
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 

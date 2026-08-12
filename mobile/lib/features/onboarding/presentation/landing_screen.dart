@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
+import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
@@ -24,11 +26,11 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
   /// Which button owns the in-flight request, so only it shows a spinner.
   String? _busyAction;
 
-  static const _highlights = [
-    ('⚡', 'Five game modes', 'Casual, Speedrun, Survival, Negative, Sudden Death'),
-    ('🏆', 'Daily challenge & ranks', 'One fresh set a day, weekly and daily boards'),
-    ('🧠', 'Every answer explained', 'Miss one and the app teaches you why'),
-  ];
+  static List<(String, String, String)> _highlights(SqStrings l10n) => [
+        ('⚡', l10n.landingFeatureModesTitle, l10n.landingFeatureModesBody),
+        ('🏆', l10n.landingFeatureDailyTitle, l10n.landingFeatureDailyBody),
+        ('🧠', l10n.landingFeatureExplainTitle, l10n.landingFeatureExplainBody),
+      ];
 
   Future<void> _continueAsGuest() async {
     if (_busyAction != null) return;
@@ -43,7 +45,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
       SqToast.error(
         context,
         state.message!,
-        actionLabel: 'RETRY',
+        actionLabel: context.l10n.retry.toUpperCase(),
         onAction: _continueAsGuest,
       );
     }
@@ -56,12 +58,11 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
       _googleKey.currentState?.reject();
       await showSqInfo(
         context,
-        title: 'Google sign-in unavailable',
-        message: 'This build was compiled without a Google client ID. '
-            'Play as a guest — you can link a Google account later.',
+        title: context.l10n.landingGoogleUnavailable,
+        message: context.l10n.landingGoogleUnavailableBody,
         glyph: '🔐',
         tone: SqDialogTone.warning,
-        actionLabel: 'PLAY AS GUEST',
+        actionLabel: context.l10n.landingPlayAsGuest,
       );
       if (mounted) await _continueAsGuest();
       return;
@@ -76,7 +77,10 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
     if (result.isCancelled) return;
     if (!result.isSuccess) {
       _googleKey.currentState?.reject();
-      SqToast.error(context, result.message ?? 'Google sign-in failed.');
+      SqToast.error(
+        context,
+        result.message ?? context.l10n.landingGoogleFailed,
+      );
     }
   }
 
@@ -91,6 +95,8 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
+    final highlights = _highlights(l10n);
     final auth = ref.watch(authControllerProvider);
     final signedOut = auth is AuthSignedOut ? auth : const AuthSignedOut();
     final busy = _busyAction != null || signedOut.pending;
@@ -134,7 +140,7 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
                           SqStagger(
                             index: 2,
                             child: Text(
-                              'Endless AI quizzes. Real game energy.',
+                              l10n.landingTagline,
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodyLarge?.copyWith(
                                 color: p.textSecondary,
@@ -142,22 +148,29 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
                             ),
                           ),
                           const SizedBox(height: AppSpacing.xl),
-                          for (var i = 0; i < _highlights.length; i++)
+                          for (var i = 0; i < highlights.length; i++)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 10),
                               child: SqStagger(
                                 index: 3 + i,
                                 child: _Highlight(
-                                  glyph: _highlights[i].$1,
-                                  title: _highlights[i].$2,
-                                  subtitle: _highlights[i].$3,
+                                  glyph: highlights[i].$1,
+                                  title: highlights[i].$2,
+                                  subtitle: highlights[i].$3,
                                 ),
                               ),
                             ),
                           const SizedBox(height: AppSpacing.lg),
                           if (signedOut.message != null) ...[
                             _ConnectionNotice(
-                              message: signedOut.message!,
+                              // Worded here rather than in the controller, so
+                              // it arrives in the player's language.
+                              message: signedOut.error != null
+                                  ? localizedApiErrorMessage(
+                                      context,
+                                      signedOut.error!,
+                                    )
+                                  : signedOut.message!,
                               onRetry: busy ? null : _retryStoredSession,
                               retrying: _busyAction == 'retry',
                             ),
@@ -168,8 +181,8 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
                             child: SqButton(
                               key: _guestKey,
                               label: signedOut.hasStoredSession
-                                  ? 'START A NEW GUEST RUN'
-                                  : 'PLAY AS GUEST',
+                                  ? l10n.landingNewGuestRun
+                                  : l10n.landingPlayAsGuest,
                               icon: Icons.bolt_rounded,
                               loading: _busyAction == 'guest',
                               onPressed: busy ? null : _continueAsGuest,
@@ -180,14 +193,14 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
                             index: 7,
                             child: GoogleSignInButton(
                               key: _googleKey,
+                              label: l10n.landingContinueWithGoogle,
                               loading: _busyAction == 'google',
                               onPressed: busy ? null : _continueWithGoogle,
                             ),
                           ),
                           const SizedBox(height: AppSpacing.md),
                           Text(
-                            'Guest progress is saved on this device and '
-                            'carries over when you link a Google account.',
+                            l10n.landingGuestNote,
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: p.textFaint,
@@ -308,7 +321,7 @@ class _ConnectionNotice extends StatelessWidget {
             if (onRetry != null)
               TextButton(
                 onPressed: retrying ? null : onRetry,
-                child: Text(retrying ? '…' : 'RETRY'),
+                child: Text(retrying ? '…' : context.l10n.retry.toUpperCase()),
               ),
           ],
         ),

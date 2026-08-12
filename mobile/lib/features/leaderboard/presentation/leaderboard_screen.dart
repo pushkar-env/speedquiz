@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
@@ -54,10 +55,13 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Leaderboard', style: theme.textTheme.displaySmall),
+                    Text(
+                      context.l10n.leaderboardTitle,
+                      style: theme.textTheme.displaySmall,
+                    ),
                     const SizedBox(height: 4),
                     Text(
-                      'Climb the weekly ranks and today’s daily board',
+                      context.l10n.leaderboardSubtitle,
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -80,9 +84,9 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
                           gradient: AppColors.brandGradient,
                           borderRadius: BorderRadius.circular(AppRadii.pill),
                         ),
-                        tabs: const [
-                          Tab(height: 38, text: 'Weekly'),
-                          Tab(height: 38, text: 'Daily'),
+                        tabs: [
+                          Tab(height: 38, text: context.l10n.leaderboardWeekly),
+                          Tab(height: 38, text: context.l10n.leaderboardDaily),
                         ],
                       ),
                     ),
@@ -122,10 +126,10 @@ class _BoardTab extends ConsumerWidget {
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: SqErrorState(
-            title: 'Could not load ranks',
+            title: context.l10n.leaderboardCouldNotLoad,
             message: apiErrorMessage(
               error,
-              fallback: 'The board is not reachable right now.',
+              fallback: context.l10n.leaderboardUnreachable,
             ),
             onRetry: () => ref.invalidate(leaderboardProvider(scope)),
           ),
@@ -154,10 +158,10 @@ class _BoardTab extends ConsumerWidget {
               if (board.items.isEmpty)
                 SqEmptyState(
                   icon: scope == 'daily' ? '📅' : '🏁',
-                  title: 'No ranks yet',
+                  title: context.l10n.leaderboardEmpty,
                   message: scope == 'daily'
-                      ? 'Finish today’s challenge to claim the board first.'
-                      : 'Play a run this week and your name lands here.',
+                      ? context.l10n.leaderboardEmptyDaily
+                      : context.l10n.leaderboardEmptyWeekly,
                 )
               else ...[
                 if (podium.isNotEmpty) ...[
@@ -346,13 +350,13 @@ class _MeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  me.username ?? 'You',
+                  me.username ?? context.l10n.you,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleMedium,
                 ),
                 Text(
-                  'Your best · $periodKey',
+                  context.l10n.yourBestIn(periodKey),
                   style: theme.textTheme.bodySmall,
                 ),
               ],

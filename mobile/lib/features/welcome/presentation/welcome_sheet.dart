@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/features/daily/domain/daily_models.dart';
@@ -97,7 +98,7 @@ class _WelcomeBody extends StatelessWidget {
           SqStagger(
             index: 1,
             child: Text(
-              cue.headline,
+              cue.headline(context.l10n),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -108,7 +109,7 @@ class _WelcomeBody extends StatelessWidget {
           SqStagger(
             index: 2,
             child: Text(
-              _subtitle(user),
+              _subtitle(context.l10n, user),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium,
             ),
@@ -121,7 +122,7 @@ class _WelcomeBody extends StatelessWidget {
                 Expanded(
                   child: _Stat(
                     glyph: '🎖️',
-                    label: 'Level',
+                    label: context.l10n.level,
                     value: '${user.level}',
                   ),
                 ),
@@ -129,7 +130,7 @@ class _WelcomeBody extends StatelessWidget {
                 Expanded(
                   child: _Stat(
                     glyph: '🪙',
-                    label: 'Coins',
+                    label: context.l10n.coins,
                     value: '${user.coins}',
                   ),
                 ),
@@ -137,7 +138,7 @@ class _WelcomeBody extends StatelessWidget {
                 Expanded(
                   child: _Stat(
                     glyph: '🔥',
-                    label: 'Streak',
+                    label: context.l10n.streak,
                     value: '${user.dailyStreak}',
                   ),
                 ),
@@ -166,7 +167,7 @@ class _WelcomeBody extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Waiting for you today',
+                          context.l10n.welcomeWaitingToday,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: p.textFaint,
                             letterSpacing: 1,
@@ -174,7 +175,7 @@ class _WelcomeBody extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _todayLine(),
+                          _todayLine(context.l10n),
                           style: theme.textTheme.titleSmall,
                         ),
                       ],
@@ -188,7 +189,9 @@ class _WelcomeBody extends StatelessWidget {
           SqStagger(
             index: 5,
             child: SqButton(
-              label: cue.isFirstEver ? 'START PLAYING' : 'JUMP BACK IN',
+              label: cue.isFirstEver
+                  ? context.l10n.welcomeStartPlaying
+                  : context.l10n.welcomeJumpBackIn,
               icon: Icons.play_arrow_rounded,
               onPressed: () {
                 Navigator.of(context).pop();
@@ -201,7 +204,7 @@ class _WelcomeBody extends StatelessWidget {
             index: 6,
             child: TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('LOOK AROUND FIRST'),
+              child: Text(context.l10n.welcomeLookAround),
             ),
           ),
         ],
@@ -209,16 +212,15 @@ class _WelcomeBody extends StatelessWidget {
     );
   }
 
-  String _subtitle(AuthUser user) {
+  String _subtitle(SqStrings l10n, AuthUser user) {
     if (cue.isFirstEver) {
-      return user.isGuest
-          ? 'Playing as a guest — your progress is saved on this device '
-              'and carries over if you link a Google account.'
-          : 'Your account is ready. Progress syncs everywhere you sign in.';
+      return user.isGuest ? l10n.welcomeGuestBody : l10n.welcomeAccountBody;
     }
     final email = user.email;
     if (email != null && email.isNotEmpty) return email;
-    return user.isGuest ? 'Guest account · @${user.username}' : '@${user.username}';
+    return user.isGuest
+        ? l10n.welcomeGuestHandle(user.username)
+        : '@${user.username}';
   }
 
   String _todayGlyph() {
@@ -228,12 +230,12 @@ class _WelcomeBody extends StatelessWidget {
     return d.topicIcon;
   }
 
-  String _todayLine() {
+  String _todayLine(SqStrings l10n) {
     final d = daily;
-    if (d == null) return 'Pick a topic and start a run';
-    if (d.isCompleted) return 'Daily done — free play is open';
-    if (d.isInProgress) return 'Resume the daily · ${d.topicName}';
-    return 'Daily challenge · ${d.topicName}';
+    if (d == null) return l10n.welcomeCuePickTopic;
+    if (d.isCompleted) return l10n.welcomeCueDailyDone;
+    if (d.isInProgress) return l10n.welcomeCueResumeDaily(d.topicName);
+    return l10n.welcomeCueDaily(d.topicName);
   }
 }
 
@@ -310,7 +312,7 @@ class WelcomeBanner extends ConsumerWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Welcome back, $name',
+              context.l10n.welcomeBack(name),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall,

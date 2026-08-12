@@ -5,8 +5,9 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.core.languages import ContentLanguage, normalize_language
 from app.models import DifficultyLabel, GameMode, QuizSessionStatus
 from app.schemas.achievements import AchievementUnlockedOut
 
@@ -17,6 +18,21 @@ class CreateQuizSessionRequest(BaseModel):
     difficulty: DifficultyLabel = DifficultyLabel.MEDIUM
     question_time_limit_ms: Optional[int] = Field(default=None, ge=5000, le=60000)
     adaptive: bool = False
+    #: Language to serve questions in. ``None`` means "whatever this player
+    #: last chose", which is what a client too old to know about languages
+    #: gets — never a 422.
+    language: Optional[ContentLanguage] = Field(
+        default=None,
+        description="Content language for the run (en, hi). Defaults to the player's last choice.",
+    )
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def _coerce_language(cls, value: object) -> object:
+        """Accept ``hi-IN`` and friends; an unknown tag falls back, not fails."""
+        if value is None or isinstance(value, ContentLanguage):
+            return value
+        return normalize_language(value)
 
 
 class QuizOptionOut(BaseModel):
@@ -40,6 +56,8 @@ class QuizSessionOut(BaseModel):
     topic_name: str
     mode: GameMode
     difficulty: DifficultyLabel
+    #: Language the questions in this run are written in.
+    language: str = ContentLanguage.ENGLISH.value
     status: QuizSessionStatus
     score: int
     streak: int
@@ -100,6 +118,8 @@ class QuizResultOut(BaseModel):
     topic_name: str
     mode: GameMode
     difficulty: DifficultyLabel
+    #: Language the run was played in.
+    language: str = ContentLanguage.ENGLISH.value
     final_score: int
     accuracy: float
     best_streak: int

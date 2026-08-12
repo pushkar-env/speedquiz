@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/data/auth_repository.dart';
 import 'package:speedquiz/features/auth/data/auth_token_store.dart';
@@ -46,6 +48,13 @@ Widget _harness({required Widget home, required AuthState auth}) {
       authControllerProvider.overrideWith((ref) => _PinnedAuthController(auth)),
     ],
     child: MaterialApp(
+      localizationsDelegates: const [
+        SqLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLanguage.supportedLocales,
       theme: AppTheme.dark(),
       // Reduce-motion also stops the ambient backdrop and float loops, which
       // would otherwise keep `pumpAndSettle` spinning forever.

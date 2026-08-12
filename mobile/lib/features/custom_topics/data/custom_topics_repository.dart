@@ -72,11 +72,17 @@ class CustomTopicsRepository {
 
   final Dio _dio;
 
+  /// Generates a one-off topic and starts a run on it.
+  ///
+  /// [language] is the language the bank is *written in*; it also keys the
+  /// server's reuse cache, so the same prompt in two languages produces two
+  /// banks rather than replaying the first one.
   Future<CustomTopicResult> create({
     required String prompt,
     required String difficulty,
     required String mode,
     String? style,
+    String? language,
     int requestedCount = 10,
   }) async {
     final response = await _dio.post(
@@ -86,6 +92,7 @@ class CustomTopicsRepository {
         'difficulty': difficulty,
         'mode': mode,
         if (style != null && style.trim().isNotEmpty) 'style': style.trim(),
+        'language': ?language,
         'requested_count': requestedCount,
       },
     );

@@ -63,6 +63,26 @@ class PlanOffer {
   }
 }
 
+/// Copy this service owns, as a code rather than a sentence.
+///
+/// A `StateNotifier` has no `BuildContext`, and giving it a string table would
+/// pin it to whatever language was active when it was created. So it names the
+/// situation and the widget words it. Anything the *store* said — a decline
+/// reason, a missing product id — stays in [BillingState.message] verbatim:
+/// inventing a translation for text we did not write would be worse than
+/// showing it as-is.
+enum BillingNotice {
+  none,
+  openingStore,
+  restoring,
+  verifying,
+  couldNotStart,
+  purchaseFailed,
+  waitingForPayment,
+  storeUnavailable,
+  noPlans,
+}
+
 sealed class BillingState {
   const BillingState();
 }
@@ -72,18 +92,21 @@ class BillingIdle extends BillingState {
     this.storeAvailable = false,
     this.offers = const [],
     this.message,
+    this.notice = BillingNotice.none,
   });
 
   final bool storeAvailable;
   final List<PlanOffer> offers;
   final String? message;
+  final BillingNotice notice;
 
   bool get hasPurchasableOffer => offers.any((o) => o.purchasable);
 }
 
 class BillingBusy extends BillingState {
-  const BillingBusy(this.message);
+  const BillingBusy(this.message, {this.notice = BillingNotice.none});
   final String message;
+  final BillingNotice notice;
 }
 
 /// A purchase is awaiting payment.
@@ -93,8 +116,9 @@ class BillingBusy extends BillingState {
 /// tell a paying user their purchase did not work. The entitlement arrives via
 /// the store's server notification once the payment clears.
 class BillingPending extends BillingState {
-  const BillingPending(this.message);
+  const BillingPending(this.message, {this.notice = BillingNotice.none});
   final String message;
+  final BillingNotice notice;
 }
 
 class BillingService extends StateNotifier<BillingState> {
@@ -145,6 +169,7 @@ class BillingService extends StateNotifier<BillingState> {
       state = const BillingIdle(
         storeAvailable: false,
         message: 'No plans configured',
+        notice: BillingNotice.noPlans,
       );
       return;
     }
@@ -155,6 +180,7 @@ class BillingService extends StateNotifier<BillingState> {
         storeAvailable: false,
         offers: offers,
         message: 'Store not available on this device',
+        notice: BillingNotice.storeUnavailable,
       );
       return;
     }
@@ -208,7 +234,10 @@ class BillingService extends StateNotifier<BillingState> {
       oldPurchase = await _resolveActiveAndroidSubscription();
     }
 
-    state = const BillingBusy('Opening the store…');
+    state = const BillingBusy(
+      'Opening the store…',
+      notice: BillingNotice.openingStore,
+    );
     _pendingBuy = Completer<EntitlementsMe?>();
 
     try {
@@ -220,7 +249,10 @@ class BillingService extends StateNotifier<BillingState> {
         ),
       );
       if (!launched) {
-        _resetIdle(message: 'Could not start purchase');
+        _resetIdle(
+          message: 'Could not start purchase',
+          notice: BillingNotice.couldNotStart,
+        );
         _completePending(null);
         return null;
       }
@@ -280,7 +312,10 @@ class BillingService extends StateNotifier<BillingState> {
 
   Future<EntitlementsMe?> restore() async {
     final previous = state;
-    state = const BillingBusy('Restoring purchases…');
+    state = const BillingBusy(
+      'Restoring purchases…',
+      notice: BillingNotice.restoring,
+    );
     try {
       await _iap.restorePurchases();
       // Restored items arrive on purchaseStream; give it a moment to drain
@@ -301,7 +336,7 @@ class BillingService extends StateNotifier<BillingState> {
 
   /// Dev / emulator path: exercise the verify pipeline with a synthetic token.
   Future<EntitlementsMe> verifyStubPurchase({String? planCode}) async {
-    state = const BillingBusy('Verifying…');
+    state = const BillingBusy('Verifying…', notice: BillingNotice.verifying);
     final productId = planCode == null
         ? (_plans.isEmpty ? 'speedquiz_premium_monthly' : _plans.first.productId)
         : (offerFor(planCode)?.plan.productId ?? _plans.first.productId);
@@ -329,11 +364,18 @@ class BillingService extends StateNotifier<BillingState> {
           state = const BillingPending(
             'Waiting for your payment to clear. '
             'Premium unlocks automatically once it does.',
+            notice: BillingNotice.waitingForPayment,
           );
           continue;
 
         case PurchaseStatus.error:
-          _resetIdle(message: purchase.error?.message ?? 'Purchase failed');
+          _resetIdle(
+            message: purchase.error?.message ?? 'Purchase failed',
+            // Only ours when the store gave no reason of its own.
+            notice: purchase.error?.message == null
+                ? BillingNotice.purchaseFailed
+                : BillingNotice.none,
+          );
           _completePending(null);
           continue;
 
@@ -402,12 +444,13 @@ class BillingService extends StateNotifier<BillingState> {
         );
   }
 
-  void _resetIdle({String? message}) {
+  void _resetIdle({String? message, BillingNotice notice = BillingNotice.none}) {
     final s = state;
     state = BillingIdle(
       storeAvailable: s is BillingIdle ? s.storeAvailable : true,
       offers: offers,
       message: message,
+      notice: notice,
     );
   }
 

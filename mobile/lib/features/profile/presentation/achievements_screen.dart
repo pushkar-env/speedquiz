@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
@@ -43,9 +44,9 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              const SubScreenHeader(
-                title: 'Achievements',
-                subtitle: 'Every milestone worth chasing',
+              SubScreenHeader(
+                title: context.l10n.achievementsTitle,
+                subtitle: context.l10n.achievementsSubtitle,
               ),
               Expanded(
                 child: async.when(
@@ -69,10 +70,10 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.lg),
                       child: SqErrorState(
-                        title: 'Achievements unavailable',
+                        title: context.l10n.achievementsUnavailable,
                         message: apiErrorMessage(
                           error,
-                          fallback: 'Could not load your achievements.',
+                          fallback: context.l10n.achievementsCouldNotLoad,
                         ),
                         onRetry: () => ref.invalidate(achievementsProvider),
                       ),
@@ -116,12 +117,11 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
                             SqEmptyState(
                               icon: _filter == _Filter.unlocked ? '🔓' : '🎉',
                               title: _filter == _Filter.unlocked
-                                  ? 'Nothing unlocked yet'
-                                  : 'All unlocked',
+                                  ? context.l10n.achievementsNoneYet
+                                  : context.l10n.achievementsAllUnlocked,
                               message: _filter == _Filter.unlocked
-                                  ? 'Finish a run to claim your first one.'
-                                  : 'You have claimed every achievement. '
-                                      'Respect.',
+                                  ? context.l10n.achievementsNoneYetBody
+                                  : context.l10n.achievementsAllUnlockedBody,
                             )
                           else
                             for (var i = 0; i < visible.length; i++)
@@ -189,7 +189,7 @@ class _ProgressHeader extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   unlocked == total && total > 0
-                      ? 'Completionist. Nothing left to chase.'
+                      ? context.l10n.achievementsCompletionist
                       : '${total - unlocked} still out there.',
                   style: theme.textTheme.bodySmall,
                 ),
@@ -218,9 +218,9 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final options = [
-      (_Filter.all, 'All', unlocked + locked),
-      (_Filter.unlocked, 'Unlocked', unlocked),
-      (_Filter.locked, 'Locked', locked),
+      (_Filter.all, context.l10n.achievementsFilterAll, unlocked + locked),
+      (_Filter.unlocked, context.l10n.achievementsFilterUnlocked, unlocked),
+      (_Filter.locked, context.l10n.achievementsFilterLocked, locked),
     ];
 
     return Row(

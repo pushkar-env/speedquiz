@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.languages import DEFAULT_LANGUAGE
 from app.models import (
     DailyChallenge,
     DifficultyLabel,
@@ -71,6 +72,12 @@ async def ensure_today(db: AsyncSession, *, challenge_date: Optional[date] = Non
     difficulty = DifficultyLabel.MEDIUM
     low, high = (0.35, 0.65)
 
+    # The daily challenge is one shared set of questions feeding one shared
+    # leaderboard, so it is pinned to the default language rather than split
+    # per language — a per-language daily would need a per-language board to
+    # stay a fair comparison.
+    daily_language = DEFAULT_LANGUAGE.value
+
     candidates = list(
         (
             await db.execute(
@@ -78,6 +85,7 @@ async def ensure_today(db: AsyncSession, *, challenge_date: Optional[date] = Non
                 .where(
                     Question.topic_id == topic.id,
                     Question.status == QuestionStatus.ACTIVE,
+                    Question.language == daily_language,
                     Question.difficulty >= low,
                     Question.difficulty <= high,
                 )
@@ -93,6 +101,7 @@ async def ensure_today(db: AsyncSession, *, challenge_date: Optional[date] = Non
                     select(Question.id).where(
                         Question.topic_id == topic.id,
                         Question.status == QuestionStatus.ACTIVE,
+                        Question.language == daily_language,
                     )
                 )
             )
@@ -245,6 +254,7 @@ async def start_daily(db: AsyncSession, user: User) -> QuizSessionOut:
         topic_id=topic.id,
         mode=GameMode.DAILY,
         difficulty=challenge.difficulty,
+        language=DEFAULT_LANGUAGE.value,
         status=QuizSessionStatus.ACTIVE,
         score=defaults["score"],
         lives=defaults["lives"],
@@ -311,6 +321,7 @@ async def start_daily(db: AsyncSession, user: User) -> QuizSessionOut:
         topic_name=topic.name,
         mode=session.mode,
         difficulty=session.difficulty,
+        language=DEFAULT_LANGUAGE.value,
         status=session.status,
         score=session.score,
         streak=session.streak,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
@@ -90,7 +91,7 @@ class TopicTile extends StatelessWidget {
                     const SizedBox(width: 5),
                     Flexible(
                       child: Text(
-                        'Coming soon',
+                        context.l10n.comingSoon,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
@@ -205,8 +206,8 @@ class TopicFeatureCard extends StatelessWidget {
               children: [
                 Text(topic.icon, style: const TextStyle(fontSize: 28)),
                 const Spacer(),
-                const SqBadge(
-                  label: 'HOT',
+                SqBadge(
+                  label: context.l10n.hotBadge,
                   color: AppColors.gold,
                   dense: true,
                 ),
@@ -221,7 +222,8 @@ class TopicFeatureCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${formatCompact(topic.questionCount)} questions',
+              context.l10n
+                  .questionsCountCompact(formatCompact(topic.questionCount)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),

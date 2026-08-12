@@ -1,3 +1,4 @@
+import 'package:speedquiz/core/i18n/sq_strings.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 
 /// Why we are greeting the player.
@@ -31,9 +32,11 @@ class WelcomeCue {
   /// in — a launch is not an event.
   bool get deservesSheet => kind != WelcomeKind.returning;
 
-  String get headline => switch (kind) {
-        WelcomeKind.newPlayer => 'Welcome to SpeedQuiz',
-        WelcomeKind.signedIn => 'Welcome, ${user.name}',
-        WelcomeKind.returning => 'Welcome back, ${user.name}',
+  /// Takes the string table rather than reading one: this is a domain object
+  /// and has no BuildContext.
+  String headline(SqStrings l10n) => switch (kind) {
+        WelcomeKind.newPlayer => l10n.welcomeNewPlayer,
+        WelcomeKind.signedIn => l10n.welcomeSignedIn(user.name),
+        WelcomeKind.returning => l10n.welcomeBack(user.name),
       };
 }

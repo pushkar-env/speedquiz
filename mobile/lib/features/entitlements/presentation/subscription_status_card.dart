@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/entitlements/domain/entitlement_models.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
@@ -19,8 +20,10 @@ class SubscriptionStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
     final tone = _tone();
-    final dateFormat = DateFormat.yMMMd();
+    // Locale-aware dates: "12 Feb 2026" in English, "12 फ़र॰ 2026" in Hindi.
+    final dateFormat = DateFormat.yMMMd(l10n.language.code);
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -38,7 +41,7 @@ class SubscriptionStatusCard extends StatelessWidget {
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
-                  _headline(),
+                  _headline(l10n),
                   style: theme.textTheme.titleSmall?.copyWith(color: tone),
                 ),
               ),
@@ -46,15 +49,15 @@ class SubscriptionStatusCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            _detail(dateFormat),
+            _detail(l10n, dateFormat),
             style: theme.textTheme.bodySmall?.copyWith(color: p.textSecondary),
           ),
           if (entitlements.manageUrl != null) ...[
             const SizedBox(height: 12),
             SqButton(
               label: entitlements.needsPaymentFix
-                  ? 'FIX PAYMENT METHOD'
-                  : 'MANAGE SUBSCRIPTION',
+                  ? l10n.subFixPaymentMethod
+                  : l10n.subManageSubscription,
               variant: entitlements.needsPaymentFix
                   ? SqButtonVariant.gold
                   : SqButtonVariant.ghost,
@@ -76,7 +79,7 @@ class SubscriptionStatusCard extends StatelessWidget {
 
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
-      SqToast.error(context, 'Could not open your store subscriptions.');
+      SqToast.error(context, context.l10n.subCouldNotOpenStore);
     }
   }
 
@@ -94,29 +97,33 @@ class SubscriptionStatusCard extends StatelessWidget {
     return Icons.verified_rounded;
   }
 
-  String _headline() {
+  String _headline(SqStrings l10n) {
     switch (entitlements.state) {
       case SubscriptionState.grace:
-        return 'Payment failed';
+        return l10n.subPaymentFailed;
       case SubscriptionState.onHold:
-        return 'Subscription on hold';
+        return l10n.subOnHold;
       case SubscriptionState.paused:
-        return 'Subscription paused';
+        return l10n.subPaused;
       case SubscriptionState.pending:
-        return 'Payment processing';
+        return l10n.subPaymentProcessing;
       case SubscriptionState.cancelled:
-        return 'Cancelled';
+        return l10n.subCancelled;
       case SubscriptionState.expired:
-        return 'Subscription ended';
+        return l10n.subEnded;
       case SubscriptionState.revoked:
-        return 'Subscription refunded';
+        return l10n.subRefunded;
       case SubscriptionState.active:
       case SubscriptionState.none:
-        return '${entitlements.planTitle ?? 'Premium'} · Active';
+        // The plan title comes from the store, already in the store account's
+        // language — it is not ours to translate.
+        return l10n.subActivePlan(
+          entitlements.planTitle ?? l10n.profilePremium,
+        );
     }
   }
 
-  String _detail(DateFormat dateFormat) {
+  String _detail(SqStrings l10n, DateFormat dateFormat) {
     final expires = entitlements.expiresAt;
     final grace = entitlements.graceUntil;
 
@@ -124,40 +131,38 @@ class SubscriptionStatusCard extends StatelessWidget {
       case SubscriptionState.grace:
         final until = grace ?? expires;
         return until == null
-            ? 'Update your payment method to keep Premium.'
-            : 'Update your payment method by ${dateFormat.format(until)} to '
-                'keep Premium. Nothing has been lost yet.';
+            ? l10n.subUpdatePaymentNow
+            : l10n.subUpdatePaymentBy(dateFormat.format(until));
 
       case SubscriptionState.onHold:
-        return 'Your last payment did not go through, so Premium is paused. '
-            'Update your payment method to pick up where you left off.';
+        return l10n.subOnHoldBody;
 
       case SubscriptionState.paused:
-        return 'Premium resumes automatically when your pause ends.';
+        return l10n.subPausedBody;
 
       case SubscriptionState.pending:
-        return 'Your bank is still confirming the payment. Premium unlocks by '
-            'itself as soon as it clears — no need to pay again.';
+        return l10n.subProcessingBody(
+          dateFormat.format(expires ?? DateTime.now()),
+        );
 
       case SubscriptionState.cancelled:
         return expires == null
-            ? 'Premium stays active until the end of your billing period.'
-            : 'Premium stays active until ${dateFormat.format(expires)}. '
-                'You will not be charged again.';
+            ? l10n.subCancelledBodyNoDate
+            : l10n.subCancelledBody(dateFormat.format(expires));
 
       case SubscriptionState.expired:
-        return 'Resubscribe any time to unlock Premium again.';
+        return l10n.subEndedBody;
 
       case SubscriptionState.revoked:
-        return 'This purchase was refunded, so Premium has ended.';
+        return l10n.subRefundedBody;
 
       case SubscriptionState.active:
       case SubscriptionState.none:
-        if (expires == null) return 'Thanks for supporting SpeedQuiz.';
-        final prefix = entitlements.isIntroOffer
-            ? 'Your introductory price applies until'
-            : 'Renews on';
-        return '$prefix ${dateFormat.format(expires)}.';
+        if (expires == null) return l10n.subThanks;
+        final on = dateFormat.format(expires);
+        return entitlements.isIntroOffer
+            ? l10n.subIntroPriceUntil(on)
+            : l10n.subRenewsOn(on);
     }
   }
 }

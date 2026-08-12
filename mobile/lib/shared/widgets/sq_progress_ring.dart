@@ -7,7 +7,7 @@ import 'package:speedquiz/core/theme/app_theme.dart';
 ///
 /// Paints a track plus a gradient sweep; the whole thing lives inside a
 /// [RepaintBoundary] because the timer variant repaints ~10×/second.
-class SqProgressRing extends StatelessWidget {
+class SqProgressRing extends StatefulWidget {
   const SqProgressRing({
     super.key,
     required this.value,
@@ -17,6 +17,8 @@ class SqProgressRing extends StatelessWidget {
     this.trackColor,
     this.child,
     this.glow = false,
+    this.fillFromZero = false,
+    this.fillDuration = const Duration(milliseconds: 1100),
   });
 
   final double value;
@@ -29,23 +31,104 @@ class SqProgressRing extends StatelessWidget {
   /// Adds a soft halo — used when the timer runs low.
   final bool glow;
 
+  /// Sweep up from empty when this widget appears, instead of snapping to
+  /// [value]. Reserved for progress the player *earned* — a level ring reads
+  /// as a reward when it fills, and as a static graphic when it does not.
+  ///
+  /// Deliberately off by default: the question timer must show the truth on
+  /// its very first frame, never a flourish.
+  final bool fillFromZero;
+
+  final Duration fillDuration;
+
+  @override
+  State<SqProgressRing> createState() => _SqProgressRingState();
+}
+
+class _SqProgressRingState extends State<SqProgressRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<double> _sweep;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.fillDuration);
+    _sweep = _tween(0, widget.value);
+  }
+
+  Animation<double> _tween(double from, double to) {
+    return Tween<double>(begin: from, end: to).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.fillFromZero) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
+    } else if (!_controller.isAnimating && _controller.value == 0) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(SqProgressRing old) {
+    super.didUpdateWidget(old);
+    if (old.value == widget.value) return;
+    if (!widget.fillFromZero) return;
+    // Animate onwards from wherever the sweep currently sits, so a value that
+    // changes mid-fill does not jump.
+    _sweep = _tween(_sweep.value, widget.value);
+    _controller
+      ..reset()
+      ..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.sq;
+    final track = widget.trackColor ?? p.border.withValues(alpha: 0.7);
+    final gradient = widget.gradient ?? AppColors.brandGradient;
+    final child = widget.child == null ? null : Center(child: widget.child);
+
     return RepaintBoundary(
       child: SizedBox(
-        width: size,
-        height: size,
-        child: CustomPaint(
-          painter: _RingPainter(
-            value: value.clamp(0.0, 1.0),
-            stroke: stroke,
-            gradient: gradient ?? AppColors.brandGradient,
-            track: trackColor ?? p.border.withValues(alpha: 0.7),
-            glow: glow,
-          ),
-          child: child == null ? null : Center(child: child),
-        ),
+        width: widget.size,
+        height: widget.size,
+        child: widget.fillFromZero
+            ? AnimatedBuilder(
+                animation: _sweep,
+                builder: (context, inner) => CustomPaint(
+                  painter: _RingPainter(
+                    value: _sweep.value.clamp(0.0, 1.0),
+                    stroke: widget.stroke,
+                    gradient: gradient,
+                    track: track,
+                    glow: widget.glow,
+                  ),
+                  child: inner,
+                ),
+                child: child,
+              )
+            : CustomPaint(
+                painter: _RingPainter(
+                  value: widget.value.clamp(0.0, 1.0),
+                  stroke: widget.stroke,
+                  gradient: gradient,
+                  track: track,
+                  glow: widget.glow,
+                ),
+                child: child,
+              ),
       ),
     );
   }

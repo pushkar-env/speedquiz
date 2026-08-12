@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/achievements/data/achievements_repository.dart';
@@ -21,6 +22,7 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
     final user = ref.watch(currentUserProvider);
     final achievementsAsync = ref.watch(achievementsProvider);
     final entitlementsAsync = ref.watch(entitlementsProvider);
@@ -58,13 +60,13 @@ class ProfileScreen extends ConsumerWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          'Profile',
+                          l10n.profileTitle,
                           style: theme.textTheme.displaySmall,
                         ),
                       ),
                       SqIconButton(
                         icon: Icons.settings_outlined,
-                        tooltip: 'Settings',
+                        tooltip: l10n.settingsTitle,
                         onPressed: () => context.push(Routes.settings),
                       ),
                     ],
@@ -76,6 +78,7 @@ class ProfileScreen extends ConsumerWidget {
                   child: ProfileIdentityCard(
                     user: user,
                     isPremium: isPremium,
+                    animateProgress: true,
                     onTap: () => context.push(Routes.profileEdit),
                   ),
                 ),
@@ -86,7 +89,7 @@ class ProfileScreen extends ConsumerWidget {
                     children: [
                       Expanded(
                         child: ProfileMetric(
-                          label: 'Coins',
+                          label: l10n.coins,
                           value: '${user?.coins ?? 0}',
                           glyph: '🪙',
                         ),
@@ -94,16 +97,22 @@ class ProfileScreen extends ConsumerWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: ProfileMetric(
-                          label: 'Daily streak',
+                          label: l10n.streak,
                           value:
                               '${user?.dailyStreak ?? user?.currentStreak ?? 0}',
                           glyph: '🔥',
+                          glyphWidget: SqFlame(
+                            size: 15,
+                            alive:
+                                (user?.dailyStreak ?? user?.currentStreak ?? 0) >
+                                    0,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: ProfileMetric(
-                          label: 'Best streak',
+                          label: l10n.bestStreak,
                           value: '${user?.bestStreak ?? 0}',
                           glyph: '🏅',
                         ),
@@ -118,8 +127,8 @@ class ProfileScreen extends ConsumerWidget {
                   index: 4,
                   child: ProfileNavTile(
                     icon: Icons.badge_outlined,
-                    title: 'Profile details',
-                    subtitle: 'Name, avatar and how you appear on boards',
+                    title: l10n.profileDetails,
+                    subtitle: l10n.profileDetailsSubtitle,
                     onTap: () => context.push(Routes.profileEdit),
                   ),
                 ),
@@ -128,10 +137,13 @@ class ProfileScreen extends ConsumerWidget {
                   index: 5,
                   child: ProfileNavTile(
                     icon: Icons.emoji_events_outlined,
-                    title: 'Achievements',
+                    title: l10n.profileAchievements,
                     subtitle: unlocked == null
-                        ? 'Track everything you have unlocked'
-                        : '$unlocked of $totalAchievements unlocked',
+                        ? l10n.profileAchievementsSubtitle
+                        : l10n.achievementsProgress(
+                            unlocked,
+                            totalAchievements ?? 0,
+                          ),
                     tint: AppColors.gold,
                     onTap: () => context.push(Routes.achievements),
                     trailing: unlocked == null
@@ -144,8 +156,8 @@ class ProfileScreen extends ConsumerWidget {
                   index: 6,
                   child: ProfileNavTile(
                     icon: Icons.insights_rounded,
-                    title: 'Statistics',
-                    subtitle: 'Accuracy, speed and topic mastery',
+                    title: l10n.profileStatistics,
+                    subtitle: l10n.profileStatisticsSubtitle,
                     tint: AppColors.cyan,
                     onTap: () => context.push(Routes.stats),
                   ),
@@ -157,10 +169,12 @@ class ProfileScreen extends ConsumerWidget {
                     icon: isPremium
                         ? Icons.workspace_premium_rounded
                         : Icons.workspace_premium_outlined,
-                    title: isPremium ? 'Premium' : 'Go Premium',
+                    title: isPremium
+                        ? l10n.profilePremium
+                        : l10n.profileGoPremium,
                     subtitle: isPremium
-                        ? 'Thanks for supporting SpeedQuiz'
-                        : 'Unlimited questions and custom topics',
+                        ? l10n.profilePremiumThanks
+                        : l10n.profilePremiumPitch,
                     tint: AppColors.gold,
                     onTap: () => context.push(Routes.premium),
                   ),
@@ -170,8 +184,8 @@ class ProfileScreen extends ConsumerWidget {
                   index: 8,
                   child: ProfileNavTile(
                     icon: Icons.tune_rounded,
-                    title: 'Settings',
-                    subtitle: 'Appearance, sound and account',
+                    title: l10n.settingsTitle,
+                    subtitle: l10n.profileSettingsSubtitle,
                     tint: AppColors.violet,
                     onTap: () => context.push(Routes.settings),
                   ),
@@ -179,7 +193,7 @@ class ProfileScreen extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.xl),
                 Center(
                   child: Text(
-                    'SpeedQuiz · v${AppConfig.appVersion}',
+                    l10n.settingsVersion(AppConfig.appVersion),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: p.textFaint,
                     ),

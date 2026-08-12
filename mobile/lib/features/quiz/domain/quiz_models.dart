@@ -70,6 +70,7 @@ class QuizSession extends Equatable {
     required this.correctCount,
     required this.incorrectCount,
     required this.questionNumber,
+    this.language = 'en',
     this.lives,
     this.timeBudgetMs,
     this.timeRemainingMs,
@@ -81,6 +82,10 @@ class QuizSession extends Equatable {
   final String topicName;
   final String mode;
   final String difficulty;
+
+  /// Content language of this run, fixed when the session was created.
+  final String language;
+
   final String status;
   final int score;
   final int streak;
@@ -102,6 +107,7 @@ class QuizSession extends Equatable {
       topicName: json['topic_name'] as String,
       mode: json['mode'] as String,
       difficulty: json['difficulty'] as String,
+      language: json['language'] as String? ?? 'en',
       status: json['status'] as String,
       score: json['score'] as int,
       streak: json['streak'] as int,
@@ -139,6 +145,7 @@ class QuizSession extends Equatable {
       topicName: topicName,
       mode: mode,
       difficulty: difficulty,
+      language: language,
       status: status ?? this.status,
       score: score ?? this.score,
       streak: streak ?? this.streak,
@@ -179,6 +186,11 @@ class AnswerFeedback extends Equatable {
     this.lives,
     this.timeRemainingMs,
     this.nextQuestion,
+    this.milestoneBonus = 0,
+    this.timeDeltaMs,
+    this.timeBurnedMs,
+    this.overdrive = false,
+    this.speedTier,
   });
 
   final bool isCorrect;
@@ -198,6 +210,23 @@ class AnswerFeedback extends Equatable {
   final String sessionStatus;
   final bool runEnded;
   final PlayableQuestion? nextQuestion;
+
+  /// Lump bonus for crossing a streak milestone, already inside
+  /// [pointsAwarded]. Speedrun only.
+  final int milestoneBonus;
+
+  /// Signed clock change this answer earned — the number the HUD flashes over
+  /// the run clock. Null outside speedrun.
+  final int? timeDeltaMs;
+
+  /// What the question plus its verdict flash cost off the clock.
+  final int? timeBurnedMs;
+
+  /// The streak is hot: the HUD switches to its overdrive treatment.
+  final bool overdrive;
+
+  /// `blitz` | `fast` | `clean` | `clutch` — how quick a correct answer was.
+  final String? speedTier;
 
   factory AnswerFeedback.fromJson(Map<String, dynamic> json) {
     return AnswerFeedback(
@@ -222,6 +251,11 @@ class AnswerFeedback extends Equatable {
           : PlayableQuestion.fromJson(
               json['next_question'] as Map<String, dynamic>,
             ),
+      milestoneBonus: json['milestone_bonus'] as int? ?? 0,
+      timeDeltaMs: json['time_delta_ms'] as int?,
+      timeBurnedMs: json['time_burned_ms'] as int?,
+      overdrive: json['overdrive'] as bool? ?? false,
+      speedTier: json['speed_tier'] as String?,
     );
   }
 
@@ -235,6 +269,7 @@ class QuizResult extends Equatable {
     required this.topicName,
     required this.mode,
     required this.difficulty,
+    this.language = 'en',
     required this.finalScore,
     required this.accuracy,
     required this.bestStreak,
@@ -246,6 +281,7 @@ class QuizResult extends Equatable {
     required this.isPersonalBest,
     required this.previousBest,
     required this.shareText,
+    this.durationMs = 0,
     this.sharePayload = const {},
     this.newAchievements = const [],
     this.level,
@@ -259,6 +295,11 @@ class QuizResult extends Equatable {
   final String topicName;
   final String mode;
   final String difficulty;
+
+  /// Content language the run was played in — carried so "play again" repeats
+  /// it rather than silently switching to the current default.
+  final String language;
+
   final int finalScore;
   final double accuracy;
   final int bestStreak;
@@ -266,6 +307,9 @@ class QuizResult extends Equatable {
   final int correctCount;
   final int incorrectCount;
   final int averageAnswerMs;
+
+  /// Wall time the run lasted — the headline stat for a speedrun.
+  final int durationMs;
   final int xpEarned;
   final bool isPersonalBest;
   final int previousBest;
@@ -293,6 +337,7 @@ class QuizResult extends Equatable {
       topicName: json['topic_name'] as String,
       mode: json['mode'] as String,
       difficulty: json['difficulty'] as String,
+      language: json['language'] as String? ?? 'en',
       finalScore: json['final_score'] as int,
       accuracy: (json['accuracy'] as num).toDouble(),
       bestStreak: json['best_streak'] as int,
@@ -300,6 +345,7 @@ class QuizResult extends Equatable {
       correctCount: json['correct_count'] as int,
       incorrectCount: json['incorrect_count'] as int,
       averageAnswerMs: json['average_answer_ms'] as int,
+      durationMs: json['duration_ms'] as int? ?? 0,
       xpEarned: json['xp_earned'] as int,
       isPersonalBest: json['is_personal_best'] as bool,
       previousBest: json['previous_best'] as int,

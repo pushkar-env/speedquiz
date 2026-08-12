@@ -40,6 +40,12 @@ from app.schemas.quiz import (
     SubmitAnswerRequest,
 )
 from app.core.config import get_settings
+from app.core.languages import (
+    DEFAULT_LANGUAGE,
+    ContentLanguage,
+    normalize_language,
+    profile_for,
+)
 from app.payments.entitlements import unique_question_allowance
 from app.services import achievements as achievements_service
 from app.services import speedrun, survival
@@ -54,6 +60,7 @@ from app.services.anticheat import (
     clamp_points_awarded,
     resolve_answer_elapsed_ms,
 )
+from app.services.localization import localized_topic_name
 from app.services.progression import apply_xp, update_daily_streak
 from app.services.scoring import scoring_service
 from app.services.share import build_share_payload
@@ -153,6 +160,32 @@ def _client_correct_index(option_order: list[int], correct_original: int) -> int
         return 0
 
 
+def session_language(session: QuizSession) -> ContentLanguage:
+    """Content language of a run, tolerant of rows written before languages."""
+    return normalize_language(session.language)
+
+
+def _empty_bank_error(language: ContentLanguage) -> HTTPException:
+    """409 for "this topic has nothing playable in the chosen language".
+
+    Structured rather than a bare string: the client shows a localized message
+    and offers to switch language, which it cannot do off prose. The generic
+    "topic is still filling" copy would be actively misleading here — the topic
+    may be fully stocked, just not in *this* language.
+    """
+    profile = profile_for(language)
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "content_language_unavailable",
+            "message": (
+                f"No {profile.english_name} questions are ready for this topic yet"
+            ),
+            "language": profile.code,
+        },
+    )
+
+
 async def _load_topic(db: AsyncSession, topic_id: UUID) -> Topic:
     topic = await db.scalar(select(Topic).where(Topic.id == topic_id, Topic.is_active.is_(True)))
     if not topic:
@@ -226,8 +259,15 @@ async def _select_questions(
     limit: int,
     prefer_unseen_for_user: Optional[UUID] = None,
     unique_only: bool = False,
+    language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> list[Question]:
-    """Pick playable questions — prefer never-seen-by-user, then unused-in-session."""
+    """Pick playable questions — prefer never-seen-by-user, then unused-in-session.
+
+    Language is a hard filter at every phase, including the "any difficulty"
+    widening pass. Widening across difficulty makes a run easier or harder;
+    widening across language would make it unreadable.
+    """
+    language_code = normalize_language(language).value
     low, high = DIFFICULTY_RANGES[difficulty]
     seen_by_user: set[UUID] = set()
     if prefer_unseen_for_user:
@@ -245,6 +285,7 @@ async def _select_questions(
             .where(
                 Question.topic_id == topic_id,
                 Question.status == QuestionStatus.ACTIVE,
+                Question.language == language_code,
             )
         )
         if difficulty_bound:
@@ -449,12 +490,10 @@ async def _append_questions(
         limit=count,
         prefer_unseen_for_user=session.user_id,
         unique_only=unique_only,
+        language=session_language(session),
     )
     if not questions and not existing_ids:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No playable questions available for this topic yet",
-        )
+        raise _empty_bank_error(session_language(session))
 
     created: list[QuizQuestion] = []
     for offset, question in enumerate(questions):
@@ -495,6 +534,19 @@ async def create_session(
 
     topic = await _load_topic(db, payload.topic_id)
     await _raise_if_unique_cap(db, user, topic.id)
+
+    profile = user.profile or await db.scalar(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )
+    # Explicit request wins; otherwise fall back to the language this player
+    # last played in, so a client that omits the field (or an older build)
+    # still gets the run they expect.
+    language = normalize_language(
+        payload.language if payload.language is not None else (profile.quiz_language if profile else None)
+    )
+    if profile is not None:
+        profile.quiz_language = language.value
+
     defaults = _defaults_for(payload.mode)
     # Speedrun and survival own their pacing curves — a client-supplied limit
     # would break the ramp that makes every run finite.
@@ -524,6 +576,7 @@ async def create_session(
         topic_id=topic.id,
         mode=payload.mode,
         difficulty=difficulty,
+        language=language.value,
         status=QuizSessionStatus.ACTIVE,
         score=defaults["score"],
         lives=defaults["lives"],
@@ -545,16 +598,14 @@ async def create_session(
         topic,
         difficulty=difficulty,
         user=user,
+        language=language,
     )
 
     created = await _append_questions(
         db, session, start_index=0, count=_session_batch_size(), user=user
     )
     if not created:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No playable questions available for this topic yet",
-        )
+        raise _empty_bank_error(language)
 
     first = created[0]
     # served_at is set lazily on answer (or get_session) so feedback time isn't penalized
@@ -579,6 +630,7 @@ async def create_session(
                 "topic_id": str(topic.id),
                 "mode": session.mode.value,
                 "difficulty": session.difficulty.value,
+                "language": language.value,
                 "adaptive": bool(payload.adaptive),
             },
         )
@@ -588,9 +640,12 @@ async def create_session(
     return QuizSessionOut(
         id=session.id,
         topic_id=topic.id,
-        topic_name=topic.name,
+        # The topic name follows the *content* language, not the app language:
+        # it labels the questions the player is about to read.
+        topic_name=localized_topic_name(topic, language),
         mode=session.mode,
         difficulty=session.difficulty,
+        language=language.value,
         status=session.status,
         score=session.score,
         streak=session.streak,
@@ -637,9 +692,10 @@ async def get_session(
     return QuizSessionOut(
         id=session.id,
         topic_id=topic.id,
-        topic_name=topic.name,
+        topic_name=localized_topic_name(topic, session_language(session)),
         mode=session.mode,
         difficulty=session.difficulty,
+        language=session_language(session).value,
         status=session.status,
         score=session.score,
         streak=session.streak,
@@ -834,7 +890,8 @@ async def submit_answer(
                 from app.services.bank_inventory import count_active_questions, enqueue_bank_topup
 
                 topic = await _load_topic(db, session.topic_id)
-                active = await count_active_questions(db, topic.id)
+                language = session_language(session)
+                active = await count_active_questions(db, topic.id, language=language)
                 # Keep a runway of unique items ahead of the player without racing to 1000 in one go.
                 if active < max(get_settings().topic_bank_low_watermark * 2, 80):
                     await enqueue_bank_topup(
@@ -844,6 +901,7 @@ async def submit_answer(
                         reason="session_consume",
                         user=user,
                         force=True,
+                        language=language,
                     )
 
                 appended = await _append_questions(
@@ -878,6 +936,7 @@ async def submit_answer(
                         limit=8,
                         prefer_unseen_for_user=session.user_id,
                         unique_only=False,
+                        language=session_language(session),
                     )
                     if fresh:
                         pick = fresh[0]
@@ -1023,15 +1082,17 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     db.add(score_row)
 
     topic = await _load_topic(db, session.topic_id)
+    language = session_language(session)
     share_payload = build_share_payload(
         session_id=session.id,
-        topic_name=topic.name,
+        topic_name=localized_topic_name(topic, language),
         difficulty=session.difficulty.value,
         mode=session.mode.value,
         score=session.score,
         accuracy=accuracy,
         best_streak=session.best_streak,
         questions_answered=answered,
+        language=language,
     )
     summary = {
         "final_score": session.score,
@@ -1042,7 +1103,8 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
         "incorrect_count": session.incorrect_count,
         "average_answer_ms": average_answer_ms,
         "xp_earned": xp,
-        "topic_name": topic.name,
+        "topic_name": localized_topic_name(topic, language),
+        "language": language.value,
         "duration_ms": duration_ms,
     }
     comparisons = {
@@ -1189,6 +1251,7 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
                 "topic_id": str(session.topic_id),
                 "mode": session.mode.value,
                 "difficulty": session.difficulty.value,
+                "language": language.value,
                 "adaptive": bool(cfg.get("adaptive")),
                 "score": session.score,
                 "accuracy": accuracy,
@@ -1261,11 +1324,13 @@ async def get_result(
         except Exception:
             continue
 
+    language = session_language(session)
     return QuizResultOut(
         session_id=session.id,
-        topic_name=summary.get("topic_name", topic.name),
+        topic_name=summary.get("topic_name", localized_topic_name(topic, language)),
         mode=session.mode,
         difficulty=session.difficulty,
+        language=language.value,
         final_score=score.final_score if score else session.score,
         accuracy=float(summary.get("accuracy", 0)),
         best_streak=score.best_streak if score else session.best_streak,

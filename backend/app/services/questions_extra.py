@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.ai.providers import get_llm_provider
+from app.core.languages import ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.core.redis import get_redis
 from app.models import Question, QuestionReport, QuestionStatus, User
@@ -54,7 +55,12 @@ async def teach_question(
         (o.text for o in question.options if o.position == question.correct_option_index),
         "",
     )
-    user_option = user_option_text or "your answer"
+    # The tutor answers in the language the question is written in — anything
+    # else would explain a Hindi question in English mid-run.
+    language = normalize_language(question.language)
+    user_option = user_option_text or (
+        "आपका उत्तर" if language is ContentLanguage.HINDI else "your answer"
+    )
 
     llm = get_llm_provider()
     try:
@@ -63,16 +69,25 @@ async def teach_question(
             correct_option=correct,
             user_option=user_option,
             explanation=question.explanation,
+            language=language,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("teach_failed", error=str(exc))
         # Fall back to stored explanation — never break the client
-        payload = {
-            "why_correct": question.explanation,
-            "why_wrong": f'"{user_option}" does not match the correct answer.',
-            "key_concept": "Re-read the explanation and try a similar question.",
-            "memorable_fact": f"Remember: {correct}.",
-        }
+        if language is ContentLanguage.HINDI:
+            payload = {
+                "why_correct": question.explanation,
+                "why_wrong": f'"{user_option}" सही उत्तर से मेल नहीं खाता।',
+                "key_concept": "स्पष्टीकरण दोबारा पढ़ें और मिलता-जुलता प्रश्न आज़माएँ।",
+                "memorable_fact": f"याद रखें: {correct}।",
+            }
+        else:
+            payload = {
+                "why_correct": question.explanation,
+                "why_wrong": f'"{user_option}" does not match the correct answer.',
+                "key_concept": "Re-read the explanation and try a similar question.",
+                "memorable_fact": f"Remember: {correct}.",
+            }
 
     return TeachMeResponse(
         question_id=question.id,

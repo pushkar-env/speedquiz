@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/profile/data/profile_repository.dart';
@@ -25,9 +26,9 @@ class StatsScreen extends ConsumerWidget {
         child: SafeArea(
           child: Column(
             children: [
-              const SubScreenHeader(
-                title: 'Statistics',
-                subtitle: 'Everything you have played so far',
+              SubScreenHeader(
+                title: context.l10n.statsTitle,
+                subtitle: context.l10n.statsSubtitle,
               ),
               Expanded(
                 child: async.when(
@@ -49,10 +50,10 @@ class StatsScreen extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(AppSpacing.lg),
                       child: SqErrorState(
-                        title: 'Statistics unavailable',
+                        title: context.l10n.statsUnavailable,
                         message: apiErrorMessage(
                           error,
-                          fallback: 'Could not load your statistics.',
+                          fallback: context.l10n.statsCouldNotLoad,
                         ),
                         onRetry: () => ref.invalidate(profileProvider),
                       ),
@@ -100,10 +101,10 @@ class _StatsBody extends ConsumerWidget {
       ),
       children: [
         if (stats.totalQuizzes == 0)
-          const SqEmptyState(
+          SqEmptyState(
             icon: '📊',
-            title: 'No runs yet',
-            message: 'Play your first quiz and your numbers land here.',
+            title: context.l10n.statsNoRuns,
+            message: context.l10n.statsNoRunsBody,
           )
         else ...[
           SqStagger(
@@ -130,7 +131,7 @@ class _StatsBody extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Lifetime accuracy',
+                          context.l10n.statsLifetimeAccuracy,
                           style: theme.textTheme.titleMedium,
                         ),
                         const SizedBox(height: 2),
@@ -153,7 +154,7 @@ class _StatsBody extends ConsumerWidget {
               children: [
                 Expanded(
                   child: ProfileMetric(
-                    label: 'Runs played',
+                    label: context.l10n.statsRunsPlayed,
                     value: formatCompact(stats.totalQuizzes),
                     glyph: '🎮',
                   ),
@@ -161,7 +162,7 @@ class _StatsBody extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ProfileMetric(
-                    label: 'Best score',
+                    label: context.l10n.statsBestScore,
                     value: formatCompact(stats.bestScore),
                     glyph: '🏆',
                   ),
@@ -169,9 +170,13 @@ class _StatsBody extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ProfileMetric(
-                    label: 'Best streak',
+                    label: context.l10n.bestStreak,
                     value: '${stats.bestStreak}',
                     glyph: '🔥',
+                    glyphWidget: SqFlame(
+                      size: 15,
+                      alive: stats.bestStreak > 0,
+                    ),
                   ),
                 ),
               ],
@@ -184,7 +189,7 @@ class _StatsBody extends ConsumerWidget {
               children: [
                 Expanded(
                   child: ProfileMetric(
-                    label: 'Avg answer',
+                    label: context.l10n.resultsAvgAnswer,
                     value: '${avgSeconds}s',
                     glyph: '⚡',
                   ),
@@ -192,7 +197,7 @@ class _StatsBody extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ProfileMetric(
-                    label: 'Questions',
+                    label: context.l10n.statsQuestions,
                     value: formatCompact(stats.totalQuestions),
                     glyph: '📘',
                   ),
@@ -200,7 +205,7 @@ class _StatsBody extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ProfileMetric(
-                    label: 'Missed',
+                    label: context.l10n.statsMissed,
                     value: formatCompact(stats.totalIncorrect),
                     glyph: '🙈',
                   ),
@@ -212,9 +217,9 @@ class _StatsBody extends ConsumerWidget {
             const SizedBox(height: AppSpacing.xl),
             SqStagger(
               index: 3,
-              child: const SqSectionHeader(
-                title: 'Topic mastery',
-                subtitle: 'Where you are strongest',
+              child: SqSectionHeader(
+                title: context.l10n.statsTopicMastery,
+                subtitle: context.l10n.statsTopicMasterySubtitle,
               ),
             ),
             const SizedBox(height: AppSpacing.md),

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/features/welcome/data/welcome_store.dart';
@@ -17,15 +19,11 @@ class AccountCard extends ConsumerWidget {
 
   final AuthUser? user;
 
-  static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
     final user = this.user;
 
     if (user == null) {
@@ -52,7 +50,7 @@ class AccountCard extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'ACCOUNT',
+                l10n.accountTitle,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: p.textFaint,
                   letterSpacing: 1.2,
@@ -60,7 +58,7 @@ class AccountCard extends ConsumerWidget {
               ),
               const Spacer(),
               SqBadge(
-                label: linked ? 'GOOGLE' : 'GUEST',
+                label: linked ? l10n.accountGoogle : l10n.accountGuest,
                 color: linked ? p.accent : p.textSecondary,
                 dense: true,
               ),
@@ -69,30 +67,31 @@ class AccountCard extends ConsumerWidget {
           const SizedBox(height: AppSpacing.md),
           // The display name is already the headline of the identity card
           // directly above; this block is for what you cannot see up there.
-          _Row(label: 'Username', value: '@${user.username}'),
+          _Row(label: l10n.accountUsername, value: '@${user.username}'),
           _Row(
-            label: 'Email',
-            value: linked ? email : 'Not linked',
+            label: l10n.accountEmail,
+            value: linked ? email : l10n.accountNotLinked,
             muted: !linked,
           ),
           _Row(
-            label: 'Playing since',
+            label: l10n.accountPlayingSince,
+            // intl carries the month names for every locale we ship, so this
+            // reads "जनवरी 2026" in Hindi without a table of our own.
             value: firstSeen == null
                 ? '—'
-                : '${_months[firstSeen.month - 1]} ${firstSeen.year}',
+                : DateFormat.yMMMM(l10n.language.code).format(firstSeen),
             // Device-local, so say so rather than implying an account age.
-            hint: firstSeen == null ? null : 'on this device',
+            hint: firstSeen == null ? null : l10n.accountOnThisDevice,
           ),
           _Row(
-            label: 'Player ID',
+            label: l10n.accountPlayerId,
             value: user.id.split('-').first,
             trailing: _CopyButton(value: user.id),
           ),
           if (!linked) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Guest progress lives on this device. Link a Google account in '
-              'Settings to carry it to your next phone.',
+              l10n.accountGuestHint,
               style: theme.textTheme.bodySmall?.copyWith(color: p.textFaint),
             ),
           ],
@@ -176,12 +175,12 @@ class _CopyButton extends StatelessWidget {
 
     return SqPressable(
       pressedScale: 0.88,
-      semanticLabel: 'Copy player ID',
+      semanticLabel: context.l10n.accountCopyPlayerId,
       onTap: () async {
         await Clipboard.setData(ClipboardData(text: value));
         Haptics.success();
         if (context.mounted) {
-          SqToast.success(context, 'Player ID copied.');
+          SqToast.success(context, context.l10n.accountPlayerIdCopied);
         }
       },
       child: Padding(

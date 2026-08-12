@@ -10,6 +10,13 @@ import httpx
 
 from app.ai.providers import GeneratedQuestionDraft, LLMProvider, ValidationResult
 from app.core.config import get_settings
+from app.core.languages import (
+    DEFAULT_LANGUAGE,
+    ContentLanguage,
+    generation_directive,
+    normalize_language,
+    profile_for,
+)
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -95,19 +102,29 @@ class OpenAILLMProvider(LLMProvider):
         count: int,
         style: Optional[str] = None,
         subcategory: Optional[str] = None,
+        language: ContentLanguage = DEFAULT_LANGUAGE,
     ) -> list[GeneratedQuestionDraft]:
+        language = normalize_language(language)
+        lang = profile_for(language)
         system = (
             "You are a quiz writer for a premium mobile game. "
             "Return JSON only with key `questions` (array). "
             "Each item: question, options (exactly 4 distinct strings), "
-            "correct_option (0-3), explanation, difficulty (0-1 float), subcategory."
+            "correct_option (0-3), explanation, difficulty (0-1 float), subcategory.\n"
+            # Language sits in the system prompt, not just the user turn: models
+            # drift back to English partway through a long batch when the
+            # instruction is buried in the request.
+            f"LANGUAGE ({lang.english_name}): {lang.generation_directive}"
         )
         user = (
             f"Create {count} multiple-choice questions about: {topic}.\n"
             f"Difficulty label: {difficulty}.\n"
             f"Style: {style or 'engaging trivia'}.\n"
             f"Subcategory hint: {subcategory or 'general'}.\n"
-            "Make distractors plausible. Explanations must teach, not just restate."
+            "Make distractors plausible. Explanations must teach, not just restate.\n"
+            f"Write everything in {lang.english_name} ({lang.native_name}). "
+            "The `subcategory` field may stay in English; every player-visible "
+            "string must not."
         )
         raw = await self._chat(
             model=settings.llm_model_generate,
@@ -131,7 +148,8 @@ class OpenAILLMProvider(LLMProvider):
                     subcategory=item.get("subcategory") or subcategory,
                     difficulty=float(item.get("difficulty", 0.5)),
                     source="openai",
-                    meta={"style": style},
+                    language=language,
+                    meta={"style": style, "language": language.value},
                 )
             )
         return drafts
@@ -139,13 +157,23 @@ class OpenAILLMProvider(LLMProvider):
     async def validate_questions(
         self,
         drafts: list[GeneratedQuestionDraft],
+        *,
+        language: ContentLanguage = DEFAULT_LANGUAGE,
     ) -> list[ValidationResult]:
         if not drafts:
             return []
+        # Drafts carry the language they were generated for; the keyword is the
+        # fallback for callers that hand over a bare list.
+        language = normalize_language(drafts[0].language or language)
+        lang = profile_for(language)
         system = (
             "You are a strict quiz quality reviewer. Return JSON with key `results` "
             "(array aligned to input order). Each item: approved (bool), quality_score "
-            "(0-100), reasons (string array), difficulty (0-1)."
+            "(0-100), reasons (string array), difficulty (0-1).\n"
+            f"The questions are written in {lang.english_name} "
+            f"({lang.native_name}). Judge them as a native reader would: reject "
+            "anything machine-translated, in the wrong script, or mixing "
+            "languages mid-sentence, with reason `wrong_language`."
         )
         serialized = [
             {
@@ -190,10 +218,20 @@ class OpenAILLMProvider(LLMProvider):
             )
         return results
 
-    async def classify_topic(self, prompt: str) -> dict[str, Any]:
+    async def classify_topic(
+        self,
+        prompt: str,
+        *,
+        language: ContentLanguage = DEFAULT_LANGUAGE,
+    ) -> dict[str, Any]:
+        lang = profile_for(language)
         system = (
             "Classify a custom quiz request. Return JSON: subject (short title), "
-            "category, confidence (0-1)."
+            "category, confidence (0-1). "
+            # The subject becomes the topic's display name in the app, so it has
+            # to match the language the player will actually see.
+            f"Write `subject` in {lang.english_name} ({lang.native_name}); "
+            "`category` stays a lowercase English slug."
         )
         user = f"User request: {prompt}"
         try:
@@ -221,10 +259,12 @@ class OpenAILLMProvider(LLMProvider):
         correct_option: str,
         user_option: str,
         explanation: str,
+        language: ContentLanguage = DEFAULT_LANGUAGE,
     ) -> dict[str, str]:
         system = (
             "You are a friendly tutor for a quiz game. Return JSON with keys: "
-            "why_correct, why_wrong, key_concept, memorable_fact. Keep each under 2 sentences."
+            "why_correct, why_wrong, key_concept, memorable_fact. Keep each under 2 sentences. "
+            f"{generation_directive(language)}"
         )
         user = (
             f"Question: {question}\n"

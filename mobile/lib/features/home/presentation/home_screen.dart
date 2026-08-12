@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
+import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
@@ -84,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _openDaily() async {
     if (_startingDaily) return;
     setState(() => _startingDaily = true);
+    final l10n = context.l10n;
     final repo = ref.read(dailyRepositoryProvider);
 
     try {
@@ -95,15 +98,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         setState(() => _startingDaily = false);
         await showSqInfo(
           context,
-          title: 'Today is done',
+          title: l10n.dailyTodayDone,
           message: info.bestScore != null
-              ? 'You scored ${formatScore(info.bestScore!)} on today’s '
-                    'challenge. A fresh set unlocks tomorrow.'
-              : 'You already cleared today’s challenge. '
-                    'A fresh set unlocks tomorrow.',
+              ? l10n.dailyTodayDoneWithScore(formatScore(info.bestScore!))
+              : l10n.dailyTodayDoneGeneric,
           glyph: '✅',
           tone: SqDialogTone.success,
-          actionLabel: 'NICE',
+          actionLabel: l10n.dailyNice,
         );
         return;
       }
@@ -128,8 +129,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       setState(() => _startingDaily = false);
       SqToast.error(
         context,
-        apiErrorMessage(error, fallback: 'Daily challenge is unavailable.'),
-        actionLabel: 'RETRY',
+        localizedApiErrorMessage(
+          context,
+          error,
+          fallback: l10n.dailyUnavailable,
+        ),
+        actionLabel: l10n.retry.toUpperCase(),
         onAction: _openDaily,
       );
     }
@@ -146,7 +151,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _surpriseMe() {
     final topic = ref.read(randomTopicProvider);
     if (topic == null) {
-      SqToast.warning(context, 'No topic has questions ready yet.');
+      SqToast.warning(context, context.l10n.homeNoTopicReady);
       return;
     }
     Haptics.success();
@@ -158,6 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         'mode': 'casual',
         'difficulty': 'medium',
         'adaptive': true,
+        'language': ref.read(quizLanguageProvider).code,
       },
     );
   }
@@ -166,6 +172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final p = theme.sq;
+    final l10n = context.l10n;
     final user = ref.watch(currentUserProvider);
     final dailyAsync = ref.watch(dailyChallengeProvider);
     final topicsAsync = ref.watch(topicsProvider);
@@ -215,7 +222,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 SqStagger(
                   index: 1,
                   child: Text(
-                    _greeting(user?.name),
+                    _greeting(l10n, user?.name),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       letterSpacing: 1.4,
                       fontWeight: FontWeight.w700,
@@ -227,7 +234,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 SqStagger(
                   index: 2,
                   child: Text(
-                    'Pick a topic.\nClimb the ranks.',
+                    l10n.homeHeadline,
                     style: theme.textTheme.displaySmall?.copyWith(height: 1.06),
                   ),
                 ),
@@ -253,9 +260,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 SqStagger(
                   index: 5,
                   child: SqSectionHeader(
-                    title: 'Jump back in',
-                    subtitle: 'Topics with the deepest question banks',
-                    actionLabel: 'ALL',
+                    title: l10n.homeJumpBackIn,
+                    subtitle: l10n.homeJumpBackInSubtitle,
+                    actionLabel: l10n.all.toUpperCase(),
                     onAction: () => context.go(Routes.explore),
                   ),
                 ),
@@ -284,17 +291,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// Time-of-day greeting, addressed to the player when we know their name.
-  static String _greeting(String? name) {
+  static String _greeting(SqStrings l10n, String? name) {
     final hour = DateTime.now().hour;
     final part = hour < 5
-        ? 'BURNING THE MIDNIGHT OIL'
+        ? l10n.greetingNight
         : hour < 12
-            ? 'GOOD MORNING'
+            ? l10n.greetingMorning
             : hour < 17
-                ? 'GOOD AFTERNOON'
-                : 'GOOD EVENING';
+                ? l10n.greetingAfternoon
+                : l10n.greetingEvening;
     if (name == null || name.trim().isEmpty) return part;
-    return '$part, ${name.trim().toUpperCase()}';
+    // Casing belongs to the language, not the layout: toUpperCase() is a no-op
+    // on Devanagari, so each language decides how a name is set.
+    return l10n.greetingWithName(part, name.trim());
   }
 }
 
@@ -314,22 +323,31 @@ class _PlayerBar extends StatelessWidget {
     final xp = user?.xp ?? 0;
     final threshold = xpThresholdForLevel(level);
     final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
-    final displayName = user?.displayName ?? user?.username ?? 'Player';
+    final displayName =
+        user?.displayName ?? user?.username ?? context.l10n.player;
     final streak = user?.dailyStreak ?? user?.currentStreak ?? 0;
     final isPremium = user?.isPremium ?? false;
 
     return SqPressable(
       onTap: onTap,
       pressedScale: 0.985,
-      semanticLabel: 'Open your profile',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: p.surface.withValues(alpha: p.isDark ? 0.6 : 0.9),
-          borderRadius: BorderRadius.circular(AppRadii.xl),
-          border: Border.all(color: p.border),
-          boxShadow: AppShadows.soft(p),
-        ),
+      semanticLabel: context.l10n.homeOpenProfile,
+      // Lights drifting along the edge. This strip is the first thing on the
+      // first screen, so it carries most of the "the app is awake" impression.
+      child: SqParticleBorder(
+        radius: AppRadii.xl,
+        count: isPremium ? 5 : 4,
+        colors: isPremium
+            ? const [AppColors.gold, Color(0xFFFFF0C2), Color(0xFFFF9F43)]
+            : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: p.surface.withValues(alpha: p.isDark ? 0.6 : 0.9),
+            borderRadius: BorderRadius.circular(AppRadii.xl),
+            border: Border.all(color: p.border),
+            boxShadow: AppShadows.soft(p),
+          ),
         child: Row(
           children: [
             SqAvatar(
@@ -355,7 +373,10 @@ class _PlayerBar extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      SqBadge(label: 'LVL $level', dense: true),
+                      SqBadge(
+                        label: '${context.l10n.levelShort} $level',
+                        dense: true,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -381,7 +402,8 @@ class _PlayerBar extends StatelessWidget {
             _StreakPill(streak: streak),
             const SizedBox(width: 4),
             Icon(Icons.chevron_right_rounded, size: 18, color: p.textFaint),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -420,7 +442,19 @@ class _StreakPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(active ? '🔥' : '💤', style: const TextStyle(fontSize: 13)),
+          // A live flame rather than an emoji: the streak is the one number
+          // the player is actively trying not to lose, so it should look like
+          // it could go out. Only when it is actually burning, though — the
+          // profile arrives a moment after first paint, and a dim ember during
+          // that gap reads as the flame failing to load.
+          if (active)
+            SqFlame(
+              size: 15,
+              // Longer streaks burn harder, up to a point.
+              intensity: 1 + (streak.clamp(0, 30) / 30) * 0.6,
+            )
+          else
+            const Text('💤', style: TextStyle(fontSize: 13)),
           const SizedBox(width: 5),
           Text(
             '$streak',
@@ -520,16 +554,16 @@ class _PlayHeroState extends State<_PlayHero>
             children: [
               Row(
                 children: [
-                  const SqBreathe(
+                  SqBreathe(
                     child: SqBadge(
-                      label: 'READY',
+                      label: context.l10n.homeReady,
                       icon: Icons.bolt_rounded,
                       dense: true,
                     ),
                   ),
                   const Spacer(),
                   Text(
-                    'SERVER-SCORED',
+                    context.l10n.homeServerScored,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: p.textFaint,
                       letterSpacing: 1.2,
@@ -538,11 +572,13 @@ class _PlayHeroState extends State<_PlayHero>
                 ],
               ),
               const SizedBox(height: AppSpacing.md),
-              Text('Start a run', style: theme.textTheme.headlineMedium),
+              Text(
+                context.l10n.homeStartARun,
+                style: theme.textTheme.headlineMedium,
+              ),
               const SizedBox(height: 4),
               Text(
-                'Timed questions, speed bonuses and streak multipliers. '
-                'Five modes to pick from.',
+                context.l10n.homeStartARunBody,
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.md),
@@ -551,7 +587,7 @@ class _PlayHeroState extends State<_PlayHero>
                   Expanded(
                     flex: 3,
                     child: SqButton(
-                      label: 'PLAY',
+                      label: context.l10n.homePlay,
                       icon: Icons.play_arrow_rounded,
                       onPressed: widget.onPlay,
                     ),
@@ -561,7 +597,7 @@ class _PlayHeroState extends State<_PlayHero>
                   Expanded(
                     flex: 2,
                     child: SqButton(
-                      label: 'SURPRISE',
+                      label: context.l10n.homeSurprise,
                       variant: SqButtonVariant.ghost,
                       onPressed: widget.onSurprise,
                     ),
@@ -606,8 +642,14 @@ class _DailyCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Daily Challenge', style: theme.textTheme.titleMedium),
-                  Text('Tap to retry', style: theme.textTheme.bodyMedium),
+                  Text(
+                    context.l10n.dailyChallenge,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  Text(
+                    context.l10n.dailyTapToRetry,
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ],
               ),
             ),
@@ -616,14 +658,15 @@ class _DailyCard extends StatelessWidget {
         ),
       ),
       data: (daily) {
+        final l10n = context.l10n;
         final done = daily.isCompleted;
         final subtitle = done
             ? (daily.bestScore != null
-                  ? 'Cleared · ${formatScore(daily.bestScore!)} pts'
-                  : 'Cleared · back tomorrow')
+                  ? l10n.dailyCleared(formatScore(daily.bestScore!))
+                  : l10n.dailyClearedNoScore)
             : daily.isInProgress
-            ? 'Resume · ${daily.topicName}'
-            : '${daily.topicName} · ${daily.questionCount} questions';
+            ? l10n.dailyResume(daily.topicName)
+            : l10n.dailySubtitle(daily.topicName, daily.questionCount);
 
         return SqSurface(
           onTap: busy ? null : onTap,
@@ -654,8 +697,8 @@ class _DailyCard extends StatelessWidget {
                         ),
                         if (!done) ...[
                           const SizedBox(width: 8),
-                          const SqBadge(
-                            label: 'TODAY',
+                          SqBadge(
+                            label: l10n.today.toUpperCase(),
                             color: AppColors.warning,
                             dense: true,
                           ),
@@ -738,7 +781,7 @@ class _TopicShortcuts extends StatelessWidget {
   Widget build(BuildContext context) {
     return async.when(
       loading: () => SizedBox(
-        height: _railHeight,
+        height: _railHeight + context.scriptExtraHeight,
         child: SqShimmer(
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
@@ -754,8 +797,12 @@ class _TopicShortcuts extends StatelessWidget {
         ),
       ),
       error: (error, _) => SqErrorState(
-        title: 'Topics unavailable',
-        message: apiErrorMessage(error, fallback: 'Could not load topics.'),
+        title: context.l10n.homeTopicsUnavailable,
+        message: localizedApiErrorMessage(
+          context,
+          error,
+          fallback: context.l10n.homeCouldNotLoadTopics,
+        ),
         onRetry: onRetry,
       ),
       data: (all) {
@@ -763,14 +810,14 @@ class _TopicShortcuts extends StatelessWidget {
         if (playable.isEmpty) {
           return SqSurface(
             child: Text(
-              'The question bank is still filling up. Check back shortly.',
+              context.l10n.homeBankFilling,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           );
         }
 
         return SizedBox(
-          height: _railHeight,
+          height: _railHeight + context.scriptExtraHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,
@@ -836,10 +883,13 @@ class _CustomTopicCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Custom topic', style: theme.textTheme.titleMedium),
+                Text(
+                  context.l10n.homeCustomTopic,
+                  style: theme.textTheme.titleMedium,
+                ),
                 const SizedBox(height: 2),
                 Text(
-                  'Describe anything and the AI builds a quiz for it',
+                  context.l10n.homeCustomTopicBody,
                   style: theme.textTheme.bodyMedium,
                 ),
               ],

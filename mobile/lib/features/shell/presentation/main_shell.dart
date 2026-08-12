@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
@@ -32,36 +34,46 @@ class MainShell extends StatefulWidget {
   /// Index of the tab back always falls through to.
   static const _homeIndex = 0;
 
-  static const _tabs = <_ShellTab>[
-    _ShellTab(
-      location: Routes.home,
-      label: 'Home',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home_rounded,
-    ),
-    _ShellTab(
-      location: Routes.explore,
-      label: 'Explore',
-      icon: Icons.explore_outlined,
-      selectedIcon: Icons.explore_rounded,
-    ),
-    _ShellTab(
-      location: Routes.leaderboard,
-      label: 'Ranks',
-      icon: Icons.leaderboard_outlined,
-      selectedIcon: Icons.leaderboard_rounded,
-    ),
-    _ShellTab(
-      location: Routes.profile,
-      label: 'Profile',
-      icon: Icons.person_outline_rounded,
-      selectedIcon: Icons.person_rounded,
-    ),
+  /// Labels are resolved per build rather than stored, so switching language
+  /// relabels the bar in place.
+  static List<_ShellTab> _tabsFor(SqStrings l10n) => <_ShellTab>[
+        _ShellTab(
+          location: Routes.home,
+          label: l10n.tabHome,
+          icon: Icons.home_outlined,
+          selectedIcon: Icons.home_rounded,
+        ),
+        _ShellTab(
+          location: Routes.explore,
+          label: l10n.tabExplore,
+          icon: Icons.explore_outlined,
+          selectedIcon: Icons.explore_rounded,
+        ),
+        _ShellTab(
+          location: Routes.leaderboard,
+          label: l10n.tabRanks,
+          icon: Icons.leaderboard_outlined,
+          selectedIcon: Icons.leaderboard_rounded,
+        ),
+        _ShellTab(
+          location: Routes.profile,
+          label: l10n.tabProfile,
+          icon: Icons.person_outline_rounded,
+          selectedIcon: Icons.person_rounded,
+        ),
+      ];
+
+  /// Route order, for index lookups that must not depend on a BuildContext.
+  static const _tabLocations = <String>[
+    Routes.home,
+    Routes.explore,
+    Routes.leaderboard,
+    Routes.profile,
   ];
 
   static int _indexForLocation(String location) {
-    for (var i = 0; i < _tabs.length; i++) {
-      if (location.startsWith(_tabs[i].location)) return i;
+    for (var i = 0; i < _tabLocations.length; i++) {
+      if (location.startsWith(_tabLocations[i])) return i;
     }
     return 0;
   }
@@ -88,7 +100,7 @@ class _MainShellState extends State<MainShell> {
   DateTime? _exitArmedAt;
 
   void _goTab(int i) {
-    context.go(MainShell._tabs[i].location);
+    context.go(MainShell._tabLocations[i]);
   }
 
   void _select(int i) {
@@ -122,7 +134,7 @@ class _MainShellState extends State<MainShell> {
     Haptics.tap();
     SqToast.show(
       context,
-      'Press back again to exit',
+      context.l10n.pressBackAgainToExit,
       duration: const Duration(milliseconds: 1900),
     );
   }
@@ -158,7 +170,7 @@ class _MainShellState extends State<MainShell> {
         extendBody: true,
         body: widget.child,
         bottomNavigationBar: _FloatingNavBar(
-          tabs: MainShell._tabs,
+          tabs: MainShell._tabsFor(context.l10n),
           index: index,
           onSelect: _select,
         ),
@@ -222,31 +234,7 @@ class _FloatingNavBar extends StatelessWidget {
               children: [
                 // One indicator that travels between tabs, rather than four
                 // that fade independently — the movement is what sells it.
-                AnimatedAlign(
-                  duration: AppMotion.normal,
-                  curve: AppMotion.emphasized,
-                  alignment: Alignment(
-                    tabs.length == 1 ? 0 : -1 + 2 * index / (tabs.length - 1),
-                    0,
-                  ),
-                  child: FractionallySizedBox(
-                    widthFactor: 1 / tabs.length,
-                    child: Center(
-                      child: Container(
-                        height: 38,
-                        width: 54,
-                        decoration: BoxDecoration(
-                          color: p.accentWash(0.16),
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
-                          boxShadow: AppShadows.glow(
-                            AppColors.accent,
-                            strength: 0.16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                _NavIndicator(index: index, count: tabs.length),
                 Row(
                   children: [
                     for (var i = 0; i < tabs.length; i++)
@@ -262,6 +250,164 @@ class _FloatingNavBar extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The travelling selection capsule.
+///
+/// Sized from the real item width rather than a fixed 54px, which is what made
+/// the old indicator look shrunken inside its slot. It overshoots slightly on
+/// arrival and squashes along the direction of travel, so switching tabs has
+/// weight instead of being a linear slide.
+class _NavIndicator extends StatefulWidget {
+  const _NavIndicator({required this.index, required this.count});
+
+  final int index;
+  final int count;
+
+  @override
+  State<_NavIndicator> createState() => _NavIndicatorState();
+}
+
+class _NavIndicatorState extends State<_NavIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<double> _position;
+  late double _from = widget.index.toDouble();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+    );
+    _position = AlwaysStoppedAnimation(widget.index.toDouble());
+  }
+
+  @override
+  void didUpdateWidget(_NavIndicator old) {
+    super.didUpdateWidget(old);
+    if (old.index == widget.index) return;
+
+    _from = _position.value;
+    _position = Tween<double>(
+      begin: _from,
+      end: widget.index.toDouble(),
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        // A little overshoot on the way in reads as momentum being absorbed.
+        curve: Curves.easeOutBack,
+      ),
+    );
+
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
+    } else {
+      _controller
+        ..reset()
+        ..forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.sq;
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final slot = constraints.maxWidth / widget.count;
+
+            return RepaintBoundary(
+              child: AnimatedBuilder(
+                animation: _position,
+                builder: (context, _) {
+                  final at = _position.value;
+                  // Stretch along the axis of travel, proportional to speed —
+                  // the capsule elongates as it leaves and settles on arrival.
+                  final speed = (at - _from).abs().clamp(0.0, 1.0);
+                  final travel = _controller.isAnimating
+                      ? math.sin(_controller.value * math.pi) * speed
+                      : 0.0;
+                  final width = slot * 0.82 * (1 + travel * 0.18);
+                  // Tall enough to contain the icon *and* the label with real
+                  // breathing room. The previous 40px sat shorter than the
+                  // 44px content column, so it clipped through the label and
+                  // read as vertically squashed.
+                  final height =
+                      (MainShell.barHeight - 12) * (1 - travel * 0.08);
+
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: at * slot + (slot - width) / 2,
+                        top: (MainShell.barHeight - height) / 2,
+                        width: width,
+                        height: height,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                p.accentWash(0.34),
+                                p.accentWash(0.10),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(AppRadii.lg),
+                            border: Border.all(
+                              color: AppColors.accent.withValues(alpha: 0.40),
+                              width: 1.2,
+                            ),
+                            boxShadow: AppShadows.glow(
+                              AppColors.accent,
+                              strength: 0.24 + travel * 0.18,
+                            ),
+                          ),
+                          // A bright top edge, the way a lit physical key
+                          // catches light — this is what sells "premium"
+                          // rather than "a coloured rectangle".
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: FractionallySizedBox(
+                              widthFactor: 0.55,
+                              child: Container(
+                                height: 2,
+                                margin: const EdgeInsets.only(top: 1),
+                                decoration: BoxDecoration(
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadii.pill),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      AppColors.accent.withValues(alpha: 0),
+                                      AppColors.accent.withValues(alpha: 0.85),
+                                      AppColors.accent.withValues(alpha: 0),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
         ),
       ),
     );
@@ -296,27 +442,34 @@ class _NavItem extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // The indicator itself is drawn once, behind the whole row; each
-            // item only animates its own icon swap and a small lift.
+            // item only animates its own icon swap, a small lift and a scale
+            // bump so the selected tab reads as raised off the bar.
             AnimatedSlide(
               duration: AppMotion.normal,
               curve: AppMotion.emphasized,
-              offset: Offset(0, selected ? -0.06 : 0),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
-                ),
-                child: AnimatedSwitcher(
-                  duration: AppMotion.fast,
-                  transitionBuilder: (child, animation) => ScaleTransition(
-                    scale: Tween<double>(begin: 0.6, end: 1).animate(animation),
-                    child: FadeTransition(opacity: animation, child: child),
+              offset: Offset(0, selected ? -0.08 : 0),
+              child: AnimatedScale(
+                duration: AppMotion.normal,
+                curve: Curves.easeOutBack,
+                scale: selected ? 1.14 : 1,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 2,
                   ),
-                  child: Icon(
-                    selected ? tab.selectedIcon : tab.icon,
-                    key: ValueKey(selected),
-                    size: 22,
-                    color: color,
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.fast,
+                    transitionBuilder: (child, animation) => ScaleTransition(
+                      scale:
+                          Tween<double>(begin: 0.6, end: 1).animate(animation),
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                    child: Icon(
+                      selected ? tab.selectedIcon : tab.icon,
+                      key: ValueKey(selected),
+                      size: 22,
+                      color: color,
+                    ),
                   ),
                 ),
               ),

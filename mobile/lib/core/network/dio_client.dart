@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/config/app_config.dart';
+import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/features/auth/data/auth_token_store.dart';
 
 final dioProvider = Provider<Dio>((ref) {
@@ -17,8 +18,30 @@ final dioProvider = Provider<Dio>((ref) {
   );
 
   dio.interceptors.add(_AuthInterceptor(ref, dio));
+  dio.interceptors.add(_LanguageInterceptor(ref));
   return dio;
 });
+
+/// Advertises the app language on every request.
+///
+/// Endpoints that localize take an explicit `language` parameter — this header
+/// is the fallback for anything that does not, and it is what server logs and
+/// analytics read to tell how many players are actually on each language.
+///
+/// It deliberately carries the *app* language: content language is a property
+/// of a run, not of a connection, and travels in the request body where it
+/// cannot be confused with chrome.
+class _LanguageInterceptor extends Interceptor {
+  _LanguageInterceptor(this._ref);
+
+  final Ref _ref;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    options.headers['Accept-Language'] = _ref.read(appLanguageProvider).code;
+    handler.next(options);
+  }
+}
 
 class _AuthInterceptor extends Interceptor {
   _AuthInterceptor(this._ref, this._dio);

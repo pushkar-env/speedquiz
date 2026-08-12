@@ -7,6 +7,7 @@ from hashlib import sha256
 from sqlalchemy import func, select
 
 from app.core.database import session_scope
+from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage
 from app.core.logging import get_logger
 from app.models import DifficultyLabel, Question, QuestionOption, QuestionStatus, Topic
 
@@ -864,9 +865,179 @@ BANK: list[tuple] = [
 ]
 
 
-def _hash_question(topic_slug: str, prompt: str, options: list[str]) -> str:
-    raw = "|".join([topic_slug, prompt.strip().lower(), *[o.strip().lower() for o in options]])
-    return sha256(raw.encode("utf-8")).hexdigest()
+# Hindi starter bank.
+#
+# Small on purpose. Its job is to make Hindi playable the moment the app ships
+# rather than after the first generation sweep completes — a language that is
+# switchable but has nothing behind it reads as broken. The bank then grows the
+# same way every other language does, through app.services.bank_inventory.
+#
+# Same tuple shape as BANK above: (topic_slug, difficulty_label, difficulty,
+# prompt, options[4], correct_index, explanation).
+HINDI_BANK: list[tuple] = [
+    # --- सामान्य ज्ञान ---
+    ("general-knowledge", "easy", 0.25, "भारत की राजधानी कौन सी है?",
+     ["मुंबई", "कोलकाता", "नई दिल्ली", "चेन्नई"], 2,
+     "नई दिल्ली भारत की राजधानी है और यहीं संसद तथा राष्ट्रपति भवन स्थित हैं।"),
+    ("general-knowledge", "easy", 0.28, "एक वर्ष में कितने महीने होते हैं?",
+     ["10", "11", "12", "13"], 2,
+     "ग्रेगोरियन कैलेंडर में एक वर्ष बारह महीनों का होता है।"),
+    ("general-knowledge", "medium", 0.5, "पानी का रासायनिक सूत्र क्या है?",
+     ["CO2", "H2O", "O2", "NaCl"], 1,
+     "पानी के एक अणु में दो हाइड्रोजन परमाणु और एक ऑक्सीजन परमाणु होते हैं, इसलिए इसका सूत्र H2O है।"),
+    ("general-knowledge", "medium", 0.55, "भारत का राष्ट्रीय पक्षी कौन सा है?",
+     ["कबूतर", "मोर", "तोता", "बाज"], 1,
+     "मोर को 1963 में भारत का राष्ट्रीय पक्षी घोषित किया गया था।"),
+    ("general-knowledge", "medium", 0.52, "इंद्रधनुष में परंपरागत रूप से कितने रंग गिने जाते हैं?",
+     ["5", "6", "7", "9"], 2,
+     "इंद्रधनुष के सात रंग माने जाते हैं — लाल, नारंगी, पीला, हरा, नीला, जामुनी और बैंगनी।"),
+    ("general-knowledge", "hard", 0.72, "संयुक्त राष्ट्र संघ की स्थापना किस वर्ष हुई थी?",
+     ["1919", "1945", "1950", "1962"], 1,
+     "दूसरे विश्व युद्ध के बाद 1945 में संयुक्त राष्ट्र संघ की स्थापना हुई।"),
+
+    # --- भारतीय इतिहास ---
+    ("indian-history", "easy", 0.3, "भारत को स्वतंत्रता किस वर्ष मिली?",
+     ["1942", "1945", "1947", "1950"], 2,
+     "15 अगस्त 1947 को भारत ब्रिटिश शासन से स्वतंत्र हुआ।"),
+    ("indian-history", "easy", 0.3, "भारत का संविधान किस वर्ष लागू हुआ?",
+     ["1947", "1948", "1950", "1952"], 2,
+     "26 जनवरी 1950 को भारत का संविधान लागू हुआ, इसीलिए यह दिन गणतंत्र दिवस है।"),
+    ("indian-history", "medium", 0.5, "ताजमहल का निर्माण किस मुगल सम्राट ने करवाया था?",
+     ["अकबर", "जहाँगीर", "शाहजहाँ", "औरंगज़ेब"], 2,
+     "शाहजहाँ ने अपनी पत्नी मुमताज़ महल की स्मृति में आगरा में ताजमहल बनवाया।"),
+    ("indian-history", "medium", 0.55, "भारत के पहले प्रधानमंत्री कौन थे?",
+     ["सरदार पटेल", "जवाहरलाल नेहरू", "डॉ. राजेंद्र प्रसाद", "लाल बहादुर शास्त्री"], 1,
+     "जवाहरलाल नेहरू 1947 में भारत के पहले प्रधानमंत्री बने।"),
+    ("indian-history", "hard", 0.72, "मौर्य साम्राज्य की स्थापना किसने की थी?",
+     ["अशोक", "चंद्रगुप्त मौर्य", "बिंबिसार", "समुद्रगुप्त"], 1,
+     "चंद्रगुप्त मौर्य ने चाणक्य की सहायता से लगभग 322 ईसा पूर्व में मौर्य साम्राज्य की नींव रखी।"),
+    ("indian-history", "hard", 0.75, "1857 के विद्रोह की शुरुआत किस छावनी से मानी जाती है?",
+     ["कानपुर", "मेरठ", "झांसी", "लखनऊ"], 1,
+     "10 मई 1857 को मेरठ छावनी में सिपाहियों के विद्रोह से इस संग्राम की शुरुआत हुई।"),
+
+    # --- भूगोल ---
+    ("geography", "easy", 0.28, "विश्व का सबसे बड़ा महासागर कौन सा है?",
+     ["अटलांटिक महासागर", "हिंद महासागर", "प्रशांत महासागर", "आर्कटिक महासागर"], 2,
+     "प्रशांत महासागर क्षेत्रफल और गहराई दोनों में सबसे बड़ा महासागर है।"),
+    ("geography", "easy", 0.3, "भारत की सबसे लंबी नदी कौन सी है?",
+     ["यमुना", "गोदावरी", "गंगा", "नर्मदा"], 2,
+     "गंगा भारत में बहने वाली सबसे लंबी नदी है, जिसकी लंबाई लगभग 2,525 किलोमीटर है।"),
+    ("geography", "medium", 0.5, "माउंट एवरेस्ट किस पर्वत श्रृंखला में स्थित है?",
+     ["आल्प्स", "हिमालय", "एंडीज़", "अरावली"], 1,
+     "माउंट एवरेस्ट हिमालय में नेपाल और चीन की सीमा पर स्थित है।"),
+    ("geography", "medium", 0.55, "थार मरुस्थल मुख्य रूप से किस राज्य में फैला है?",
+     ["गुजरात", "राजस्थान", "हरियाणा", "मध्य प्रदेश"], 1,
+     "थार मरुस्थल का सबसे बड़ा भाग राजस्थान में है।"),
+    ("geography", "medium", 0.52, "पृथ्वी की भूमध्य रेखा का अक्षांश कितना होता है?",
+     ["0 डिग्री", "23.5 डिग्री", "45 डिग्री", "90 डिग्री"], 0,
+     "भूमध्य रेखा 0 डिग्री अक्षांश पर है और पृथ्वी को उत्तरी व दक्षिणी गोलार्ध में बाँटती है।"),
+    ("geography", "hard", 0.75, "क्षेत्रफल की दृष्टि से भारत का सबसे बड़ा राज्य कौन सा है?",
+     ["मध्य प्रदेश", "महाराष्ट्र", "राजस्थान", "उत्तर प्रदेश"], 2,
+     "क्षेत्रफल के हिसाब से राजस्थान भारत का सबसे बड़ा राज्य है।"),
+
+    # --- विज्ञान ---
+    ("science", "easy", 0.3, "पौधे प्रकाश संश्लेषण में कौन सी गैस लेते हैं?",
+     ["ऑक्सीजन", "नाइट्रोजन", "कार्बन डाइऑक्साइड", "हाइड्रोजन"], 2,
+     "पौधे कार्बन डाइऑक्साइड लेते हैं और ऑक्सीजन छोड़ते हैं।"),
+    ("science", "easy", 0.28, "मानव शरीर का सबसे बड़ा अंग कौन सा है?",
+     ["यकृत", "मस्तिष्क", "त्वचा", "फेफड़ा"], 2,
+     "त्वचा पूरे शरीर को ढकती है और क्षेत्रफल के हिसाब से सबसे बड़ा अंग है।"),
+    ("science", "medium", 0.5, "सोने का रासायनिक प्रतीक क्या है?",
+     ["Go", "Gd", "Au", "Ag"], 2,
+     "सोने का प्रतीक Au है, जो लैटिन शब्द 'ऑरम' से आया है।"),
+    ("science", "medium", 0.55, "कोशिका का ऊर्जा गृह किसे कहा जाता है?",
+     ["केंद्रक", "राइबोसोम", "माइटोकॉन्ड्रिया", "गॉल्जी काय"], 2,
+     "माइटोकॉन्ड्रिया कोशिका की अधिकांश ऊर्जा (ATP) बनाते हैं, इसलिए इसे ऊर्जा गृह कहते हैं।"),
+    ("science", "medium", 0.52, "समुद्र तल पर पानी कितने डिग्री सेल्सियस पर उबलता है?",
+     ["90°C", "100°C", "110°C", "120°C"], 1,
+     "सामान्य वायुमंडलीय दाब पर पानी 100°C पर उबलता है।"),
+    ("science", "hard", 0.75, "ध्वनि किस माध्यम में सबसे तेज़ चलती है?",
+     ["हवा", "पानी", "इस्पात", "निर्वात"], 2,
+     "ध्वनि एक यांत्रिक तरंग है और घने, कठोर माध्यम जैसे इस्पात में सबसे तेज़ चलती है।"),
+
+    # --- क्रिकेट ---
+    ("cricket", "easy", 0.28, "एक ओवर में कितनी वैध गेंदें फेंकी जाती हैं?",
+     ["4", "5", "6", "8"], 2,
+     "एक ओवर में एक ही गेंदबाज़ द्वारा छह वैध गेंदें फेंकी जाती हैं।"),
+    ("cricket", "easy", 0.3, "भारत ने पहली बार क्रिकेट विश्व कप किस वर्ष जीता?",
+     ["1975", "1983", "1987", "1992"], 1,
+     "कपिल देव की कप्तानी में भारत ने 1983 में पहला विश्व कप जीता था।"),
+    ("cricket", "medium", 0.5, "टेस्ट क्रिकेट में एक पारी में अधिकतम कितने खिलाड़ी बल्लेबाज़ी करते हैं?",
+     ["9", "10", "11", "12"], 2,
+     "एक टीम में ग्यारह खिलाड़ी होते हैं, इसलिए एक पारी में अधिकतम ग्यारह बल्लेबाज़ आते हैं।"),
+    ("cricket", "medium", 0.55, "अंतरराष्ट्रीय क्रिकेट में सर्वाधिक शतक किस भारतीय बल्लेबाज़ के नाम हैं?",
+     ["विराट कोहली", "सचिन तेंदुलकर", "राहुल द्रविड़", "सुनील गावस्कर"], 1,
+     "सचिन तेंदुलकर के नाम अंतरराष्ट्रीय क्रिकेट में 100 शतक दर्ज हैं।"),
+    ("cricket", "medium", 0.52, "टी20 अंतरराष्ट्रीय मैच में प्रत्येक टीम कितने ओवर खेलती है?",
+     ["10", "15", "20", "50"], 2,
+     "टी20 प्रारूप में प्रत्येक टीम को बीस ओवर मिलते हैं।"),
+    ("cricket", "hard", 0.72, "क्रिकेट में 'हैट्रिक' का क्या अर्थ है?",
+     ["लगातार तीन गेंदों पर तीन विकेट", "एक ओवर में तीन छक्के",
+      "तीन लगातार शतक", "तीन रन आउट"], 0,
+     "जब कोई गेंदबाज़ लगातार तीन गेंदों पर तीन विकेट लेता है तो उसे हैट्रिक कहते हैं।"),
+]
+
+
+def _hash_question(
+    topic_slug: str,
+    prompt: str,
+    options: list[str],
+    language: str = DEFAULT_LANGUAGE.value,
+) -> str:
+    """Seed identity key, used to make re-seeding idempotent.
+
+    The default language is deliberately *absent* from the hashed material:
+    every English seed row already in a deployed database was hashed without
+    it, and folding it in would make each of them look new and re-insert the
+    whole bank on the next boot.
+    """
+    parts = [topic_slug]
+    if language != DEFAULT_LANGUAGE.value:
+        parts.append(language)
+    parts.append(prompt.strip().lower())
+    parts.extend(o.strip().lower() for o in options)
+    return sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+async def _insert_bank(
+    db,
+    topics: dict,
+    bank: list[tuple],
+    language: str,
+    touched_topic_ids: set,
+) -> int:
+    """Insert every unseen row of one language's bank. Returns how many landed."""
+    inserted = 0
+    for topic_slug, diff_label, diff_value, prompt, options, correct, explanation in bank:
+        topic = topics.get(topic_slug)
+        if not topic:
+            continue
+        content_hash = _hash_question(topic_slug, prompt, options, language)
+        already = await db.scalar(select(Question.id).where(Question.content_hash == content_hash))
+        if already:
+            continue
+        q = Question(
+            topic_id=topic.id,
+            prompt=prompt,
+            explanation=explanation,
+            language=language,
+            source="curated_seed",
+            difficulty=diff_value,
+            difficulty_label=DifficultyLabel(diff_label),
+            correct_option_index=correct,
+            quality_score=92,
+            status=QuestionStatus.ACTIVE,
+            content_hash=content_hash,
+            generation_meta={"seed": True, "language": language},
+        )
+        db.add(q)
+        await db.flush()
+        for i, text in enumerate(options):
+            db.add(QuestionOption(question_id=q.id, position=i, text=text))
+        topic.question_count = (topic.question_count or 0) + 1
+        touched_topic_ids.add(topic.id)
+        inserted += 1
+    return inserted
 
 
 async def seed_question_bank() -> None:
@@ -875,36 +1046,13 @@ async def seed_question_bank() -> None:
             t.slug: t
             for t in (await db.execute(select(Topic))).scalars().all()
         }
-        inserted = 0
         touched_topic_ids: set = set()
-        for topic_slug, diff_label, diff_value, prompt, options, correct, explanation in BANK:
-            topic = topics.get(topic_slug)
-            if not topic:
-                continue
-            content_hash = _hash_question(topic_slug, prompt, options)
-            already = await db.scalar(select(Question.id).where(Question.content_hash == content_hash))
-            if already:
-                continue
-            q = Question(
-                topic_id=topic.id,
-                prompt=prompt,
-                explanation=explanation,
-                source="curated_seed",
-                difficulty=diff_value,
-                difficulty_label=DifficultyLabel(diff_label),
-                correct_option_index=correct,
-                quality_score=92,
-                status=QuestionStatus.ACTIVE,
-                content_hash=content_hash,
-                generation_meta={"seed": True},
-            )
-            db.add(q)
-            await db.flush()
-            for i, text in enumerate(options):
-                db.add(QuestionOption(question_id=q.id, position=i, text=text))
-            topic.question_count = (topic.question_count or 0) + 1
-            touched_topic_ids.add(topic.id)
-            inserted += 1
+        inserted = 0
+        for language, bank in (
+            (DEFAULT_LANGUAGE.value, BANK),
+            (ContentLanguage.HINDI.value, HINDI_BANK),
+        ):
+            inserted += await _insert_bank(db, topics, bank, language, touched_topic_ids)
 
         for topic_id in touched_topic_ids:
             topic = next(t for t in topics.values() if t.id == topic_id)

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/nav.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/entitlements/presentation/premium_offer.dart';
 import 'package:speedquiz/features/profile/presentation/widgets/profile_widgets.dart';
@@ -40,9 +41,9 @@ class PremiumScreen extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              const SubScreenHeader(
-                title: 'Premium',
-                subtitle: 'Support the game, unlock everything',
+              SubScreenHeader(
+                title: context.l10n.profilePremium,
+                subtitle: context.l10n.premiumUnlockEverything,
               ),
               Expanded(
                 child: SingleChildScrollView(

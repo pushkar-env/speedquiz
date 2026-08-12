@@ -64,7 +64,7 @@ Notes:
 
 ## Documentation
 
-Three guides, each self-contained:
+Each guide is self-contained:
 
 | Guide | Covers |
 |---|---|
@@ -72,6 +72,7 @@ Three guides, each self-contained:
 | **[docs/TESTING_PAYMENTS.md](docs/TESTING_PAYMENTS.md)** | Testing Premium end to end — test mode with no Play Console, then the real Play sandbox |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Railway + Neon + Upstash + Cloudflare Worker, scaling, load testing, troubleshooting, VPS alternative |
 | **[docs/RELEASE.md](docs/RELEASE.md)** | Signing, App Links, IAP verification, Play Console, pre-submission checklist |
+| **[docs/LANGUAGES.md](docs/LANGUAGES.md)** | The two language systems — app chrome (English/Hindi) and the per-run quiz language, and how to add a third |
 
 ## Quick start
 
@@ -126,12 +127,21 @@ Point the app at a backend:
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#3-run-the-app) for the details.
 
-Play Store App Bundle:
+### Android builds
+
+Use the script — it supplies both `--dart-define`s, and getting either wrong
+fails quietly rather than loudly (no `API_BASE_URL` means the app only works on
+an emulator; the Railway URL instead of the Cloudflare Worker means it works on
+Wi-Fi and dies on mobile data):
 
 ```bash
-# After creating mobile/android/key.properties from key.properties.example
-flutter build appbundle --release --dart-define=API_BASE_URL=https://speedquiz.app
+scripts/build_android.sh              # release APK for sideloading
+scripts/build_android.sh appbundle    # AAB for Play Console
 ```
+
+Override the target API with `API_BASE_URL=... scripts/build_android.sh`. The
+Google client id is read from `.env`. The AAB path additionally needs
+`mobile/android/key.properties` (see `key.properties.example`).
 
 ### Backend tests
 
@@ -162,9 +172,32 @@ pytest
 17. **Phase 9** — Design system + landing/sign-out + full UI pass ✅
 18. **Phase 10** — Screen split, profile customisation, audio, random topic ✅
 19. **Phase 11** — Production subscriptions: monthly/annual, store webhooks, grace + refund handling, premium cosmetics ✅
-20. **Next** — Play Console upload (keystore + AAB) → internal test → production
+20. **Phase 12** — Game feel: living UI, mode cull + survival rework, setup layout ✅
+21. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/RELEASE.md](docs/RELEASE.md).
+
+## Game modes
+
+Three modes, each with a distinct reason to replay. Every rule below is
+server-authoritative; the client mirrors a few numbers for the HUD only.
+
+| Mode | Shape | Rules module |
+|---|---|---|
+| **Casual** | Endless. Play for the streak. | shared scoring |
+| **Speedrun** | The clock is the game — right answers buy time, mistakes burn it. | `app/services/speedrun.py` |
+| **Survival** | Three lives, and it keeps getting faster. | `app/services/survival.py` |
+
+**Survival** is built around four interlocking mechanics: the per-question
+limit tightens with depth (so a run always ends), lives come back on a streak
+that gets longer each time (comebacks that can't be farmed), the final life
+pays a **1.5× last-stand multiplier** (the brink is the best place to be), and
+every tenth correct answer pays a checkpoint bonus that grows with depth.
+
+**Negative** and **Sudden Death** were retired — negative was casual with the
+sign flipped, and sudden death ended most runs on question three. Their enum
+labels remain in the database because `quiz_sessions.mode` and `scores.mode`
+reference them on historical rows; they are simply no longer selectable.
 
 ## Progression & engagement
 

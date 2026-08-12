@@ -20,8 +20,18 @@ this runs:
 cd backend && alembic upgrade head
 ```
 
-Run it against the **Neon** database (the one `DATABASE_URL` points at on
-Railway), not a local one. Confirm it landed:
+> **Run this from the repo root, not from `backend/`.** Settings resolve
+> `env_file=".env"` relative to the working directory, so `cd backend && alembic
+> ...` finds no `.env`, silently falls back to the shipped
+> `localhost:5432/speedquiz` default, and migrates a local database instead. It
+> reports success either way. If you must run from `backend/`, pass the URL
+> explicitly:
+>
+> ```bash
+> DATABASE_URL_SYNC="$(grep ^DATABASE_URL_SYNC= ../.env | cut -d= -f2-)" alembic upgrade head
+> ```
+
+Confirm it landed against Neon:
 
 ```sql
 select column_name from information_schema.columns

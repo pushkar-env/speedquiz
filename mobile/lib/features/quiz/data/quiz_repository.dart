@@ -9,11 +9,17 @@ class QuizRepository {
 
   final Dio _dio;
 
+  /// Starts a run.
+  ///
+  /// [language] is the content language for the whole session. Omitted, the
+  /// server falls back to the language this player last used — which is what
+  /// keeps a client that predates languages working unchanged.
   Future<QuizSession> createSession({
     required String topicId,
     required String mode,
     required String difficulty,
     bool adaptive = false,
+    String? language,
   }) async {
     final response = await _dio.post(
       '${AppConfig.apiPrefix}/quiz/sessions',
@@ -22,6 +28,7 @@ class QuizRepository {
         'mode': mode,
         'difficulty': adaptive ? 'medium' : difficulty,
         'adaptive': adaptive,
+        'language': ?language,
       },
     );
     return QuizSession.fromJson(response.data as Map<String, dynamic>);

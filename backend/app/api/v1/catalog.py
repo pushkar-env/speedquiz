@@ -1,10 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.orm import selectinload
 
 from app.auth.deps import CurrentUser, DbSession
+from app.core.languages import ContentLanguage, normalize_language
 from app.models import Topic, TopicCategory
 from app.payments.cosmetics import can_use_avatar, is_known_avatar, profile_flair
 from app.schemas.profile import (
@@ -14,8 +15,42 @@ from app.schemas.profile import (
     TopicOut,
     UpdateProfileRequest,
 )
+from app.services.bank_inventory import count_active_by_language
+from app.services.localization import (
+    localized_category_name,
+    localized_topic_description,
+    localized_topic_name,
+)
 
 router = APIRouter(tags=["catalog"])
+
+
+def _serialize_topic(
+    topic: Topic,
+    language: ContentLanguage,
+    counts: dict[str, int],
+) -> TopicOut:
+    """One topic, named in the requested language, with its per-language stock.
+
+    Names follow the *app* language here — this is the browsing catalog, which
+    is chrome. Whether a topic can actually be played in a given language is a
+    separate question, answered by `question_counts`.
+    """
+    payload = TopicOut.model_validate(topic)
+    return payload.model_copy(
+        update={
+            "name": localized_topic_name(topic, language),
+            "description": localized_topic_description(topic, language),
+            "question_counts": counts,
+            "category": (
+                payload.category.model_copy(
+                    update={"name": localized_category_name(topic.category, language)}
+                )
+                if payload.category is not None and topic.category is not None
+                else payload.category
+            ),
+        }
+    )
 
 
 @router.get("/topics", response_model=TopicListResponse)
@@ -26,7 +61,12 @@ async def list_topics(
     q: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    language: str | None = Query(
+        default=None,
+        description="App language for display names (en, hi). Unknown tags fall back to en.",
+    ),
 ) -> TopicListResponse:
+    resolved = normalize_language(language)
     stmt = (
         select(Topic)
         .options(selectinload(Topic.category))
@@ -37,26 +77,41 @@ async def list_topics(
     if trending is not None:
         stmt = stmt.where(Topic.is_trending.is_(trending))
     if q:
+        # Search spans the English source and every translation, so typing
+        # "विज्ञान" and typing "science" both find the same topic.
         like = f"%{q.lower()}%"
-        stmt = stmt.where(func.lower(Topic.name).like(like))
+        stmt = stmt.where(
+            func.lower(Topic.name).like(like)
+            | func.lower(func.cast(Topic.name_i18n, String)).like(like)
+        )
 
     total = await db.scalar(select(func.count()).select_from(stmt.subquery()))
     result = await db.execute(
         stmt.order_by(Topic.popularity_score.desc(), Topic.name.asc()).limit(limit).offset(offset)
     )
-    topics = result.scalars().all()
-    return TopicListResponse(items=[TopicOut.model_validate(t) for t in topics], total=total or 0)
+    topics = list(result.scalars().all())
+    counts = await count_active_by_language(db, [t.id for t in topics])
+    return TopicListResponse(
+        items=[_serialize_topic(t, resolved, counts.get(t.id, {})) for t in topics],
+        total=total or 0,
+        language=resolved.value,
+    )
 
 
 @router.get("/topics/{topic_id}", response_model=TopicOut)
-async def get_topic(topic_id: UUID, db: DbSession) -> TopicOut:
+async def get_topic(
+    topic_id: UUID,
+    db: DbSession,
+    language: str | None = Query(default=None),
+) -> TopicOut:
     result = await db.execute(
         select(Topic).options(selectinload(Topic.category)).where(Topic.id == topic_id)
     )
     topic = result.scalar_one_or_none()
     if not topic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found")
-    return TopicOut.model_validate(topic)
+    counts = await count_active_by_language(db, [topic.id])
+    return _serialize_topic(topic, normalize_language(language), counts.get(topic.id, {}))
 
 
 @router.get("/users/me", response_model=ProfileOut)
@@ -77,6 +132,8 @@ async def get_my_profile(user: CurrentUser) -> ProfileOut:
         favorite_topic_ids=profile.favorite_topic_ids or [],
         onboarding_completed=profile.onboarding_completed,
         theme_preference=profile.theme_preference,
+        app_language=normalize_language(profile.app_language).value,
+        quiz_language=normalize_language(profile.quiz_language).value,
         is_premium=user.is_premium,
         flair=profile_flair(user),
         statistics=ProfileStatsOut(
@@ -127,5 +184,9 @@ async def update_my_profile(
         profile.favorite_topic_ids = [str(t) for t in payload.favorite_topic_ids]
     if payload.onboarding_completed is not None:
         profile.onboarding_completed = payload.onboarding_completed
+    if payload.app_language is not None:
+        profile.app_language = normalize_language(payload.app_language).value
+    if payload.quiz_language is not None:
+        profile.quiz_language = normalize_language(payload.quiz_language).value
     await db.flush()
     return await get_my_profile(user)

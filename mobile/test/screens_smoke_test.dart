@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/achievements/data/achievements_repository.dart';
 import 'package:speedquiz/features/achievements/domain/achievement_models.dart';
@@ -255,7 +257,11 @@ class _SignedInController extends AuthController {
   Future<void> bootstrap() async => state = const AuthAuthenticated(_user);
 }
 
-Widget _app(Widget screen, {Brightness brightness = Brightness.dark}) {
+Widget _app(
+  Widget screen, {
+  Brightness brightness = Brightness.dark,
+  AppLanguage language = AppLanguage.english,
+}) {
   return ProviderScope(
     overrides: [
       authControllerProvider.overrideWith((ref) => _SignedInController()),
@@ -268,8 +274,17 @@ Widget _app(Widget screen, {Brightness brightness = Brightness.dark}) {
     ],
     child: MaterialApp(
       theme: brightness == Brightness.dark
-          ? AppTheme.dark()
-          : AppTheme.light(),
+          ? AppTheme.dark(script: language.script)
+          : AppTheme.light(script: language.script),
+      locale: language.locale,
+      localizationsDelegates: const [
+        SqLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLanguage.supportedLocales,
+
       home: Builder(
         builder: (context) => MediaQuery(
           data: MediaQuery.of(context).copyWith(disableAnimations: true),
@@ -295,9 +310,17 @@ Future<void> _expectBuilds(
   WidgetTester tester,
   Widget screen, {
   Brightness brightness = Brightness.dark,
+  AppLanguage language = AppLanguage.english,
 }) async {
   _usePhoneSurface(tester);
-  await tester.pumpWidget(_app(screen, brightness: brightness));
+  await tester.pumpWidget(
+    _app(screen, brightness: brightness, language: language),
+  );
+  // Localization delegates resolve asynchronously, and the providers a screen
+  // watches only start once the tree below them builds — so the first frame is
+  // pumped, then the async work is drained, then the frame that actually has
+  // data is pumped.
+  await tester.pump();
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 600));
   expect(tester.takeException(), isNull);
@@ -439,9 +462,35 @@ void main() {
     // Chips render as "<icon>  <name>".
     expect(find.textContaining('Astronomy'), findsOneWidget);
 
-    // Mode cards sit below the fold; scrolling must reach the last one.
-    await tester.scrollUntilVisible(find.text('Sudden Death'), 300);
-    expect(find.text('Sudden Death'), findsOneWidget);
+    // Every mode is reachable without scrolling — burying them under the
+    // topic catalog is the exact regression this layout exists to prevent.
+    for (final mode in ['Casual', 'Speedrun', 'Survival']) {
+      expect(find.text(mode), findsOneWidget, reason: '$mode above the fold');
+    }
+    // Difficulty sits in the same fixed band. Matched on the exact chip label
+    // because the header also summarises the selection as "Casual · Medium".
+    // Only the leading chips are built — the rail scrolls horizontally.
+    expect(find.text('⚖️  Medium'), findsOneWidget);
+    // And the header reflects the current pick.
+    expect(find.text('Casual · Medium'), findsOneWidget);
+  });
+
+  testWidgets('quiz setup no longer offers the retired modes', (tester) async {
+    await _expectBuilds(tester, const QuizSetupScreen());
+    expect(find.text('Sudden Death'), findsNothing);
+    expect(find.text('Negative'), findsNothing);
+  });
+
+  testWidgets('quiz setup can filter the topic catalog', (tester) async {
+    await _expectBuilds(tester, const QuizSetupScreen());
+
+    await tester.enterText(find.byType(TextField), 'astro');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Astronomy'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'zzzz');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No topic matches'), findsOneWidget);
   });
 
   testWidgets('quiz setup preselects a topic passed from Explore',
@@ -514,5 +563,79 @@ void main() {
       const ProfileScreen(),
       brightness: Brightness.light,
     );
+  });
+
+  // --- Hindi ---------------------------------------------------------------
+  //
+  // Same screens, same assertions about laying out cleanly — the failure mode
+  // this catches is a fixed-width chip or a single-line label that fits the
+  // English string and overflows the Hindi one.
+
+  testWidgets('home lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      const HomeScreen(),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('विषय चुनें।\nरैंक चढ़ें।'), findsOneWidget);
+  });
+
+  testWidgets('explore lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      const ExploreScreen(),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('खोजें'), findsWidgets);
+  });
+
+  testWidgets('quiz setup lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      const QuizSetupScreen(),
+      language: AppLanguage.hindi,
+    );
+    // Both language options are offered by endonym, and the picker sits on the
+    // setup screen rather than being buried in settings.
+    expect(find.text('हिन्दी'), findsWidgets);
+    expect(find.text('विषय चुनें'), findsWidgets);
+  });
+
+  testWidgets('settings lays out in Hindi and offers both language axes',
+      (tester) async {
+    await _expectBuilds(
+      tester,
+      const SettingsScreen(),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('ऐप की भाषा'), findsOneWidget);
+    expect(find.text('क्विज़ की भाषा'), findsOneWidget);
+  });
+
+  testWidgets('results lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      QuizResultsScreen(args: QuizResultArgs(result: _result)),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('सटीकता'), findsOneWidget);
+  });
+
+  testWidgets('profile lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      const ProfileScreen(),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('प्रोफ़ाइल'), findsWidgets);
+  });
+
+  testWidgets('stats lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      const StatsScreen(),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('कुल सटीकता'), findsOneWidget);
   });
 }

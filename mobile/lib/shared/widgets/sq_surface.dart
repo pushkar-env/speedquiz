@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
+import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/core/utils/formatters.dart';
 import 'package:speedquiz/shared/widgets/sq_glow.dart';
@@ -225,7 +226,10 @@ class SqXpBar extends StatelessWidget {
         if (!compact)
           Row(
             children: [
-              Text('LEVEL $level', style: theme.textTheme.labelLarge),
+              Text(
+                context.l10n.levelBadge(level),
+                style: theme.textTheme.labelLarge,
+              ),
               const Spacer(),
               Text('$xp / $threshold XP', style: theme.textTheme.bodySmall),
             ],
@@ -235,7 +239,8 @@ class SqXpBar extends StatelessWidget {
         if (compact) ...[
           const SizedBox(height: 4),
           Text(
-            'LVL $level · $xp/$threshold XP',
+            '${context.l10n.levelShort} $level · $xp/$threshold '
+            '${context.l10n.xp}',
             style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
           ),
         ],
@@ -245,13 +250,15 @@ class SqXpBar extends StatelessWidget {
 }
 
 /// Rounded gradient progress track with an animated fill.
-class SqProgressTrack extends StatelessWidget {
+class SqProgressTrack extends StatefulWidget {
   const SqProgressTrack({
     super.key,
     required this.value,
     this.height = 8,
     this.gradient,
     this.animate = true,
+    this.fillFromZero = false,
+    this.fillDuration = const Duration(milliseconds: 1100),
   });
 
   final double value;
@@ -259,40 +266,104 @@ class SqProgressTrack extends StatelessWidget {
   final Gradient? gradient;
   final bool animate;
 
+  /// Sweep up from empty on first build rather than appearing already filled.
+  /// Pairs with [SqProgressRing.fillFromZero] on the profile card so the level
+  /// ring and the XP bar fill together.
+  final bool fillFromZero;
+
+  final Duration fillDuration;
+
+  @override
+  State<SqProgressTrack> createState() => _SqProgressTrackState();
+}
+
+class _SqProgressTrackState extends State<SqProgressTrack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<double> _fill;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.fillDuration);
+    _fill = _tween(0, widget.value);
+  }
+
+  Animation<double> _tween(double from, double to) {
+    return Tween<double>(begin: from, end: to).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!widget.fillFromZero) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
+    } else if (!_controller.isAnimating && _controller.value == 0) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void didUpdateWidget(SqProgressTrack old) {
+    super.didUpdateWidget(old);
+    if (old.value == widget.value || !widget.fillFromZero) return;
+    _fill = _tween(_fill.value, widget.value);
+    _controller
+      ..reset()
+      ..forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.sq;
-    final clamped = value.clamp(0.0, 1.0);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadii.pill),
       child: Container(
-        height: height,
+        height: widget.height,
         color: p.border.withValues(alpha: 0.6),
         child: Align(
           alignment: Alignment.centerLeft,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final width = constraints.maxWidth * clamped;
-              final bar = Container(
-                height: height,
-                width: width,
-                decoration: BoxDecoration(
-                  gradient: gradient ?? AppColors.brandGradient,
+              Widget bar(double fraction, {bool animated = false}) {
+                final decoration = BoxDecoration(
+                  gradient: widget.gradient ?? AppColors.brandGradient,
                   borderRadius: BorderRadius.circular(AppRadii.pill),
-                ),
-              );
-              if (!animate) return bar;
-              return AnimatedContainer(
-                duration: AppMotion.normal,
-                curve: AppMotion.enter,
-                height: height,
-                width: width,
-                decoration: BoxDecoration(
-                  gradient: gradient ?? AppColors.brandGradient,
-                  borderRadius: BorderRadius.circular(AppRadii.pill),
-                ),
-              );
+                );
+                final width = constraints.maxWidth * fraction.clamp(0.0, 1.0);
+                if (!animated) {
+                  return Container(
+                    height: widget.height,
+                    width: width,
+                    decoration: decoration,
+                  );
+                }
+                return AnimatedContainer(
+                  duration: AppMotion.normal,
+                  curve: AppMotion.enter,
+                  height: widget.height,
+                  width: width,
+                  decoration: decoration,
+                );
+              }
+
+              if (widget.fillFromZero) {
+                return AnimatedBuilder(
+                  animation: _fill,
+                  builder: (context, _) => bar(_fill.value),
+                );
+              }
+              return bar(widget.value, animated: widget.animate);
             },
           ),
         ),
@@ -360,16 +431,19 @@ class SqErrorState extends StatelessWidget {
     super.key,
     required this.message,
     this.onRetry,
-    this.title = 'Something went wrong',
+    this.title,
   });
 
-  final String title;
+  /// Defaults to the localized "something went wrong" when omitted — a const
+  /// default cannot reach the string table, so it resolves at build time.
+  final String? title;
   final String message;
   final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final resolvedTitle = title ?? context.l10n.somethingWentWrong;
 
     return SqSurface(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -390,7 +464,7 @@ class SqErrorState extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(
-            title,
+            resolvedTitle,
             style: theme.textTheme.titleMedium,
             textAlign: TextAlign.center,
           ),
@@ -413,10 +487,12 @@ class SqErrorState extends StatelessWidget {
 /// Small standalone retry control (kept separate so [SqErrorState] stays
 /// free of a dependency cycle with the button library).
 class SqRetryButton extends StatelessWidget {
-  const SqRetryButton({super.key, required this.onRetry, this.label = 'RETRY'});
+  const SqRetryButton({super.key, required this.onRetry, this.label});
 
   final VoidCallback onRetry;
-  final String label;
+
+  /// Defaults to the localized "retry"; see [SqErrorState.title].
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +513,7 @@ class SqRetryButton extends StatelessWidget {
             Icon(Icons.refresh_rounded, size: 16, color: p.accent),
             const SizedBox(width: 8),
             Text(
-              label,
+              label ?? context.l10n.retry.toUpperCase(),
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: p.accent,
                   ),

@@ -82,6 +82,8 @@ class UserProfile extends Equatable {
     required this.statistics,
     this.displayName,
     this.favoriteTopicIds = const [],
+    this.appLanguage,
+    this.quizLanguage,
   });
 
   final String userId;
@@ -97,6 +99,12 @@ class UserProfile extends Equatable {
   final bool isPremium;
   final List<String> favoriteTopicIds;
   final ProfileStats statistics;
+
+  /// Account-level language preferences, mirrored from the device so a
+  /// reinstall opens in the right language. Null on a server that predates
+  /// them — the device's own stored choice is the primary source.
+  final String? appLanguage;
+  final String? quizLanguage;
 
   String get name => displayName?.trim().isNotEmpty == true
       ? displayName!.trim()
@@ -115,6 +123,8 @@ class UserProfile extends Equatable {
       bestStreak: json['best_streak'] as int? ?? 0,
       dailyStreak: json['daily_streak'] as int? ?? 0,
       isPremium: json['is_premium'] as bool? ?? false,
+      appLanguage: json['app_language'] as String?,
+      quizLanguage: json['quiz_language'] as String?,
       favoriteTopicIds: (json['favorite_topic_ids'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .toList(),

@@ -1,0 +1,1029 @@
+import 'package:speedquiz/core/i18n/app_language.dart';
+import 'package:speedquiz/core/i18n/sq_strings.dart';
+
+/// English copy. The source of truth: new strings land here first and every
+/// other language implements against them.
+class SqStringsEn extends SqStrings {
+  const SqStringsEn();
+
+  @override
+  AppLanguage get language => AppLanguage.english;
+
+  // --- Common ------------------------------------------------------------
+  @override
+  String get appTagline => 'Think fast. Score faster.';
+  @override
+  String get retry => 'Retry';
+  @override
+  String get cancel => 'Cancel';
+  @override
+  String get close => 'Close';
+  @override
+  String get ok => 'OK';
+  @override
+  String get done => 'Done';
+  @override
+  String get save => 'Save';
+  @override
+  String get saving => 'Saving…';
+  @override
+  String get loading => 'Loading…';
+  @override
+  String get somethingWentWrong => 'Something went wrong';
+  @override
+  String get tryAgain => 'Try again';
+  @override
+  String get all => 'All';
+  @override
+  String get search => 'Search';
+  @override
+  String get comingSoon => 'Coming soon';
+  @override
+  String get today => 'Today';
+  @override
+  String get points => 'pts';
+  @override
+  String get level => 'Level';
+  @override
+  String get levelShort => 'LVL';
+  @override
+  String get xp => 'XP';
+  @override
+  String get coins => 'Coins';
+  @override
+  String get streak => 'Streak';
+  @override
+  String get bestStreak => 'Best streak';
+  @override
+  String get accuracy => 'Accuracy';
+  @override
+  String get score => 'Score';
+  @override
+  String get rank => 'Rank';
+  @override
+  String get you => 'You';
+  @override
+  String get player => 'Player';
+
+  @override
+  String questionsCount(int count) =>
+      count == 1 ? '1 question' : '$count questions';
+  @override
+  String topicsCount(int count) => count == 1 ? '1 topic' : '$count topics';
+  @override
+  String questionsCountCompact(String formatted) => '$formatted questions';
+  @override
+  String daysCount(int count) => count == 1 ? '1 day' : '$count days';
+
+  // --- Languages ---------------------------------------------------------
+  @override
+  String get appLanguageTitle => 'App language';
+  @override
+  String get appLanguageSubtitle => 'Menus, buttons and messages';
+  @override
+  String get quizLanguageTitle => 'Quiz language';
+  @override
+  String get quizLanguageSubtitle => 'The language questions are written in';
+  @override
+  String get quizLanguageHint =>
+      'Set per run — your app language stays as it is.';
+  @override
+  String languageChanged(String nativeName) => 'Language set to $nativeName';
+  @override
+  String languageBankEmpty(String nativeName) =>
+      'No $nativeName questions here yet';
+  @override
+  String languageBankEmptyHint(String nativeName) =>
+      'This topic has not been written in $nativeName yet. Pick another topic, '
+      'or switch the quiz language.';
+
+  // --- Errors ------------------------------------------------------------
+  @override
+  String get errorGeneric => 'Something went wrong. Please try again.';
+  @override
+  String get errorTimeout =>
+      'Request timed out. Check your connection and try again.';
+  @override
+  String get errorNoConnection =>
+      'Cannot reach the server. Check your connection and try again.';
+  @override
+  String get errorSessionExpired =>
+      'Session expired. Go home and reopen the app to sign in again.';
+  @override
+  String get errorTooManyRequests =>
+      'Too many requests. Please wait a moment and try again.';
+  @override
+  String get errorNoQuestion => 'No question available.';
+  @override
+  String get errorNoNextQuestion => 'No next question was returned.';
+  @override
+  String get errorUniqueCap =>
+      'You have hit the free unique-question limit for this topic. '
+      'Go Premium to keep playing it.';
+
+  // --- Shell -------------------------------------------------------------
+  @override
+  String get tabHome => 'Home';
+  @override
+  String get tabExplore => 'Explore';
+  @override
+  String get tabRanks => 'Ranks';
+  @override
+  String get tabProfile => 'Profile';
+  @override
+  String get pressBackAgainToExit => 'Press back again to exit';
+
+  // --- Home --------------------------------------------------------------
+  @override
+  String get greetingNight => 'BURNING THE MIDNIGHT OIL';
+  @override
+  String get greetingMorning => 'GOOD MORNING';
+  @override
+  String get greetingAfternoon => 'GOOD AFTERNOON';
+  @override
+  String get greetingEvening => 'GOOD EVENING';
+  @override
+  String greetingWithName(String greeting, String name) =>
+      '$greeting, ${name.toUpperCase()}';
+  @override
+  String get homeHeadline => 'Pick a topic.\nClimb the ranks.';
+  @override
+  String get homeReady => 'READY';
+  @override
+  String get homeServerScored => 'SERVER-SCORED';
+  @override
+  String get homeStartARun => 'Start a run';
+  @override
+  String get homeStartARunBody =>
+      'Timed questions, speed bonuses and streak multipliers. '
+      'Casual, Speedrun or Survival.';
+  @override
+  String get homePlay => 'PLAY';
+  @override
+  String get homeSurprise => 'SURPRISE';
+  @override
+  String get homeOpenProfile => 'Open your profile';
+  @override
+  String get homeJumpBackIn => 'Jump back in';
+  @override
+  String get homeJumpBackInSubtitle => 'Topics with the deepest question banks';
+  @override
+  String get homeTopicsUnavailable => 'Topics unavailable';
+  @override
+  String get homeCouldNotLoadTopics => 'Could not load topics.';
+  @override
+  String get homeBankFilling =>
+      'The question bank is still filling up. Check back shortly.';
+  @override
+  String get homeCustomTopic => 'Custom topic';
+  @override
+  String get homeCustomTopicBody =>
+      'Describe anything and the AI builds a quiz for it';
+  @override
+  String get homeNoTopicReady => 'No topic has questions ready yet.';
+
+  // --- Daily challenge ---------------------------------------------------
+  @override
+  String get dailyChallenge => 'Daily Challenge';
+  @override
+  String get dailyTapToRetry => 'Tap to retry';
+  @override
+  String get dailyUnavailable => 'Daily challenge is unavailable.';
+  @override
+  String get dailyTodayDone => 'Today is done';
+  @override
+  String dailyTodayDoneWithScore(String score) =>
+      'You scored $score on today’s challenge. A fresh set unlocks tomorrow.';
+  @override
+  String get dailyTodayDoneGeneric =>
+      'You already cleared today’s challenge. A fresh set unlocks tomorrow.';
+  @override
+  String get dailyNice => 'NICE';
+  @override
+  String dailyCleared(String score) => 'Cleared · $score pts';
+  @override
+  String get dailyClearedNoScore => 'Cleared · back tomorrow';
+  @override
+  String dailyResume(String topic) => 'Resume · $topic';
+  @override
+  String dailySubtitle(String topic, int questions) =>
+      '$topic · ${questionsCount(questions)}';
+
+  // --- Quiz setup --------------------------------------------------------
+  @override
+  String get setupTitle => 'New run';
+  @override
+  String get setupClose => 'Close';
+  @override
+  String get setupModeCasual => 'Casual';
+  @override
+  String get setupModeCasualHook => 'Endless. Play for the streak.';
+  @override
+  String get setupModeSpeedrun => 'Speedrun';
+  @override
+  String get setupModeSpeedrunHook => 'Answer fast to buy more time.';
+  @override
+  String get setupModeSurvival => 'Survival';
+  @override
+  String get setupModeSurvivalHook => 'Three lives. It gets faster.';
+  @override
+  String get difficultyEasy => 'Easy';
+  @override
+  String get difficultyMedium => 'Medium';
+  @override
+  String get difficultyHard => 'Hard';
+  @override
+  String get difficultyExpert => 'Expert';
+  @override
+  String get difficultyAdaptive => 'Adaptive';
+  @override
+  String get setupSurpriseMe => 'Surprise me';
+  @override
+  String get setupCustomTopic => 'Custom topic';
+  @override
+  String setupSearchTopics(int count) => 'Search $count topics';
+  @override
+  String get setupPickATopic => 'PICK A TOPIC';
+  @override
+  String startWithTopic(String topic) => 'START · ${topic.toUpperCase()}';
+  @override
+  String get setupPickTopicToStart => 'Pick a topic to start your run.';
+  @override
+  String get setupNoTopicReady => 'No topic has questions ready yet.';
+  @override
+  String setupRandomPicked(String topic) => '🎲 $topic it is.';
+  @override
+  String setupTopicStillWriting(String topic) =>
+      '$topic is still being written. Check back shortly.';
+  @override
+  String get setupBankFilling => 'Bank still filling';
+  @override
+  String get setupBankFillingBody =>
+      'No topic has questions ready yet. Build your own instead.';
+  @override
+  String get setupCreateCustomTopic => 'CREATE CUSTOM TOPIC';
+  @override
+  String setupNoTopicMatches(String query) => 'No topic matches "$query"';
+  @override
+  String get setupNoTopicMatchesBody =>
+      'Try a different word, or generate exactly what you want.';
+  @override
+  String get setupCouldNotLoadTopics => 'Could not load topics';
+  @override
+  String get setupComingSoonBody =>
+      'Questions are still being written for these.';
+  @override
+  String get setupUnavailableInLanguage => 'Not in this language yet';
+
+  // --- Quiz play ---------------------------------------------------------
+  @override
+  String get playPreparing => 'Preparing your challenge…';
+  @override
+  String get playPreparingHint =>
+      'Questions are served from the bank, not generated live.';
+  @override
+  String get playScoringRun => 'Scoring your run…';
+  @override
+  String get playGo => 'GO';
+  @override
+  String get playSpeedrunTitle => 'SPEEDRUN';
+  @override
+  String get playRuleRight => 'Right answers buy time back — faster pays more';
+  @override
+  String get playRuleWrong => 'Wrong burns 3 seconds';
+  @override
+  String get playRuleTighter => 'Every few questions the clock gets tighter';
+  @override
+  String get playEndRunTitle => 'End this run?';
+  @override
+  String get playEndRunBody =>
+      'Your score so far is banked and the run is scored now. '
+      'You cannot resume it afterwards.';
+  @override
+  String get playEndRunConfirm => 'END RUN';
+  @override
+  String get playKeepPlaying => 'KEEP PLAYING';
+  @override
+  String get playEndRun => 'End run';
+  @override
+  String get playRunInterrupted => 'Run interrupted';
+  @override
+  String get playFreeLimitReached => 'Free limit reached';
+  @override
+  String get playGoPremium => 'GO PREMIUM';
+  @override
+  String get playPaywallReason =>
+      'You hit the free unique-question limit for this topic.';
+  @override
+  String get playBackHome => 'BACK HOME';
+  @override
+  String get playLanguageUnavailableTitle => 'Not in this language yet';
+  @override
+  String questionNumber(int number) => 'Q$number';
+  @override
+  String get playRunClock => 'RUN CLOCK';
+  @override
+  String overdriveMultiplier(int streak) => 'OVERDRIVE ×$streak';
+  @override
+  String get playCorrect => 'Correct';
+  @override
+  String get playNotQuite => 'Not quite';
+  @override
+  String get playWhy => 'WHY';
+  @override
+  String get playNext => 'NEXT';
+  @override
+  String get playSeeResults => 'SEE RESULTS';
+  @override
+  String get playTeachMe => 'TEACH ME';
+  @override
+  String get playTeachMeThis => 'TEACH ME THIS';
+  @override
+  String get playTeaching => 'TEACHING…';
+  @override
+  String get playTeachError => 'Could not load a deeper explanation right now.';
+  @override
+  String get teachWhyCorrect => 'Why the answer is right';
+  @override
+  String get teachWhyWrong => 'Why yours missed';
+  @override
+  String get teachKeyConcept => 'Key concept';
+  @override
+  String get teachRemember => 'Remember this';
+  @override
+  String livesLeft(int lives) => lives == 1 ? '1 life left' : '$lives lives left';
+
+  // --- Results -----------------------------------------------------------
+  @override
+  String get resultsNewPersonalBest => 'NEW PERSONAL BEST';
+  @override
+  String get resultsRunComplete => 'RUN COMPLETE';
+  @override
+  String personalBestValue(String score) => 'Personal best $score';
+  @override
+  String get resultsAvgAnswer => 'Avg answer';
+  @override
+  String get resultsSurvived => 'Survived';
+  @override
+  String get resultsQuestions => 'Questions';
+  @override
+  String get resultsUnlocked => 'Unlocked';
+  @override
+  String get resultsOneAchievement => 'One new achievement';
+  @override
+  String achievementsUnlockedCount(int count) => '$count new achievements';
+  @override
+  String get resultsPlayAgain => 'PLAY AGAIN';
+  @override
+  String get resultsNewRun => 'NEW RUN';
+  @override
+  String get resultsShare => 'SHARE';
+  @override
+  String get resultsHome => 'HOME';
+  @override
+  String get resultsShareFailed => 'Could not open the share sheet.';
+  @override
+  String levelUpTo(int level) => 'LEVEL UP — you hit level $level';
+  @override
+  String levelBadge(int level) => 'LEVEL $level';
+  @override
+  String get resultsLoading => 'Loading your result…';
+  @override
+  String get resultsUnavailable => 'Result unavailable';
+  @override
+  String get resultsCouldNotLoad => 'This run could not be loaded.';
+  @override
+  String get resultsGoHome => 'GO HOME';
+  @override
+  String get resultsOpenSharedCard => 'Open the shared card instead';
+
+  // --- Explore -----------------------------------------------------------
+  @override
+  String get exploreTitle => 'Explore';
+  @override
+  String get exploreSearchHint => 'Search topics…';
+  @override
+  String get exploreNothingHere => 'Nothing here yet';
+  @override
+  String get exploreCategoryEmpty => 'This category has no topics stocked yet.';
+  @override
+  String exploreNoMatch(String query) =>
+      'No topic matches “$query”. Build it instead.';
+  @override
+  String get exploreTrendingNow => 'Trending now';
+  @override
+  String get exploreBankFilling => 'Bank filling up';
+  @override
+  String get exploreRandom => 'RANDOM';
+  @override
+  String get explorePlayRandom => 'Play a random topic';
+  @override
+  String get exploreCouldNotLoad => 'Could not load topics';
+  @override
+  String get exploreCheckConnection => 'Check your connection and try again.';
+  @override
+  String exploreReadyToPlay(int count) =>
+      count == 1 ? '1 topic ready to play' : '$count topics ready to play';
+
+  // --- Leaderboard -------------------------------------------------------
+  @override
+  String get leaderboardTitle => 'Leaderboard';
+  @override
+  String get leaderboardSubtitle =>
+      'Climb the weekly ranks and today’s daily board';
+  @override
+  String get leaderboardWeekly => 'Weekly';
+  @override
+  String get leaderboardDaily => 'Daily';
+  @override
+  String get leaderboardCouldNotLoad => 'Could not load ranks';
+  @override
+  String get leaderboardUnreachable => 'The board is not reachable right now.';
+  @override
+  String get leaderboardEmpty => 'No ranks yet';
+  @override
+  String get leaderboardEmptyDaily =>
+      'Finish today’s challenge to claim the board first.';
+  @override
+  String get leaderboardEmptyWeekly =>
+      'Play a run this week and your name lands here.';
+  @override
+  String yourBestIn(String period) => 'Your best · $period';
+
+  // --- Profile -----------------------------------------------------------
+  @override
+  String get profileTitle => 'Profile';
+  @override
+  String get profileDetails => 'Profile details';
+  @override
+  String get profileDetailsSubtitle =>
+      'Name, avatar and how you appear on boards';
+  @override
+  String get profileAchievements => 'Achievements';
+  @override
+  String get profileAchievementsSubtitle =>
+      'Track everything you have unlocked';
+  @override
+  String achievementsProgress(int unlocked, int total) =>
+      '$unlocked of $total unlocked';
+  @override
+  String get profileStatistics => 'Statistics';
+  @override
+  String get profileStatisticsSubtitle => 'Accuracy, speed and topic mastery';
+  @override
+  String get profilePremium => 'Premium';
+  @override
+  String get profileGoPremium => 'Go Premium';
+  @override
+  String get profilePremiumThanks => 'Thanks for supporting SpeedQuiz';
+  @override
+  String get profilePremiumPitch => 'Unlimited questions and custom topics';
+  @override
+  String get profileSettingsSubtitle => 'Appearance, language, sound, account';
+  @override
+  String get profileGuest => 'Guest';
+  @override
+  String get profileFree => 'FREE';
+  @override
+  String get profilePremiumBadge => 'PREMIUM';
+  @override
+  String get profileGuestBadge => 'GUEST';
+  @override
+  String get profileBack => 'Back';
+
+  // --- Profile edit ------------------------------------------------------
+  @override
+  String get editTitle => 'Profile details';
+  @override
+  String get editSubtitle => 'How you appear on leaderboards';
+  @override
+  String get editDisplayName => 'Display name';
+  @override
+  String get editDisplayNameSubtitle => 'Leave empty to use your handle';
+  @override
+  String get editDisplayNameHint => 'e.g. Quiz Goblin';
+  @override
+  String get editAvatar => 'Avatar';
+  @override
+  String get editAvatarSubtitle => 'Pick the look that fits you';
+  @override
+  String get editPremiumAvatarReason => 'Premium avatars are part of Premium.';
+  @override
+  String get editSaveChanges => 'SAVE CHANGES';
+  @override
+  String get editSaved => 'Profile updated.';
+  @override
+  String get editSaveFailed => 'Could not save your profile. Try again.';
+  @override
+  String editNameTooShort(int minimum) =>
+      'Names need at least $minimum characters.';
+
+  // --- Account card ------------------------------------------------------
+  @override
+  String get accountTitle => 'ACCOUNT';
+  @override
+  String get accountGoogle => 'GOOGLE';
+  @override
+  String get accountGuest => 'GUEST';
+  @override
+  String get accountUsername => 'Username';
+  @override
+  String get accountEmail => 'Email';
+  @override
+  String get accountNotLinked => 'Not linked';
+  @override
+  String get accountPlayingSince => 'Playing since';
+  @override
+  String get accountOnThisDevice => 'on this device';
+  @override
+  String get accountPlayerId => 'Player ID';
+  @override
+  String get accountCopyPlayerId => 'Copy player ID';
+  @override
+  String get accountPlayerIdCopied => 'Player ID copied.';
+  @override
+  String get accountGuestHint =>
+      'Guest progress lives on this device. Link a Google account in Settings '
+      'to carry it to your next phone.';
+
+  // --- Stats -------------------------------------------------------------
+  @override
+  String get statsTitle => 'Statistics';
+  @override
+  String get statsSubtitle => 'Everything you have played so far';
+  @override
+  String get statsUnavailable => 'Statistics unavailable';
+  @override
+  String get statsCouldNotLoad => 'Could not load your statistics.';
+  @override
+  String get statsNoRuns => 'No runs yet';
+  @override
+  String get statsNoRunsBody =>
+      'Play your first quiz and your numbers land here.';
+  @override
+  String get statsLifetimeAccuracy => 'Lifetime accuracy';
+  @override
+  String get statsRunsPlayed => 'Runs played';
+  @override
+  String get statsBestScore => 'Best score';
+  @override
+  String get statsQuestions => 'Questions';
+  @override
+  String get statsMissed => 'Missed';
+  @override
+  String get statsTopicMastery => 'Topic mastery';
+  @override
+  String get statsTopicMasterySubtitle => 'Where you are strongest';
+
+  // --- Achievements ------------------------------------------------------
+  @override
+  String get achievementsTitle => 'Achievements';
+  @override
+  String get achievementsSubtitle => 'Every milestone worth chasing';
+  @override
+  String get achievementsUnavailable => 'Achievements unavailable';
+  @override
+  String get achievementsCouldNotLoad => 'Could not load your achievements.';
+  @override
+  String get achievementsNoneYet => 'Nothing unlocked yet';
+  @override
+  String get achievementsAllUnlocked => 'All unlocked';
+  @override
+  String get achievementsNoneYetBody =>
+      'Finish a run to claim your first one.';
+  @override
+  String get achievementsAllUnlockedBody =>
+      'You have claimed every achievement. Respect.';
+  @override
+  String get achievementsCompletionist =>
+      'Completionist. Nothing left to chase.';
+  @override
+  String get achievementsFilterAll => 'All';
+  @override
+  String get achievementsFilterUnlocked => 'Unlocked';
+  @override
+  String get achievementsFilterLocked => 'Locked';
+
+  // --- Custom topic ------------------------------------------------------
+  @override
+  String get customTitle => 'Custom topic';
+  @override
+  String get customHeadline => 'What do you want to\nbe quizzed on?';
+  @override
+  String get customBody =>
+      'Describe anything — games, science, lore, hobbies. '
+      'The AI writes and validates the questions.';
+  @override
+  String get customPromptHint =>
+      'e.g. Ask me difficult questions about Elden Ring lore';
+  @override
+  List<String> get customSuggestions => const [
+        'Elden Ring lore, but brutal',
+        'Formula 1 rules and history',
+        'Ancient Rome for a nerd',
+        'Machine learning fundamentals',
+        'Classic horror cinema',
+      ];
+  @override
+  String get customDifficulty => 'Difficulty';
+  @override
+  String get customMode => 'Mode';
+  @override
+  String get customStyle => 'Style';
+  @override
+  String get customStyleSubtitle => 'Optional — how should the questions feel?';
+  @override
+  String get customStyleHint => 'e.g. lore-heavy, trivia, practical';
+  @override
+  String get customCreate => 'CREATE QUIZ';
+  @override
+  String get customNeedPrompt => 'Tell us what you want to be quizzed on.';
+  @override
+  String get customNotEnoughQuestions =>
+      'We could not build enough good questions for that. '
+      'Try a clearer or broader topic.';
+  @override
+  String get customFailed =>
+      'Could not prepare your challenge. Please try again.';
+  @override
+  String get customBuilding => 'Building your quiz';
+  @override
+  String get customBuildingHint =>
+      'This one runs a real model, so it takes a few seconds. '
+      'Everything after this is served instantly.';
+  @override
+  String get customStageUnderstanding => 'Understanding your topic';
+  @override
+  String get customStageWriting => 'Writing candidate questions';
+  @override
+  String get customStageChecking => 'Fact-checking every answer';
+  @override
+  String get customStageShuffling => 'Shuffling the good ones in';
+  @override
+  String customLanguageNote(String nativeName) =>
+      'Questions will be written in $nativeName';
+
+  // --- Landing / onboarding ----------------------------------------------
+  @override
+  String get landingTagline => 'Endless AI quizzes. Real game energy.';
+  @override
+  String get landingWarmingUp => 'Warming up…';
+  @override
+  String get landingFeatureModesTitle => 'Three ways to play';
+  @override
+  String get landingFeatureModesBody =>
+      'Endless Casual, the Speedrun clock, Survival on three lives';
+  @override
+  String get landingFeatureDailyTitle => 'Daily challenge & ranks';
+  @override
+  String get landingFeatureDailyBody =>
+      'One fresh set a day, weekly and daily boards';
+  @override
+  String get landingFeatureExplainTitle => 'Every answer explained';
+  @override
+  String get landingFeatureExplainBody =>
+      'Miss one and the app teaches you why';
+  @override
+  String get landingPlayAsGuest => 'PLAY AS GUEST';
+  @override
+  String get landingNewGuestRun => 'START A NEW GUEST RUN';
+  @override
+  String get landingGuestNote =>
+      'Guest progress is saved on this device and can be linked later.';
+  @override
+  String get landingGoogleUnavailable => 'Google sign-in unavailable';
+  @override
+  String get landingGoogleUnavailableBody =>
+      'This build was compiled without a Google client ID. '
+      'Play as a guest — you can link a Google account later.';
+  @override
+  String get landingGoogleFailed => 'Google sign-in failed.';
+  @override
+  String get landingContinueWithGoogle => 'Continue with Google';
+
+  // --- Welcome sheet -----------------------------------------------------
+  @override
+  String get welcomeNewPlayer => 'Welcome to SpeedQuiz';
+  @override
+  String welcomeSignedIn(String name) => 'Welcome, $name';
+  @override
+  String welcomeBack(String name) => 'Welcome back, $name';
+  @override
+  String get welcomeWaitingToday => 'Waiting for you today';
+  @override
+  String get welcomeStartPlaying => 'START PLAYING';
+  @override
+  String get welcomeJumpBackIn => 'JUMP BACK IN';
+  @override
+  String get welcomeLookAround => 'LOOK AROUND FIRST';
+  @override
+  String get welcomeGuestBody =>
+      'Playing as a guest — your progress is saved on this device and can be '
+      'linked to an account later.';
+  @override
+  String get welcomeAccountBody =>
+      'Your account is ready. Progress syncs everywhere you sign in.';
+  @override
+  String welcomeGuestHandle(String username) => 'Guest account · @$username';
+  @override
+  String get welcomeCuePickTopic => 'Pick a topic and start a run';
+  @override
+  String get welcomeCueDailyDone => 'Daily done — free play is open';
+  @override
+  String welcomeCueResumeDaily(String topic) => 'Resume the daily · $topic';
+  @override
+  String welcomeCueDaily(String topic) => 'Daily challenge · $topic';
+
+  // --- Shared result -----------------------------------------------------
+  @override
+  String get sharedRunBadge => 'SHARED RUN';
+  @override
+  String get sharedCardUnavailable => 'Card unavailable';
+  @override
+  String get sharedCardExpired =>
+      'This shared result has expired or was removed.';
+  @override
+  String get sharedOpenSpeedQuiz => 'OPEN SPEEDQUIZ';
+  @override
+  String get sharedBeatThat => 'Think you can beat that?';
+  @override
+  String get sharedBeatThisScore => 'BEAT THIS SCORE';
+
+  // --- Premium -----------------------------------------------------------
+  @override
+  String get premiumUnlockEverything => 'Support the game, unlock everything';
+  @override
+  String get premiumYourePremium => 'You’re Premium';
+  @override
+  String get premiumBenefitQuestionsTitle => 'Unlimited questions';
+  @override
+  String get premiumBenefitQuestionsBody =>
+      'No cap on unique questions in any topic';
+  @override
+  String get premiumBenefitCustomTitle => 'Unlimited custom topics';
+  @override
+  String get premiumBenefitCustomBody =>
+      'Generate quizzes on anything, as often as you like';
+  @override
+  String get premiumBenefitCosmeticsTitle => 'Premium avatars & flair';
+  @override
+  String get premiumBenefitCosmeticsBody =>
+      'Six exclusive avatars, a gold profile ring and a leaderboard badge';
+  @override
+  String get premiumUnlocked => 'Premium unlocked. Enjoy.';
+  @override
+  String get premiumUnlockedTest => 'Premium unlocked (test purchase)';
+  @override
+  String get premiumVerifyReturnedFree => 'Verify returned free — check the server';
+  @override
+  String get premiumEnabledStub => 'Premium enabled (stub purchase)';
+  @override
+  String get premiumEnabledDev => 'Premium enabled (dev)';
+  @override
+  String get premiumNotAvailableHere =>
+      'Subscriptions are not available on this device yet — '
+      'nothing has been charged.';
+  @override
+  String get premiumRestored => 'Purchases restored.';
+  @override
+  String get premiumNoSubscription =>
+      'No active subscription on this store account.';
+  @override
+  String get premiumRestoredStub => 'Premium restored (stub)';
+  @override
+  String get premiumNothingToRestore => 'Nothing to restore.';
+  @override
+  String get premiumRestoreUnavailable =>
+      'Restore is unavailable on this device.';
+  @override
+  String get premiumRestorePurchases => 'Restore purchases';
+  @override
+  String get premiumSubscribe => 'SUBSCRIBE';
+  @override
+  String premiumSubscribeWithPrice(String price) => 'SUBSCRIBE · $price';
+  @override
+  String premiumSwitchTo(String plan) => 'SWITCH TO $plan';
+  @override
+  String get premiumTestPurchase => 'TEST PURCHASE';
+  @override
+  String premiumTestPurchaseWith(String plan) => 'TEST PURCHASE · $plan';
+  @override
+  String get premiumEnableDev => 'ENABLE PREMIUM (DEV)';
+  @override
+  String get premiumUnavailable => 'UNAVAILABLE';
+  @override
+  String get premiumTestModeNote =>
+      'Test mode — purchases are simulated on the server and nothing is '
+      'charged.';
+  @override
+  String get premiumSignInNote =>
+      'Sign in with Google so your subscription follows you to your next '
+      'device.';
+  @override
+  String get premiumCurrent => 'CURRENT';
+  @override
+  String get premiumNotOnThisDevice => 'Not available on this device';
+  @override
+  String premiumSavePercent(int percent) => 'Save $percent%';
+  @override
+  String get premiumRenewsAutomatically =>
+      'Your subscription renews automatically';
+  @override
+  String premiumRenewsAt(String price, String period) =>
+      'Renews automatically at $price per $period';
+  @override
+  String premiumCancelAnytime(String store) =>
+      'Cancel anytime from your $store account — you keep Premium until the '
+      'period ends.';
+
+  // --- Subscription status -----------------------------------------------
+  @override
+  String get subPaymentFailed => 'Payment failed';
+  @override
+  String get subOnHold => 'Subscription on hold';
+  @override
+  String get subPaused => 'Subscription paused';
+  @override
+  String get subPaymentProcessing => 'Payment processing';
+  @override
+  String get subCancelled => 'Cancelled';
+  @override
+  String get subEnded => 'Subscription ended';
+  @override
+  String get subRefunded => 'Subscription refunded';
+  @override
+  String subActivePlan(String plan) => '$plan · Active';
+  @override
+  String get subFixPaymentMethod => 'FIX PAYMENT METHOD';
+  @override
+  String get subManageSubscription => 'MANAGE SUBSCRIPTION';
+  @override
+  String get subCouldNotOpenStore => 'Could not open your store subscriptions.';
+  @override
+  String get subUpdatePaymentNow =>
+      'Update your payment method to keep Premium.';
+  @override
+  String subUpdatePaymentBy(String date) =>
+      'Update your payment method by $date to keep Premium.';
+  @override
+  String get subOnHoldBody =>
+      'Your last payment did not go through, so Premium is paused. '
+      'Update your payment method to pick up where you left off.';
+  @override
+  String get subPausedBody =>
+      'Premium resumes automatically when your pause ends.';
+  @override
+  String subProcessingBody(String date) =>
+      'Your bank is still confirming the payment. Premium unlocks by $date.';
+  @override
+  String get subCancelledBodyNoDate =>
+      'Premium stays active until the end of your billing period.';
+  @override
+  String subCancelledBody(String date) =>
+      'Premium stays active until $date. You will not be charged again.';
+  @override
+  String get subEndedBody => 'Resubscribe any time to unlock Premium again.';
+  @override
+  String get subRefundedBody =>
+      'This purchase was refunded, so Premium has ended.';
+  @override
+  String get subThanks => 'Thanks for supporting SpeedQuiz.';
+  @override
+  String subIntroPriceUntil(String date) =>
+      'Your introductory price applies until $date.';
+  @override
+  String subRenewsOn(String date) => 'Renews on $date.';
+
+  // --- Misc widgets ------------------------------------------------------
+  @override
+  String get hotBadge => 'HOT';
+  @override
+  String get confirm => 'CONFIRM';
+  @override
+  String get gotIt => 'GOT IT';
+  @override
+  String get periodMonth => 'month';
+  @override
+  String get periodYear => 'year';
+  @override
+  String get streakActive => 'Streak active';
+  @override
+  String get streakInactive => 'Streak inactive';
+
+  // --- Speed tiers -------------------------------------------------------
+  @override
+  String get speedTierBlitz => 'BLITZ';
+  @override
+  String get speedTierFast => 'FAST';
+  @override
+  String get speedTierClean => 'CLEAN';
+  @override
+  String get speedTierClutch => 'CLUTCH';
+
+  // --- Billing progress --------------------------------------------------
+  @override
+  String get billingOpeningStore => 'Opening the store…';
+  @override
+  String get billingRestoring => 'Restoring purchases…';
+  @override
+  String get billingVerifying => 'Verifying…';
+  @override
+  String get billingCouldNotStart => 'Could not start purchase';
+  @override
+  String get billingPurchaseFailed => 'Purchase failed';
+  @override
+  String get billingWaitingForPayment =>
+      'Waiting for your payment to clear. Premium unlocks automatically once '
+      'it does.';
+  @override
+  String get billingStoreUnavailable => 'Store not available on this device';
+  @override
+  String get billingNoPlans => 'No plans configured';
+
+  // --- Settings ----------------------------------------------------------
+  @override
+  String get settingsTitle => 'Settings';
+  @override
+  String get settingsAppearance => 'Appearance';
+  @override
+  String get settingsAppearanceSubtitle => 'Applies instantly across the app';
+  @override
+  String get settingsThemeDark => 'Dark';
+  @override
+  String get settingsThemeLight => 'Light';
+  @override
+  String get settingsThemeSystem => 'System';
+  @override
+  String get settingsLanguageSection => 'Language';
+  @override
+  String get settingsLanguageSubtitle =>
+      'The app and your quizzes can differ';
+  @override
+  String get settingsFeel => 'Feel';
+  @override
+  String get settingsFeelSubtitle => 'Sound and vibration';
+  @override
+  String get settingsSound => 'Sound effects';
+  @override
+  String get settingsSoundSubtitle => 'Answer, streak and result cues';
+  @override
+  String get settingsMusic => 'Ambient music';
+  @override
+  String get settingsMusicSubtitle => 'Low background loop while you play';
+  @override
+  String get settingsHaptics => 'Haptics';
+  @override
+  String get settingsHapticsSubtitle => 'Taps, hits and misses you can feel';
+  @override
+  String get settingsAccount => 'Account';
+  @override
+  String get settingsSaveProgress => 'Save your progress';
+  @override
+  String get settingsSaveProgressBody =>
+      'Guest progress lives only on this device. Link a Google account and '
+      'your level, streak and ranks follow you anywhere.';
+  @override
+  String get settingsLinkGoogle => 'Link Google account';
+  @override
+  String get settingsGoogleUnavailable => 'Google sign-in unavailable';
+  @override
+  String get settingsGoogleUnavailableBody =>
+      'This build was compiled without a Google client ID, so accounts cannot '
+      'be linked here.';
+  @override
+  String get settingsAccountLinked => 'Account linked — your progress is safe.';
+  @override
+  String get settingsAccountLinkFailed => 'Could not link your account.';
+  @override
+  String get settingsSignedInWithGoogle => 'Signed in with Google';
+  @override
+  String get settingsSignOut => 'SIGN OUT';
+  @override
+  String get settingsSigningOut => 'SIGNING OUT…';
+  @override
+  String get settingsSignOutTitle => 'Sign out?';
+  @override
+  String get settingsSignOutGuestBody =>
+      'This is a guest session. Signing out ends it — level, XP and streak on '
+      'this device will not come back unless you link a Google account first.';
+  @override
+  String get settingsSignOutBody =>
+      'You can sign back in with Google any time and pick up exactly where you '
+      'left off.';
+  @override
+  String get settingsSignOutConfirm => 'SIGN OUT';
+  @override
+  String get settingsStay => 'STAY';
+  @override
+  String get settingsDevEntitlements => 'Dev entitlements';
+  @override
+  String get settingsPremiumEnabled => 'Premium enabled';
+  @override
+  String get settingsEnablePremium => 'Enable Premium';
+  @override
+  String get settingsPremiumEnabledDev => 'Premium enabled (dev)';
+  @override
+  String get settingsBackToFreeDev => 'Back to Free (dev)';
+  @override
+  String settingsVersion(String version) => 'SpeedQuiz · v$version';
+}
