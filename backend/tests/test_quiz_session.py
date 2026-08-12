@@ -86,3 +86,47 @@ def test_casual_wrong_answer_zero_points():
     )
     assert result.points_awarded == 0
     assert result.new_streak == 0
+
+
+def test_answer_context_query_fetches_everything_in_one_round_trip():
+    """The verdict cannot render until this query returns, and every round trip
+    it costs is charged at the player's full network latency."""
+    from uuid import uuid4
+
+    from sqlalchemy.dialects import postgresql
+
+    from app.services.quiz_service import answer_context_query
+
+    sql = str(
+        answer_context_query(uuid4(), uuid4()).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).lower()
+
+    # Question and its answer-existence check ride along with the quiz question.
+    assert "join questions" in sql
+    assert "answers" in sql
+    # An inner join here would return no row for a question nobody has answered
+    # yet, turning every first answer of a run into a 404.
+    assert "left outer join answers" in sql
+
+
+def test_answer_context_query_scopes_to_the_session():
+    """Without the session filter, a quiz_question id from someone else's run
+    would resolve and leak a question into the wrong session."""
+    from uuid import uuid4
+
+    from sqlalchemy.dialects import postgresql
+
+    from app.services.quiz_service import answer_context_query
+
+    session_id, qq_id = uuid4(), uuid4()
+    sql = str(
+        answer_context_query(session_id, qq_id).compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    assert str(session_id) in sql
+    assert str(qq_id) in sql

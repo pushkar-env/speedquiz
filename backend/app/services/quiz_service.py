@@ -299,6 +299,34 @@ async def _select_questions(
 
 
 
+def answer_context_query(session_id: UUID, quiz_question_id: UUID):
+    """Everything `submit_answer` needs about a question, in one round trip.
+
+    The quiz question, its bank question, that question's options, and whether
+    an answer already exists — previously four sequential queries. Each one is
+    charged at the full client-to-server latency from the player's point of
+    view, because the verdict cannot render until the whole chain finishes.
+
+    The join to `answers` **must** stay an outer join: an inner join would
+    return no row for a question nobody has answered yet, turning every first
+    answer into a 404.
+    """
+    return (
+        select(QuizQuestion, Question, Answer.id)
+        .join(Question, Question.id == QuizQuestion.question_id)
+        .outerjoin(
+            Answer,
+            (Answer.quiz_question_id == QuizQuestion.id)
+            & (Answer.session_id == QuizQuestion.session_id),
+        )
+        .options(selectinload(Question.options))
+        .where(
+            QuizQuestion.id == quiz_question_id,
+            QuizQuestion.session_id == session_id,
+        )
+    )
+
+
 def _question_time_limit_ms(session: QuizSession, sequence_index: int) -> int:
     """Time allowed for one question.
 
@@ -652,32 +680,18 @@ async def submit_answer(
     if session.status != QuizSessionStatus.ACTIVE:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is not active")
 
-    qq = await db.scalar(
-        select(QuizQuestion).where(
-            QuizQuestion.id == payload.quiz_question_id,
-            QuizQuestion.session_id == session.id,
-        )
-    )
-    if not qq:
+    row = (
+        await db.execute(answer_context_query(session.id, payload.quiz_question_id))
+    ).first()
+
+    if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not in session")
+
+    qq, question, existing_answer_id = row
     if qq.sequence_index != session.current_question_index:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Not the current question")
-
-    existing = await db.scalar(
-        select(Answer.id).where(
-            Answer.session_id == session.id,
-            Answer.quiz_question_id == qq.id,
-        )
-    )
-    if existing:
+    if existing_answer_id is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Answer already submitted")
-
-    question = await db.scalar(
-        select(Question)
-        .options(selectinload(Question.options))
-        .where(Question.id == qq.question_id)
-    )
-    assert question is not None
 
     served_at = qq.served_at
     now = _now()
