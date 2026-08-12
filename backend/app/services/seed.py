@@ -232,45 +232,100 @@ async def upsert_achievements(db) -> int:
 
 async def seed_reference_data() -> None:
     async with session_scope() as db:
-        existing = await db.scalar(select(TopicCategory.id).limit(1))
-        if not existing:
-            category_map: dict[str, TopicCategory] = {}
-            for slug, name, icon, order in CATEGORIES:
-                cat = TopicCategory(
-                    slug=slug,
-                    name=name,
-                    icon=icon,
-                    sort_order=order,
-                    name_i18n=_category_name_i18n(slug),
-                )
-                db.add(cat)
-                category_map[slug] = cat
-            await db.flush()
-
-            for slug, name, category_slug, icon, trending in TOPICS:
-                db.add(
-                    Topic(
-                        slug=slug,
-                        name=name,
-                        category_id=category_map[category_slug].id,
-                        icon=icon,
-                        is_trending=trending,
-                        popularity_score=100 if trending else 50,
-                        description=f"Challenge yourself with {name} quizzes.",
-                        name_i18n=_topic_name_i18n(slug),
-                        description_i18n=_topic_description_i18n(slug),
-                    )
-                )
-
+        categories_added = await _upsert_categories(db)
+        topics_added = await _upsert_topics(db)
         translated = await refresh_catalog_translations(db)
         created = await upsert_achievements(db)
         logger.info(
             "seed_complete",
             topics=len(TOPICS),
+            categories_added=categories_added,
+            topics_added=topics_added,
             achievements=len(ACHIEVEMENTS),
             achievements_created=created,
             translations_refreshed=translated,
         )
+
+
+async def _upsert_categories(db) -> int:
+    """Insert any category in [CATEGORIES] that the database does not have."""
+    existing = {
+        category.slug: category
+        for category in (await db.execute(select(TopicCategory))).scalars().all()
+    }
+    added = 0
+    for slug, name, icon, order in CATEGORIES:
+        if slug in existing:
+            continue
+        db.add(
+            TopicCategory(
+                slug=slug,
+                name=name,
+                icon=icon,
+                sort_order=order,
+                name_i18n=_category_name_i18n(slug),
+            )
+        )
+        added += 1
+    if added:
+        await db.flush()
+    return added
+
+
+async def _upsert_topics(db) -> int:
+    """Insert any topic in [TOPICS] that the database does not have, by slug.
+
+    Keyed on slug rather than "is the table empty?", which is what the first
+    version of this checked. That version only ever seeded a brand-new
+    database, so every topic added to [TOPICS] after the first boot was
+    silently missing from any existing deployment — along with the curated
+    questions that target it.
+
+    Only *inserts*. Name, icon and trending on rows that already exist are left
+    alone: those are live catalog state that an operator may have tuned, and
+    overwriting them on every boot would undo that. Translations are the
+    exception and are refreshed separately — see [refresh_catalog_translations].
+
+    A new topic starts with an empty bank, so it is not offered for play until
+    the inventory sweep fills it past the low watermark.
+    """
+    categories = {
+        category.slug: category
+        for category in (await db.execute(select(TopicCategory))).scalars().all()
+    }
+    existing = set(
+        (await db.execute(select(Topic.slug))).scalars().all()
+    )
+
+    added = 0
+    for slug, name, category_slug, icon, trending in TOPICS:
+        if slug in existing:
+            continue
+        category = categories.get(category_slug)
+        if category is None:
+            # A topic pointing at a category that is not in CATEGORIES is a
+            # typo in the seed table; skip it rather than orphan the row.
+            logger.warning("seed_topic_unknown_category", topic=slug, category=category_slug)
+            continue
+        db.add(
+            Topic(
+                slug=slug,
+                name=name,
+                category_id=category.id,
+                icon=icon,
+                is_trending=trending,
+                popularity_score=100 if trending else 50,
+                description=f"Challenge yourself with {name} quizzes.",
+                name_i18n=_topic_name_i18n(slug),
+                description_i18n=_topic_description_i18n(slug),
+            )
+        )
+        added += 1
+
+    if added:
+        await db.flush()
+        logger.info("seed_topics_added", count=added)
+    return added
 
 
 async def refresh_catalog_translations(db) -> int:
