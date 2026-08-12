@@ -246,7 +246,10 @@ class Settings(BaseSettings):
             problems.append(
                 "ENTITLEMENTS_DEV_TOGGLE=true exposes POST "
                 "/entitlements/dev/premium, which would let any user grant "
-                "themselves Premium. Set it to false."
+                "themselves Premium. Set it to false. To exercise the paywall "
+                "on a test deployment, set BILLING_ALLOW_STUB_IN_PRODUCTION="
+                "true instead — that routes through real purchase "
+                "verification rather than an endpoint that hands out Premium."
             )
 
         if self.debug:

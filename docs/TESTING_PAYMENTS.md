@@ -48,11 +48,61 @@ What each one does:
 | `FREE_UNIQUE_QUESTIONS_PER_TOPIC=5` | Hit the paywall in one quiz instead of six. Put this back to `30` before launch. |
 | `BILLING_ALLOW_STUB_IN_PRODUCTION=true` | Railway runs `APP_ENV=production`, where simulated purchases are refused by default. This opts in. **Remove it before you take real money.** |
 
+**Leave `APP_ENV=production`.** Do not switch it to `development` to make
+testing easier — the variable above already does that, which is the whole
+reason it exists. Dropping out of production mode on a live deployment makes
+`/docs` public, disables the `JWT_SECRET` and `DEBUG` guards, and leaves you
+one forgotten variable away from launching in the wrong mode.
+
 Redeploy. The API returns `"stub_purchase_allowed": true`, and the app switches
 the paywall into test mode by itself — no rebuild.
 
-> Leave `ENTITLEMENTS_DEV_TOGGLE` alone. It is rejected at boot in production on
-> purpose, and you do not need it — the test purchase path above replaces it.
+**`ENTITLEMENTS_DEV_TOGGLE` must be `false`, or not set at all.** If it is
+already `true` from earlier experimenting, delete it now — the service refuses
+to boot with it on in production, and you do not need it. It exposes an endpoint
+that hands out Premium to anyone who asks; `BILLING_ALLOW_STUB_IN_PRODUCTION`
+routes through real purchase verification instead.
+
+While you are in there, `DEBUG` must also be `false` — same guard, same result
+if it is on.
+
+### API service or worker service?
+
+All three billing variables above go on the **API service only**. The worker
+never verifies a purchase or serves the paywall.
+
+But the safety guards are a different story, and this catches people out:
+
+> **Both services build a `Settings` object at startup, so both run the
+> production validator.** `ENTITLEMENTS_DEV_TOGGLE=true` or `DEBUG=true` crashes
+> the **worker** exactly as it crashes the API. If you fixed the API and the
+> worker is still dead, this is why.
+
+| Variable | API | Worker | Notes |
+|---|:--:|:--:|---|
+| `APP_ENV` | ✅ | ✅ | **Must match.** See the warning below. |
+| `DEBUG`, `JWT_SECRET` | ✅ | ✅ | Validated on both; a mismatch or a bad value stops either service booting. |
+| `ENTITLEMENTS_DEV_TOGGLE` | ✅ `false` | ✅ `false` | Or absent on both. |
+| `DATABASE_URL`, `DATABASE_URL_SYNC`, `REDIS_URL` | ✅ | ✅ | Worker reads jobs and runs the subscription sweep. |
+| `LOG_LEVEL`, `SENTRY_DSN` | ✅ | ✅ | |
+| `ENTITLEMENTS_ENFORCE_QUESTION_CAPS` | ✅ | ➖ | Read in the request path only. |
+| `FREE_UNIQUE_QUESTIONS_PER_TOPIC` | ✅ | ➖ | |
+| `BILLING_ALLOW_STUB_IN_PRODUCTION` | ✅ | ➖ | |
+| `BILLING_VERIFY_MODE`, `IAP_PRODUCT_*` | ✅ | ➖ | Phase 2. |
+| `GOOGLE_PLAY_*`, `GOOGLE_RTDN_*`, `APPLE_*` | ✅ | ❌ | Phase 2. **Do not copy these to the worker** — it cannot use them, and setting the Apple ones without the root CA file will stop it booting. |
+| `LLM_API_KEY`, `LLM_MODEL_*`, `TOPIC_BANK_*` | ➖ | ✅ | Question generation. |
+
+✅ set · ➖ harmless but unused · ❌ actively avoid
+
+> **`APP_ENV` must be identical on both services.** The worker's hourly
+> subscription sweep recomputes `is_premium`, and that calculation depends on
+> `APP_ENV` — a worker on `development` while the API is on `production` will
+> keep flipping test subscriptions back to Premium that the API considers
+> invalid. Two services disagreeing about who is a paying customer is a
+> genuinely nasty bug to chase.
+
+If Railway shows both services under one project, use **shared variables** for
+the rows marked ✅/✅ so they cannot drift apart.
 
 ### 3. Check the server before touching the app
 
@@ -114,6 +164,26 @@ the newest row:
 ```sql
 select id, is_premium from users order by created_at desc limit 5;
 ```
+
+### If the deploy fails to boot
+
+The API refuses to start on an unsafe production config rather than serving
+traffic that looks healthy while handing out free Premium. The error names the
+variable:
+
+| Error mentions | Fix |
+|---|---|
+| `ENTITLEMENTS_DEV_TOGGLE` | Set it to `false` or delete it. Use `BILLING_ALLOW_STUB_IN_PRODUCTION=true` to test purchases instead. |
+| `DEBUG` | Set `DEBUG=false`. |
+| `JWT_SECRET` | Needs a real 32+ character secret: `openssl rand -hex 32`. Rotating it signs out every existing user. |
+| `Apple Root CA` | Only when Apple IAP is configured — see [RELEASE.md](RELEASE.md#app-store-server-notifications-v2). Not relevant to Phase 1. Usually means store credentials were copied to the worker by mistake. |
+
+These are all boot-time, so a failed deploy leaves the previous version running.
+
+**Check both services.** The same validator runs in the API and the worker, so
+a variable that stops one will stop the other. Fixing only the API leaves the
+worker crash-looping, and the symptom is indirect: no new questions get
+generated and lapsed subscriptions never expire.
 
 ### What Phase 1 does **not** prove
 
