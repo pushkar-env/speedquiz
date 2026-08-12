@@ -222,7 +222,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 SqStagger(
                   index: 1,
                   child: Text(
-                    _greeting(l10n, user?.name),
+                    // The chosen name, not the generated handle: "GOOD EVENING,
+                    // PLAYER_A1B2C3D4" is worse than no name at all.
+                    _greeting(l10n, user?.chosenName),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       letterSpacing: 1.4,
                       fontWeight: FontWeight.w700,
@@ -323,8 +325,7 @@ class _PlayerBar extends StatelessWidget {
     final xp = user?.xp ?? 0;
     final threshold = xpThresholdForLevel(level);
     final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
-    final displayName =
-        user?.displayName ?? user?.username ?? context.l10n.player;
+    final displayName = user?.name ?? context.l10n.player;
     final streak = user?.dailyStreak ?? user?.currentStreak ?? 0;
     final isPremium = user?.isPremium ?? false;
 

@@ -48,6 +48,7 @@ Notes:
 
 ```text
 /splash            boot, restores a stored session
+/onboarding        first run only: language, then name (device-local)
 /landing           signed-out: play as guest / continue with Google
 /home              hero play, surprise-me, daily challenge, topic rail   ┐
 /explore           search, category rail, trending, grouped topic grid   │ tabs
@@ -210,6 +211,7 @@ reference them on historical rows; they are simply no longer selectable.
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
 - **Entitlements:** `GET /api/v1/entitlements/me` returns feature flags *and* live subscription state (plan, expiry, grace, manage URL); caps off by default
 - **Auth:** landing screen with **Play as Guest** + **Continue with Google** (`POST /auth/google`); Profile links a guest to Google and offers **Sign out** — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#5-google-sign-in)
+- **Onboarding:** a first run picks a language and a name *before* signing in; the answers are held on the device and written to the profile (`display_name`, `app_language`, `quiz_language`, `onboarding_completed`) the moment a session exists, retrying on the next launch if that write fails
 - **Subscriptions:** monthly + annual auto-renewing, verified against Play `subscriptionsv2` and the App Store Server API, with store webhooks driving renewals, cancellations and refunds — see [Subscriptions](#subscriptions)
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `speedquiz://` + optional `SHARE_PUBLIC_BASE_URL`
 - **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.speedquiz.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready

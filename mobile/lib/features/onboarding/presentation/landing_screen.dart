@@ -7,6 +7,7 @@ import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/auth/presentation/widgets/google_sign_in_button.dart';
+import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
 import 'package:speedquiz/shared/widgets/sq_logo.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
@@ -100,6 +101,11 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
     final auth = ref.watch(authControllerProvider);
     final signedOut = auth is AuthSignedOut ? auth : const AuthSignedOut();
     final busy = _busyAction != null || signedOut.pending;
+    // Set for the length of one session: someone who just came through
+    // onboarding and has not signed in yet. Naming them here is what makes the
+    // sign-in feel like the last step of something rather than the first step
+    // of everything.
+    final pendingName = ref.watch(onboardingControllerProvider).pendingName;
 
     return Scaffold(
       body: SqBackdrop(
@@ -140,10 +146,17 @@ class _LandingScreenState extends ConsumerState<LandingScreen> {
                           SqStagger(
                             index: 2,
                             child: Text(
-                              l10n.landingTagline,
+                              pendingName == null
+                                  ? l10n.landingTagline
+                                  : l10n.landingReadyName(pendingName),
                               textAlign: TextAlign.center,
                               style: theme.textTheme.bodyLarge?.copyWith(
-                                color: p.textSecondary,
+                                color: pendingName == null
+                                    ? p.textSecondary
+                                    : p.accent,
+                                fontWeight: pendingName == null
+                                    ? null
+                                    : FontWeight.w700,
                               ),
                             ),
                           ),

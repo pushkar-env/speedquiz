@@ -77,6 +77,7 @@ class AuthUser extends Equatable {
     bool? isPremium,
     String? displayName,
     String? avatarId,
+    bool? onboardingCompleted,
   }) {
     return AuthUser(
       id: id,
@@ -92,7 +93,7 @@ class AuthUser extends Equatable {
       currentStreak: currentStreak ?? this.currentStreak,
       dailyStreak: dailyStreak ?? this.dailyStreak,
       bestStreak: bestStreak ?? this.bestStreak,
-      onboardingCompleted: onboardingCompleted,
+      onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       themePreference: themePreference,
       appLanguage: appLanguage,
       quizLanguage: quizLanguage,
@@ -103,6 +104,19 @@ class AuthUser extends Equatable {
   String get name => displayName?.trim().isNotEmpty == true
       ? displayName!.trim()
       : username;
+
+  /// The name the player actually chose, or null while the account is still on
+  /// its generated handle.
+  ///
+  /// A guest account ships with `display_name` already set to `player_a1b2c3d4`,
+  /// so [name] is never empty and cannot answer "do we know who this is?".
+  /// Greeting somebody as PLAYER_A1B2C3D4 reads worse than not naming them at
+  /// all, so anywhere the name is optional decoration asks for this one.
+  String? get chosenName {
+    final chosen = displayName?.trim();
+    if (chosen == null || chosen.isEmpty || chosen == username) return null;
+    return chosen;
+  }
 
   @override
   List<Object?> get props => [

@@ -372,8 +372,26 @@ abstract class SqStrings {
   String get landingGoogleFailed;
   String get landingContinueWithGoogle;
 
+  /// Replaces the tagline once a first-run player has given their name.
+  String landingReadyName(String name);
+
+  // --- First run ---------------------------------------------------------
+  /// Semantics only — the progress bar itself carries no visible label.
+  String onboardingStepOf(int step, int total);
+  String get onboardingBack;
+  String get onboardingLanguageTitle;
+  String get onboardingLanguageBody;
+  String get onboardingLanguageQuizNote;
+  String get onboardingNameTitle;
+  String get onboardingNameBody;
+  String get onboardingNameHint;
+  String get onboardingContinue;
+  String get onboardingLetsGo;
+  String get onboardingSkip;
+
   // --- Welcome sheet -----------------------------------------------------
   String get welcomeNewPlayer;
+  String welcomeNewPlayerNamed(String name);
   String welcomeSignedIn(String name);
   String welcomeBack(String name);
   String get welcomeWaitingToday;

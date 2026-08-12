@@ -9,7 +9,10 @@ import 'package:speedquiz/features/entitlements/presentation/premium_paywall_she
 import 'package:speedquiz/features/explore/presentation/explore_screen.dart';
 import 'package:speedquiz/features/home/presentation/home_screen.dart';
 import 'package:speedquiz/features/leaderboard/presentation/leaderboard_screen.dart';
+import 'package:speedquiz/features/onboarding/domain/onboarding_state.dart';
 import 'package:speedquiz/features/onboarding/presentation/landing_screen.dart';
+import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
+import 'package:speedquiz/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:speedquiz/features/onboarding/presentation/splash_screen.dart';
 import 'package:speedquiz/features/profile/presentation/achievements_screen.dart';
 import 'package:speedquiz/features/profile/presentation/profile_edit_screen.dart';
@@ -25,6 +28,7 @@ import 'package:speedquiz/features/shell/presentation/main_shell.dart';
 
 abstract final class Routes {
   static const splash = '/splash';
+  static const onboarding = '/onboarding';
   static const landing = '/landing';
   static const home = '/home';
   static const explore = '/explore';
@@ -45,7 +49,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final refresh = _AuthRefresh(ref);
+  final refresh = _RouteRefresh(ref);
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
@@ -64,9 +68,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         case AuthBooting():
           return location == Routes.splash ? null : Routes.splash;
         case AuthSignedOut():
+          // A first run answers two questions before it is offered an account;
+          // everyone else goes straight to the ways in.
+          if (ref.read(onboardingControllerProvider).isNeeded) {
+            return location == Routes.onboarding ? null : Routes.onboarding;
+          }
           return location == Routes.landing ? null : Routes.landing;
         case AuthAuthenticated():
-          return (location == Routes.splash || location == Routes.landing)
+          return (location == Routes.splash ||
+                  location == Routes.landing ||
+                  location == Routes.onboarding)
               ? Routes.home
               : null;
       }
@@ -76,6 +87,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.splash,
         pageBuilder: (context, state) =>
             sqFadeThroughPage(state: state, child: const SplashScreen()),
+      ),
+      GoRoute(
+        path: Routes.onboarding,
+        pageBuilder: (context, state) =>
+            sqFadeThroughPage(state: state, child: const OnboardingScreen()),
       ),
       GoRoute(
         path: Routes.landing,
@@ -260,19 +276,35 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class _AuthRefresh extends ChangeNotifier {
-  _AuthRefresh(this.ref) {
-    _sub = ref.listen<AuthState>(authControllerProvider, (previous, next) {
-      notifyListeners();
-    });
+/// Re-runs the redirect whenever anything it reads changes.
+///
+/// Onboarding is in here alongside auth because finishing the flow moves a
+/// still-signed-out player from `/onboarding` to `/landing` — a route change
+/// with no auth change behind it.
+class _RouteRefresh extends ChangeNotifier {
+  _RouteRefresh(this.ref) {
+    _subs = [
+      ref.listen<AuthState>(
+        authControllerProvider,
+        (previous, next) => notifyListeners(),
+      ),
+      ref.listen<OnboardingState>(
+        onboardingControllerProvider,
+        (previous, next) {
+          if (previous?.status != next.status) notifyListeners();
+        },
+      ),
+    ];
   }
 
   final Ref ref;
-  late final ProviderSubscription<AuthState> _sub;
+  late final List<ProviderSubscription<Object?>> _subs;
 
   @override
   void dispose() {
-    _sub.close();
+    for (final sub in _subs) {
+      sub.close();
+    }
     super.dispose();
   }
 }

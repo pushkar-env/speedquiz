@@ -22,6 +22,7 @@ import 'package:speedquiz/features/home/presentation/home_screen.dart';
 import 'package:speedquiz/features/leaderboard/data/leaderboard_repository.dart';
 import 'package:speedquiz/features/leaderboard/domain/leaderboard_models.dart';
 import 'package:speedquiz/features/leaderboard/presentation/leaderboard_screen.dart';
+import 'package:speedquiz/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:speedquiz/features/profile/data/profile_repository.dart';
 import 'package:speedquiz/features/profile/domain/profile_models.dart';
 import 'package:speedquiz/features/profile/presentation/achievements_screen.dart';
@@ -541,10 +542,34 @@ void main() {
     expect(find.textContaining('LEVEL UP'), findsOneWidget);
   });
 
+  testWidgets('onboarding builds both of its steps', (tester) async {
+    await _expectBuilds(tester, const OnboardingScreen());
+    expect(find.text('Pick your language'), findsOneWidget);
+    expect(find.text('English'), findsWidgets);
+    expect(find.text('हिन्दी'), findsWidgets);
+
+    await tester.tap(find.text('CONTINUE'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('What should we call you?'), findsOneWidget);
+    expect(find.text("LET'S GO"), findsOneWidget);
+    expect(find.text('SKIP FOR NOW'), findsOneWidget);
+  });
+
   testWidgets('home lays out in light theme', (tester) async {
     await _expectBuilds(
       tester,
       const HomeScreen(),
+      brightness: Brightness.light,
+    );
+  });
+
+  testWidgets('onboarding lays out in light theme', (tester) async {
+    await _expectBuilds(
+      tester,
+      const OnboardingScreen(),
       brightness: Brightness.light,
     );
   });
@@ -578,6 +603,22 @@ void main() {
       language: AppLanguage.hindi,
     );
     expect(find.text('विषय चुनें।\nरैंक चढ़ें।'), findsOneWidget);
+  });
+
+  testWidgets('onboarding lays out in Hindi', (tester) async {
+    await _expectBuilds(
+      tester,
+      const OnboardingScreen(),
+      language: AppLanguage.hindi,
+    );
+    expect(find.text('अपनी भाषा चुनें'), findsOneWidget);
+
+    await tester.tap(find.text('आगे बढ़ें'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('आपको क्या कहकर बुलाएँ?'), findsOneWidget);
   });
 
   testWidgets('explore lays out in Hindi', (tester) async {

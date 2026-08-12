@@ -700,10 +700,44 @@ class SqStringsEn extends SqStrings {
   String get landingGoogleFailed => 'Google sign-in failed.';
   @override
   String get landingContinueWithGoogle => 'Continue with Google';
+  @override
+  String landingReadyName(String name) => 'Ready when you are, $name.';
+
+  // --- First run ---------------------------------------------------------
+  @override
+  String onboardingStepOf(int step, int total) => 'Step $step of $total';
+  @override
+  String get onboardingBack => 'Back';
+  @override
+  String get onboardingLanguageTitle => 'Pick your language';
+  @override
+  String get onboardingLanguageBody =>
+      'The whole app switches the moment you choose. '
+      'You can change it any time in Settings.';
+  @override
+  String get onboardingLanguageQuizNote =>
+      'Quizzes start in this language too — questions can have their own '
+      'language later.';
+  @override
+  String get onboardingNameTitle => 'What should we call you?';
+  @override
+  String get onboardingNameBody =>
+      'It goes on your profile, your home screen and the leaderboards. '
+      'You can change it later.';
+  @override
+  String get onboardingNameHint => 'Your name';
+  @override
+  String get onboardingContinue => 'CONTINUE';
+  @override
+  String get onboardingLetsGo => "LET'S GO";
+  @override
+  String get onboardingSkip => 'SKIP FOR NOW';
 
   // --- Welcome sheet -----------------------------------------------------
   @override
   String get welcomeNewPlayer => 'Welcome to SpeedQuiz';
+  @override
+  String welcomeNewPlayerNamed(String name) => 'Welcome to SpeedQuiz, $name';
   @override
   String welcomeSignedIn(String name) => 'Welcome, $name';
   @override

@@ -92,7 +92,13 @@ class _AuthInterceptor extends Interceptor {
         path.contains('/auth/register') ||
         path.contains('/auth/google');
 
-    if (status != 401 || alreadyRetried || isAuthEndpoint) {
+    // A 401 on a request that never carried a token says nothing about the
+    // stored one. Onboarding mirrors the chosen language to the profile while
+    // still signed out, and those calls must not be able to clear the tokens a
+    // sign-in has since written.
+    final hadToken = err.requestOptions.headers.containsKey('Authorization');
+
+    if (status != 401 || alreadyRetried || isAuthEndpoint || !hadToken) {
       handler.next(err);
       return;
     }

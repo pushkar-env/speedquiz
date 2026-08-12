@@ -8,6 +8,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:speedquiz/app.dart';
 import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/core/settings/app_settings.dart';
+import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/core/theme/theme_mode_provider.dart';
 
@@ -51,6 +52,10 @@ Future<void> main() async {
       await container.read(quizLanguageProvider.notifier).hydrate(
             fallback: container.read(appLanguageProvider),
           );
+      // Last, and before the first frame: it installs the hook that writes a
+      // first run's answers to the account, and the router asks it which
+      // screen a signed-out player gets on its very first redirect.
+      await container.read(onboardingControllerProvider.notifier).hydrate();
 
       runApp(
         UncontrolledProviderScope(

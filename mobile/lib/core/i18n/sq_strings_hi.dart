@@ -708,10 +708,45 @@ class SqStringsHi extends SqStrings {
   String get landingGoogleFailed => 'Google साइन-इन विफल रहा।';
   @override
   String get landingContinueWithGoogle => 'Google से जारी रखें';
+  @override
+  String landingReadyName(String name) => '$name, तैयार हों तो शुरू करें।';
+
+  // --- First run ---------------------------------------------------------
+  @override
+  String onboardingStepOf(int step, int total) => '$total में से चरण $step';
+  @override
+  String get onboardingBack => 'वापस';
+  @override
+  String get onboardingLanguageTitle => 'अपनी भाषा चुनें';
+  @override
+  String get onboardingLanguageBody =>
+      'चुनते ही पूरा ऐप उसी भाषा में बदल जाएगा। '
+      'बाद में सेटिंग्स से कभी भी बदल सकते हैं।';
+  @override
+  String get onboardingLanguageQuizNote =>
+      'क्विज़ भी इसी भाषा में शुरू होंगे — सवालों की भाषा बाद में अलग रखी '
+      'जा सकती है।';
+  @override
+  String get onboardingNameTitle => 'आपको क्या कहकर बुलाएँ?';
+  @override
+  String get onboardingNameBody =>
+      'यह नाम आपकी प्रोफ़ाइल, होम स्क्रीन और लीडरबोर्ड पर दिखेगा। '
+      'इसे बाद में बदल सकते हैं।';
+  @override
+  String get onboardingNameHint => 'आपका नाम';
+  @override
+  String get onboardingContinue => 'आगे बढ़ें';
+  @override
+  String get onboardingLetsGo => 'चलिए शुरू करें';
+  @override
+  String get onboardingSkip => 'अभी रहने दें';
 
   // --- Welcome sheet -----------------------------------------------------
   @override
   String get welcomeNewPlayer => 'SpeedQuiz में आपका स्वागत है';
+  @override
+  String welcomeNewPlayerNamed(String name) =>
+      'SpeedQuiz में आपका स्वागत है, $name';
   @override
   String welcomeSignedIn(String name) => 'स्वागत है, $name';
   @override

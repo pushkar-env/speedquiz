@@ -67,6 +67,28 @@ class AuthController extends StateNotifier<AuthState> {
 
   WelcomeCue? _welcome;
 
+  /// Runs the moment a session becomes available — a cold-start restore as
+  /// well as a fresh sign-in — and may hand back an updated user.
+  ///
+  /// Onboarding installs it so the name a player typed *before* signing in is
+  /// on the profile before the first frame of Home, instead of arriving a
+  /// round trip later and rewriting the greeting under them. Set from outside
+  /// rather than injected: onboarding already depends on this controller, and
+  /// a constructor argument would close the loop.
+  Future<AuthUser> Function(AuthUser user)? onSessionEstablished;
+
+  /// A failed hook is not a failed sign-in — the session stands either way.
+  Future<AuthUser> _establish(AuthUser user) async {
+    final hook = onSessionEstablished;
+    if (hook == null) return user;
+    try {
+      return await hook(user);
+    } catch (error) {
+      debugPrint('session_hook_failed: $error');
+      return user;
+    }
+  }
+
   /// Hand the pending greeting to whoever asks first, then forget it.
   ///
   /// Deliberately take-once: the greeting belongs to the moment the session
@@ -94,11 +116,12 @@ class AuthController extends StateNotifier<AuthState> {
     try {
       final existing = await _repo.fetchMe();
       if (existing != null) {
+        final user = await _establish(existing);
         _welcome = WelcomeCue(
           kind: WelcomeKind.returning,
-          user: existing,
+          user: user,
         );
-        state = AuthAuthenticated(existing);
+        state = AuthAuthenticated(user);
         return;
       }
       state = const AuthSignedOut();
@@ -116,11 +139,12 @@ class AuthController extends StateNotifier<AuthState> {
     state = const AuthSignedOut(pending: true);
     try {
       final session = await _repo.signInAsGuest();
+      final user = await _establish(session.user);
       _welcome = WelcomeCue(
-        kind: _kindFor(session.user),
-        user: session.user,
+        kind: _kindFor(user),
+        user: user,
       );
-      state = AuthAuthenticated(session.user);
+      state = AuthAuthenticated(user);
     } catch (error) {
       state = AuthSignedOut(message: apiErrorMessage(error), error: error);
     }
@@ -139,11 +163,12 @@ class AuthController extends StateNotifier<AuthState> {
         return const GoogleSignInResult(GoogleSignInOutcome.cancelled);
       }
       final session = await _repo.signInWithGoogle(idToken);
+      final user = await _establish(session.user);
       _welcome = WelcomeCue(
-        kind: _kindFor(session.user),
-        user: session.user,
+        kind: _kindFor(user),
+        user: user,
       );
-      state = AuthAuthenticated(session.user);
+      state = AuthAuthenticated(user);
       return const GoogleSignInResult(GoogleSignInOutcome.success);
     } catch (error) {
       // A StateError here is a *build* misconfiguration (no client id, no ID
@@ -206,9 +231,18 @@ class AuthController extends StateNotifier<AuthState> {
   void applyIdentity({String? displayName, String? avatarId}) {
     final current = state;
     if (current is! AuthAuthenticated) return;
-    state = AuthAuthenticated(
-      current.user.copyWith(displayName: displayName, avatarId: avatarId),
+    final updated = current.user.copyWith(
+      displayName: displayName,
+      avatarId: avatarId,
     );
+    // The greeting is built from a snapshot taken when the session started. A
+    // rename between then and the screen that shows it must not greet the old
+    // name.
+    final pending = _welcome;
+    if (pending != null && pending.user.id == updated.id) {
+      _welcome = WelcomeCue(kind: pending.kind, user: updated);
+    }
+    state = AuthAuthenticated(updated);
   }
 
   Future<void> refreshMe() async {

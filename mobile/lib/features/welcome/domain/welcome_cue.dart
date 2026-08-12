@@ -35,7 +35,11 @@ class WelcomeCue {
   /// Takes the string table rather than reading one: this is a domain object
   /// and has no BuildContext.
   String headline(SqStrings l10n) => switch (kind) {
-        WelcomeKind.newPlayer => l10n.welcomeNewPlayer,
+        // Onboarding usually means we know the name by now; a player who
+        // skipped it gets the unaddressed version rather than their handle.
+        WelcomeKind.newPlayer => user.chosenName == null
+            ? l10n.welcomeNewPlayer
+            : l10n.welcomeNewPlayerNamed(user.chosenName!),
         WelcomeKind.signedIn => l10n.welcomeSignedIn(user.name),
         WelcomeKind.returning => l10n.welcomeBack(user.name),
       };

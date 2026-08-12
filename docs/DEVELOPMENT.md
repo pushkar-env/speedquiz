@@ -279,6 +279,7 @@ Conventions:
 
 ```text
 /splash            boot, restores a stored session
+/onboarding        first run only: language, then name (device-local)
 /landing           signed out: play as guest / continue with Google
 /home              hero play, surprise-me, daily challenge, topic rail   ┐
 /explore           search, category rail, trending, grouped topic grid   │ tabs
