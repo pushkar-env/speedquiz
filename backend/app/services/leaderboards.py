@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.core.redis import get_redis
-from app.models import LeaderboardEntry, UserProfile
+from app.models import LeaderboardEntry, User, UserProfile
 from app.schemas.leaderboards import (
     LeaderboardEntryOut,
     LeaderboardMeOut,
@@ -166,25 +166,40 @@ async def get_board(
         except (ValueError, TypeError):
             continue
 
-    profiles: dict[UUID, str] = {}
+    # One join for the whole page: username and avatar to render the row,
+    # is_premium for the subscriber badge.
+    profiles: dict[UUID, tuple[str, str, bool]] = {}
     if user_ids:
         rows = await db.execute(
-            select(UserProfile.user_id, UserProfile.username).where(
-                UserProfile.user_id.in_(user_ids)
+            select(
+                UserProfile.user_id,
+                UserProfile.username,
+                UserProfile.avatar_id,
+                User.is_premium,
             )
+            .join(User, User.id == UserProfile.user_id)
+            .where(UserProfile.user_id.in_(user_ids))
         )
-        profiles = {row.user_id: row.username for row in rows.all()}
+        profiles = {
+            row.user_id: (row.username, row.avatar_id, bool(row.is_premium))
+            for row in rows.all()
+        }
 
     for idx, (uid, score) in enumerate(redis_pairs):
         try:
             user_uuid = UUID(uid)
         except (ValueError, TypeError):
             continue
+        username, avatar_id, is_premium = profiles.get(
+            user_uuid, ("Player", "avatar_01", False)
+        )
         items.append(
             LeaderboardEntryOut(
                 rank=idx + 1,
                 user_id=user_uuid,
-                username=profiles.get(user_uuid, "Player"),
+                username=username,
+                avatar_id=avatar_id,
+                is_premium=is_premium,
                 score=int(score),
                 is_me=user_uuid == me_user_id,
             )

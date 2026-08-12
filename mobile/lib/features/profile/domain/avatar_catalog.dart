@@ -11,12 +11,17 @@ class AvatarPreset {
     required this.name,
     required this.glyph,
     required this.colors,
+    this.isPremium = false,
   });
 
   final String id;
   final String name;
   final String glyph;
   final List<Color> colors;
+
+  /// Premium-only. The server enforces this on `PATCH /users/me` — hiding it
+  /// here is presentation, not the gate.
+  final bool isPremium;
 
   LinearGradient get gradient => LinearGradient(
         begin: Alignment.topLeft,
@@ -103,11 +108,61 @@ abstract final class AvatarCatalog {
     ),
   ];
 
+  /// Premium-only avatars. Ids must match `PREMIUM_AVATAR_IDS` in
+  /// `backend/app/payments/cosmetics.py`, which is what actually enforces them.
+  static const premiumPresets = <AvatarPreset>[
+    AvatarPreset(
+      id: 'avatar_p01',
+      name: 'Regal',
+      glyph: '👑',
+      colors: [AppColors.gold, Color(0xFFB45309)],
+      isPremium: true,
+    ),
+    AvatarPreset(
+      id: 'avatar_p02',
+      name: 'Eclipse',
+      glyph: '🌑',
+      colors: [Color(0xFF1E1B4B), AppColors.violet],
+      isPremium: true,
+    ),
+    AvatarPreset(
+      id: 'avatar_p03',
+      name: 'Aurora',
+      glyph: '🎆',
+      colors: [Color(0xFF22D3EE), Color(0xFFA855F7)],
+      isPremium: true,
+    ),
+    AvatarPreset(
+      id: 'avatar_p04',
+      name: 'Meteor',
+      glyph: '☄️',
+      colors: [Color(0xFFF97316), Color(0xFFDC2626)],
+      isPremium: true,
+    ),
+    AvatarPreset(
+      id: 'avatar_p05',
+      name: 'Diamond',
+      glyph: '💎',
+      colors: [Color(0xFF67E8F9), Color(0xFF2563EB)],
+      isPremium: true,
+    ),
+    AvatarPreset(
+      id: 'avatar_p06',
+      name: 'Phoenix',
+      glyph: '🔱',
+      colors: [Color(0xFFFBBF24), Color(0xFFEF4444)],
+      isPremium: true,
+    ),
+  ];
+
+  /// Free presets followed by premium ones — the picker's display order.
+  static const all = <AvatarPreset>[...presets, ...premiumPresets];
+
   /// Resolve an avatar id. Unknown or empty ids hash [seed] so a player still
   /// gets a stable identity instead of everyone sharing preset one.
   static AvatarPreset resolve(String? avatarId, {String? seed}) {
     if (avatarId != null && avatarId.isNotEmpty) {
-      for (final preset in presets) {
+      for (final preset in all) {
         if (preset.id == avatarId) return preset;
       }
     }

@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth.deps import CurrentUser, DbSession
 from app.models import Topic, TopicCategory
+from app.payments.cosmetics import can_use_avatar, is_known_avatar, profile_flair
 from app.schemas.profile import (
     ProfileOut,
     ProfileStatsOut,
@@ -77,6 +78,7 @@ async def get_my_profile(user: CurrentUser) -> ProfileOut:
         onboarding_completed=profile.onboarding_completed,
         theme_preference=profile.theme_preference,
         is_premium=user.is_premium,
+        flair=profile_flair(user),
         statistics=ProfileStatsOut(
             total_quizzes=stats.total_quizzes,
             total_questions=stats.total_questions,
@@ -102,6 +104,22 @@ async def update_my_profile(
     if payload.display_name is not None:
         profile.display_name = payload.display_name
     if payload.avatar_id is not None:
+        if not is_known_avatar(payload.avatar_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unknown avatar_id",
+            )
+        # Hiding a locked avatar in the picker is presentation; this is the
+        # part that actually stops someone PATCHing their way into the
+        # premium set.
+        if not can_use_avatar(user, payload.avatar_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "entitlement_premium_avatar",
+                    "message": "That avatar is part of Premium",
+                },
+            )
         profile.avatar_id = payload.avatar_id
     if payload.theme_preference is not None:
         profile.theme_preference = payload.theme_preference

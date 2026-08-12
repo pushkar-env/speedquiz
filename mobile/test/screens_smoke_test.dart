@@ -314,7 +314,15 @@ void main() {
     await _expectBuilds(tester, const HomeScreen());
     expect(find.text('Start a run'), findsOneWidget);
     expect(find.text('PLAY'), findsOneWidget);
+
     // Home shortcuts must be real, tappable topics — not decorative labels.
+    // The rail sits below the fold in a lazy ListView, so it has to be
+    // scrolled into existence first.
+    await tester.scrollUntilVisible(
+      find.text('Astronomy'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Astronomy'), findsWidgets);
   });
 
@@ -363,18 +371,24 @@ void main() {
     await _expectBuilds(tester, const ProfileScreen());
     expect(find.text('Player Test'), findsOneWidget);
 
-    // The hub itself only summarises; each area has its own screen.
+    // Signed-in identity the hub now spells out, rather than only implying.
+    expect(find.text('@player_test'), findsOneWidget);
+    expect(find.text('player@example.com'), findsOneWidget);
+
+    // The hub itself only summarises; each area has its own screen. The list
+    // is lazy, so anything below the fold has to be scrolled to before it
+    // exists in the tree at all.
     expect(find.text('Profile details'), findsOneWidget);
     expect(find.text('Achievements'), findsOneWidget);
-    expect(find.text('Statistics'), findsOneWidget);
-    expect(find.text('Go Premium'), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.text('Settings'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('Settings'), findsOneWidget);
+    for (final label in ['Statistics', 'Go Premium', 'Settings']) {
+      await tester.scrollUntilVisible(
+        find.text(label),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text(label), findsOneWidget);
+    }
   });
 
   testWidgets('achievements screen lists and filters', (tester) async {

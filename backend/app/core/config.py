@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -88,19 +89,42 @@ class Settings(BaseSettings):
     topic_bank_chunk_size: int = 20
     topic_bank_session_batch: int = 20
 
-    # Monetization roadmap — keep free unlimited until explicitly enabled
+    # Monetization — keep free unlimited until explicitly enabled
     entitlements_enforce_question_caps: bool = False
     free_unique_questions_per_topic: int = 30
     entitlements_dev_toggle: bool = False
 
-    # IAP — stub verify by default; apple_google uses store adapters
+    # --- Subscription products (create these ids in both consoles) ---
+    # Auto-renewing. On Apple both must live in ONE subscription group so a
+    # plan switch is an upgrade/downgrade, not a second active subscription.
+    iap_product_monthly: str = "speedquiz_premium_monthly"
+    iap_product_annual: str = "speedquiz_premium_annual"
+    # Retired non-consumable. Still honoured on verify/restore so anyone who
+    # bought it before the subscription launch keeps premium; never sold again.
     iap_premium_product_id: str = "speedquiz_premium"
+
     iap_android_package: str = "com.speedquiz.app"
     billing_verify_mode: str = "stub"  # stub | apple_google
     billing_allow_stub_in_production: bool = False
 
+    # How long past expiry we keep serving premium when the store says the
+    # subscription is in billing retry but has not yet granted a grace period.
+    # India's card e-mandates fail on renewal far more often than US cards, and
+    # yanking premium mid-quiz over a retryable decline is a refund request
+    # waiting to happen.
+    billing_grace_period_days: int = 3
+    # Re-verify an active subscription against the store if the cached state is
+    # older than this. Webhooks are the primary path; this is the safety net
+    # for dropped notifications.
+    billing_resync_stale_hours: int = 24
+
     # Google Play Developer API (empty JSON = not configured → 503 in apple_google)
     google_play_service_account_json: str = ""
+    # Real-time developer notifications (Pub/Sub push). Authenticate with a
+    # shared secret in the push URL, an OIDC service-account token, or both.
+    google_rtdn_shared_secret: str = ""
+    google_rtdn_oidc_audience: str = ""
+    google_rtdn_oidc_service_account: str = ""
 
     # Apple App Store Server API (empty key fields = not configured → 503)
     apple_iap_issuer_id: str = ""
@@ -108,6 +132,13 @@ class Settings(BaseSettings):
     apple_iap_private_key: str = ""  # PEM body; use \n for newlines in .env
     apple_iap_bundle_id: str = "com.speedquiz.app"
     apple_iap_environment: str = "Sandbox"  # Sandbox | Production
+    # App Store Server Notifications V2 arrive on a public endpoint, so the
+    # JWS x5c chain must be verified against Apple's root. Supply the root as
+    # a PEM/base64-DER blob or a file path:
+    #   curl -o backend/certs/AppleRootCA-G3.cer \
+    #     https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
+    apple_root_ca_pem: str = ""
+    apple_root_ca_path: str = "certs/AppleRootCA-G3.cer"
 
     # Public share landing (empty = omit web_url from share text)
     share_public_base_url: str = ""
@@ -129,6 +160,60 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def apple_iap_configured(self) -> bool:
+        return bool(
+            self.apple_iap_issuer_id.strip()
+            and self.apple_iap_key_id.strip()
+            and self.apple_iap_private_key.strip()
+        )
+
+    @property
+    def google_play_configured(self) -> bool:
+        return bool(self.google_play_service_account_json.strip())
+
+    @property
+    def store_verification_enabled(self) -> bool:
+        return self.billing_verify_mode.strip().lower() in {"apple_google", "store"}
+
+    @property
+    def stub_purchase_allowed(self) -> bool:
+        """Can a client complete a purchase without a real store transaction?
+
+        True only where stub verification would actually succeed, so the
+        paywall can offer a simulated purchase on a test deployment that has no
+        store products yet. This grants nothing the `purchases/verify` endpoint
+        would not already accept — it just stops the UI pretending buying is
+        impossible when the server is perfectly willing.
+        """
+        if self.store_verification_enabled:
+            return False
+        return (not self.is_production) or self.billing_allow_stub_in_production
+
+    @property
+    def apple_root_ca_material(self) -> str:
+        """Apple Root CA G3 as PEM/base64-DER text, or "" when unavailable.
+
+        Inline config wins over the file so a container can inject it as a
+        secret without a mounted volume.
+        """
+        inline = self.apple_root_ca_pem.strip()
+        if inline:
+            return inline
+
+        path = self.apple_root_ca_path.strip()
+        if not path:
+            return ""
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            # Resolve relative to the backend/ package root so the default
+            # works the same from a container WORKDIR and a local `pytest`.
+            candidate = Path(__file__).resolve().parents[2] / path
+        try:
+            return candidate.read_text(encoding="utf-8", errors="ignore")
+        except (OSError, ValueError):
+            return ""
 
     @property
     def docs_enabled(self) -> bool:
@@ -166,6 +251,20 @@ class Settings(BaseSettings):
 
         if self.debug:
             problems.append("DEBUG must be false when APP_ENV=production")
+
+        if (
+            self.store_verification_enabled
+            and self.apple_iap_configured
+            and not self.apple_root_ca_material
+        ):
+            problems.append(
+                "Apple IAP is configured but the Apple Root CA G3 is missing, "
+                "so App Store notifications could not be authenticated and "
+                "anyone could POST a forged subscription event. Fetch it with: "
+                "curl -o backend/certs/AppleRootCA-G3.cer "
+                "https://www.apple.com/certificateauthority/AppleRootCA-G3.cer "
+                "(or set APPLE_ROOT_CA_PEM)"
+            )
 
         if problems:
             raise ValueError(

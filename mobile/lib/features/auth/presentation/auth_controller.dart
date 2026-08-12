@@ -4,6 +4,7 @@ import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/features/auth/data/auth_repository.dart';
 import 'package:speedquiz/features/auth/data/google_auth_service.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
+import 'package:speedquiz/features/welcome/domain/welcome_cue.dart';
 
 sealed class AuthState {
   const AuthState();
@@ -58,6 +59,25 @@ class AuthController extends StateNotifier<AuthState> {
   final AuthRepository _repo;
   final GoogleAuthService _googleAuth;
 
+  WelcomeCue? _welcome;
+
+  /// Hand the pending greeting to whoever asks first, then forget it.
+  ///
+  /// Deliberately take-once: the greeting belongs to the moment the session
+  /// started, not to a screen, so re-entering Home must not replay it.
+  WelcomeCue? takeWelcomeCue() {
+    final cue = _welcome;
+    _welcome = null;
+    return cue;
+  }
+
+  /// A fresh account looks the same as a returning one over the wire, so
+  /// infer it: nobody with progress is on level 1 with zero XP and no streak.
+  static WelcomeKind _kindFor(AuthUser user) {
+    final untouched = user.level <= 1 && user.xp == 0 && user.bestStreak == 0;
+    return untouched ? WelcomeKind.newPlayer : WelcomeKind.signedIn;
+  }
+
   /// Restore a stored session on cold start.
   ///
   /// A network failure must never destroy a valid session, so tokens are only
@@ -68,6 +88,10 @@ class AuthController extends StateNotifier<AuthState> {
     try {
       final existing = await _repo.fetchMe();
       if (existing != null) {
+        _welcome = WelcomeCue(
+          kind: WelcomeKind.returning,
+          user: existing,
+        );
         state = AuthAuthenticated(existing);
         return;
       }
@@ -85,6 +109,10 @@ class AuthController extends StateNotifier<AuthState> {
     state = const AuthSignedOut(pending: true);
     try {
       final session = await _repo.signInAsGuest();
+      _welcome = WelcomeCue(
+        kind: _kindFor(session.user),
+        user: session.user,
+      );
       state = AuthAuthenticated(session.user);
     } catch (error) {
       state = AuthSignedOut(message: apiErrorMessage(error));
@@ -104,6 +132,10 @@ class AuthController extends StateNotifier<AuthState> {
         return const GoogleSignInResult(GoogleSignInOutcome.cancelled);
       }
       final session = await _repo.signInWithGoogle(idToken);
+      _welcome = WelcomeCue(
+        kind: _kindFor(session.user),
+        user: session.user,
+      );
       state = AuthAuthenticated(session.user);
       return const GoogleSignInResult(GoogleSignInOutcome.success);
     } catch (error) {

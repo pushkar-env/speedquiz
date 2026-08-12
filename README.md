@@ -69,6 +69,7 @@ Three guides, each self-contained:
 | Guide | Covers |
 |---|---|
 | **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | Architecture, running locally, environment reference, Google Sign-In setup, tests, client design system |
+| **[docs/TESTING_PAYMENTS.md](docs/TESTING_PAYMENTS.md)** | Testing Premium end to end — test mode with no Play Console, then the real Play sandbox |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Railway + Neon + Upstash + Cloudflare Worker, scaling, load testing, troubleshooting, VPS alternative |
 | **[docs/RELEASE.md](docs/RELEASE.md)** | Signing, App Links, IAP verification, Play Console, pre-submission checklist |
 
@@ -160,7 +161,8 @@ pytest
 16. **Phase 8d** — Android release readiness + deployment docs ✅
 17. **Phase 9** — Design system + landing/sign-out + full UI pass ✅
 18. **Phase 10** — Screen split, profile customisation, audio, random topic ✅
-19. **Next** — Play Console upload (keystore + AAB) → internal test → production
+19. **Phase 11** — Production subscriptions: monthly/annual, store webhooks, grace + refund handling, premium cosmetics ✅
+20. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/RELEASE.md](docs/RELEASE.md).
 
@@ -173,9 +175,9 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/RELEASE.md](docs/RELEASE.
 - **Leaderboards:** `GET /api/v1/leaderboards?scope=weekly|daily` (Redis + Postgres)
 - **Adaptive:** create session with `adaptive=true`; Elo-lite `skill_ratings` per topic
 - **Analytics:** `analytics_events` table (`ANALYTICS_PROVIDER=postgres`)
-- **Entitlements:** `GET /api/v1/entitlements/me` (caps off by default); Profile Free/Premium + paywall sheet
+- **Entitlements:** `GET /api/v1/entitlements/me` returns feature flags *and* live subscription state (plan, expiry, grace, manage URL); caps off by default
 - **Auth:** landing screen with **Play as Guest** + **Continue with Google** (`POST /auth/google`); Profile links a guest to Google and offers **Sign out** — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#5-google-sign-in)
-- **IAP:** `POST /api/v1/entitlements/purchases/verify` (`stub` default; `apple_google` with `APPLE_IAP_*` / `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Flutter store buy/restore when products exist
+- **Subscriptions:** monthly + annual auto-renewing, verified against Play `subscriptionsv2` and the App Store Server API, with store webhooks driving renewals, cancellations and refunds — see [Subscriptions](#subscriptions)
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `speedquiz://` + optional `SHARE_PUBLIC_BASE_URL`
 - **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.speedquiz.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready
 
@@ -189,11 +191,82 @@ Gameplay never waits on an LLM. Questions are served from Postgres.
 - Sessions prefer questions the player has not seen yet
 - Free play is **unlimited** today (caps ready behind `ENTITLEMENTS_ENFORCE_QUESTION_CAPS`)
 
-### Monetization roadmap
+## Subscriptions
 
-- Soft-gate free users after ~**30 unique questions / topic** (wired; flag off)
-- Unlock more via **premium** (dev toggle now; StoreKit/Play later) or **diamonds**
-- Flip `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true` when ready (server-side entitlements)
+Premium is two auto-renewing plans, sold through Play and the App Store in
+both India and the US.
+
+| Plan | Product ID | Period |
+|---|---|---|
+| Monthly | `speedquiz_premium_monthly` | P1M |
+| Annual (anchor) | `speedquiz_premium_annual` | P1Y |
+
+Premium unlocks unlimited unique questions per topic, unlimited custom AI
+topics, and cosmetics (six premium avatars, a gold profile ring, a leaderboard
+badge). The retired one-time `speedquiz_premium` unlock is still honoured on
+restore but is never sold again.
+
+**Prices live in the store consoles, never in code.** The client renders the
+localised `ProductDetails.price`, so ₹ and $ are both correct without the
+backend knowing either number, and the paywall's "Save X%" is computed from
+real store prices rather than a hardcoded claim.
+
+### How entitlement is decided
+
+The store is always the source of truth. `user.is_premium` is a cache over the
+`subscriptions` table, refreshed on every write and lazily on read.
+
+```text
+client buys ──► POST /entitlements/purchases/verify ──► ask the store ──► subscriptions
+store event ──► POST /billing/webhooks/{apple,google} ──► re-ask the store ──► subscriptions
+```
+
+Webhooks never trust their own payload for state — they use it to learn *which*
+subscription changed, then re-fetch the authoritative record. A forged
+notification can at worst trigger a redundant lookup.
+
+Notifications get dropped (Pub/Sub outages, Apple giving up after its retries,
+a deploy mid-flight), so the worker sweeps hourly for subscriptions whose paid
+period and grace have both elapsed and demotes them. Without that backstop a
+missed "expired" event would leave a lapsed subscriber on premium forever.
+
+Entitled states are `active`, `grace` and `cancelled` (a cancelled subscription
+runs to the end of the period already paid for). `on_hold`, `paused`,
+`pending`, `expired` and `revoked` are not. Refunds revoke immediately.
+
+### India and US specifics
+
+- **UPI / net banking settle asynchronously.** A purchase can sit `pending` for
+  minutes to days; the app says "waiting for your payment to clear" and the
+  entitlement lands via the store notification.
+- **Card e-mandates fail on renewal far more often in India.** Grace period and
+  account hold are routine, so the app surfaces a "fix payment method" prompt
+  deep-linking to the store rather than silently downgrading.
+- **Apple and Google are the merchant of record** in both markets and remit GST
+  / sales tax themselves.
+- A guest who buys and later signs in keeps the subscription; a purchase
+  already attached to a *signed-in* account will not transfer to another one.
+
+### Security
+
+- Apple notifications are verified by full `x5c` chain validation against a
+  pinned Apple Root CA G3 — production refuses to boot without it.
+- Play notifications require a shared secret and/or a verified Pub/Sub OIDC
+  token; the endpoint fails closed in production if neither is configured.
+- Notifications are deduplicated on the store's own event id in
+  `billing_events`, which doubles as the audit trail for payment disputes.
+- Sandbox purchases can never unlock premium in a production deployment.
+
+Setup for both consoles — products, price ladders, RTDN and ASSN wiring — is in
+[docs/RELEASE.md](docs/RELEASE.md).
+
+### Free tier
+
+- Soft-gate free users after **30 unique questions / topic**
+- Free custom topics are capped per day (`CUSTOM_TOPIC_DAILY_LIMIT_FREE`)
+- Both are wired but inert until `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true` —
+  until you flip it, premium sells unlimited access to something already
+  unlimited
 
 ## License
 

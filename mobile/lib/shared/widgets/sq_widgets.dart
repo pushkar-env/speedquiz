@@ -10,6 +10,7 @@ export 'sq_backdrop.dart';
 export 'sq_button.dart';
 export 'sq_confetti.dart';
 export 'sq_dialog.dart';
+export 'sq_glow.dart';
 export 'sq_press.dart';
 export 'sq_progress_ring.dart';
 export 'sq_shake.dart';

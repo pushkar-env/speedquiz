@@ -81,6 +81,12 @@ coverage/
 .coverage.*
 node_modules/
 
+# Store credentials and pinned CAs — fetched per environment, never committed
+backend/certs/*
+!backend/certs/README.md
+*.p8
+*.cer
+
 # Local agent / scratch (never commit)
 _p4_spec*.txt
 *.orig

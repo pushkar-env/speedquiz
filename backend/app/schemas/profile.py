@@ -64,6 +64,8 @@ class ProfileOut(BaseModel):
     onboarding_completed: bool
     theme_preference: str
     is_premium: bool
+    #: Cosmetic unlocks keyed off Premium — animated_ring, premium_badge.
+    flair: dict[str, bool] = Field(default_factory=dict)
     statistics: ProfileStatsOut
 
 

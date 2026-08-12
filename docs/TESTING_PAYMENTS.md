@@ -1,0 +1,243 @@
+# Testing payments
+
+Two phases. **Phase 1** needs no Play Console, no money, and no new build —
+three environment variables on Railway and the APK you already have. **Phase 2**
+is the real Play sandbox, for when you are close to launching.
+
+Do Phase 1 first. It proves the paywall, the gates, the cosmetics and the
+entitlement plumbing all work. Phase 2 only adds the store itself.
+
+---
+
+## Phase 1 — test on your existing build (15 minutes)
+
+### 1. Run the migration
+
+The subscription columns do not exist in Neon yet. Nothing below works until
+this runs:
+
+```bash
+cd backend && alembic upgrade head
+```
+
+Run it against the **Neon** database (the one `DATABASE_URL` points at on
+Railway), not a local one. Confirm it landed:
+
+```sql
+select column_name from information_schema.columns
+where table_name = 'subscriptions' and column_name = 'store_subscription_id';
+```
+
+One row back means you are good.
+
+### 2. Set three variables on Railway
+
+Railway → your API service → **Variables**:
+
+```env
+ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true
+FREE_UNIQUE_QUESTIONS_PER_TOPIC=5
+BILLING_ALLOW_STUB_IN_PRODUCTION=true
+```
+
+What each one does:
+
+| Variable | Why |
+|---|---|
+| `ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true` | **Without this Premium unlocks nothing.** Free play is unlimited by default, so the paywall would never appear and buying would change nothing observable. |
+| `FREE_UNIQUE_QUESTIONS_PER_TOPIC=5` | Hit the paywall in one quiz instead of six. Put this back to `30` before launch. |
+| `BILLING_ALLOW_STUB_IN_PRODUCTION=true` | Railway runs `APP_ENV=production`, where simulated purchases are refused by default. This opts in. **Remove it before you take real money.** |
+
+Redeploy. The API returns `"stub_purchase_allowed": true`, and the app switches
+the paywall into test mode by itself — no rebuild.
+
+> Leave `ENTITLEMENTS_DEV_TOGGLE` alone. It is rejected at boot in production on
+> purpose, and you do not need it — the test purchase path above replaces it.
+
+### 3. Check the server before touching the app
+
+```bash
+API=https://your-railway-url
+
+TOKEN=$(curl -sX POST $API/api/v1/auth/guest \
+  | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+
+curl -s $API/api/v1/entitlements/me -H "Authorization: Bearer $TOKEN"
+```
+
+You want to see:
+
+```json
+{ "is_premium": false, "enforce_caps": true,
+  "unique_per_topic_limit": 5, "stub_purchase_allowed": true }
+```
+
+If `enforce_caps` is `false`, the variables did not apply — check the deploy
+finished. If `stub_purchase_allowed` is `false`, `BILLING_ALLOW_STUB_IN_PRODUCTION`
+is missing or misspelt.
+
+### 4. Test in the app
+
+Open the build you already have. No rebuild needed — all of this is
+server-driven.
+
+1. **Profile → Premium.** A cyan **Test mode** banner appears, both plans are
+   listed, and the button reads `TEST PURCHASE · ANNUAL`.
+2. **Play a quiz** past 5 unique questions in one topic. The paywall sheet
+   should interrupt you.
+3. **Tap the test purchase button.** Premium unlocks, the caps lift, and the
+   status card shows the plan with a renewal date.
+4. **Profile → Edit.** The six premium avatars (crown, eclipse, aurora, meteor,
+   diamond, phoenix) are now unlocked — they showed a gold padlock before.
+5. **Leaderboard.** Your row has a gold badge and a premium avatar ring.
+6. **Custom topics.** Generate more than the free daily limit.
+
+Confirm it stuck server-side:
+
+```bash
+curl -s $API/api/v1/entitlements/me -H "Authorization: Bearer $TOKEN"
+# is_premium: true, unique_per_topic_limit: null, plan_code: "annual"
+```
+
+### 5. Reset to free and go again
+
+There is no "unbuy" in the app, so clear it in Neon:
+
+```sql
+delete from subscriptions where user_id = '<your-user-id>';
+update users set is_premium = false where id = '<your-user-id>';
+```
+
+Your user id is the `user_id` in the `/entitlements/me` response, or just take
+the newest row:
+
+```sql
+select id, is_premium from users order by created_at desc limit 5;
+```
+
+### What Phase 1 does **not** prove
+
+Everything that needs a real store: actual prices, ₹ vs $, renewals,
+cancellation, failed payments, refunds, and restore-after-reinstall. That is
+Phase 2.
+
+---
+
+## Phase 2 — real Play sandbox (when you are near launch)
+
+Real Play purchases, still no charge. Android only; iOS is in
+[RELEASE.md](RELEASE.md#app-store-connect-subscriptions).
+
+### 1. Create the subscriptions
+
+Play Console → **Monetize → Subscriptions**. Two products, one base plan each,
+auto-renewing:
+
+| Product ID | Base plan | Period |
+|---|---|---|
+| `speedquiz_premium_monthly` | `monthly` | 1 month |
+| `speedquiz_premium_annual` | `annual` | 1 year |
+
+The ids must match exactly — the backend refuses any product it does not sell.
+Set a **grace period** on both (Play defaults to none, and you cannot test
+failed renewals without it). Set India and US prices; suggested starting point
+is ₹99 / ₹799 and $2.99 / $23.99. Allow a few hours to propagate.
+
+### 2. Service account
+
+Enable the **Google Play Android Developer API**, create a service account,
+download the JSON key, and invite it in Play Console → **Users and permissions**
+with *View financial data* and *Manage orders and subscriptions*.
+
+Railway:
+
+```env
+GOOGLE_PLAY_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+BILLING_VERIFY_MODE=apple_google
+```
+
+The JSON must be on one line.
+
+### 3. License testers
+
+Play Console → **Setup → License testing** → add your Gmail account. This makes
+purchases free *and* compresses renewals so a year passes in about half an hour.
+
+### 4. Real-time notifications
+
+Without these, renewals and refunds never reach the backend.
+
+1. Google Cloud → Pub/Sub → create topic `play-rtdn`.
+2. Grant `google-play-developer-notifications@system.gserviceaccount.com` the
+   **Pub/Sub Publisher** role on it.
+3. Play Console → **Monetize → Monetization setup** → paste the topic name,
+   enable notifications.
+4. Create a **push subscription** to:
+
+   ```text
+   https://your-railway-url/api/v1/billing/webhooks/google?token=SOME_LONG_RANDOM_STRING
+   ```
+
+5. Railway: `GOOGLE_RTDN_SHARED_SECRET=SOME_LONG_RANDOM_STRING`
+
+Then hit **Send test notification** in Monetization setup and check:
+
+```sql
+select provider, notification_type, processed_at, error
+from billing_events order by created_at desc limit 5;
+```
+
+A row with `notification_type = 'test'` means the pipe works. **If this does not
+appear, stop and fix it** — nothing below works without it.
+
+### 5. Switch off test mode
+
+```env
+BILLING_ALLOW_STUB_IN_PRODUCTION=false
+```
+
+The app drops the test banner on its own and starts using real store products.
+
+### 6. Upload to internal testing
+
+IAP does not work against an unpublished app. Upload the AAB to **Internal
+testing** and install from the Play link — not `flutter run`.
+
+### 7. What to actually test
+
+License testers get fake payment methods at checkout:
+
+| Instrument | Tests |
+|---|---|
+| Test card, always approves | Purchase, renewal, plan switch |
+| Test card, always declines | Failed renewal → grace → hold |
+| Test instrument, slow approval | The `pending` state (this is the UPI path) |
+
+The two that cost real money if broken:
+
+- **Monthly → annual must replace, not stack.** After switching:
+  `select count(*) from subscriptions where user_id = '...';` must be `1`. If
+  it is `2`, the user is being billed twice.
+- **Refund revokes.** Refund in the console, wait a minute, confirm
+  `status = 'revoked'` and premium is gone in the app.
+
+Then the rest: cancel (premium survives to period end), reinstall + **Restore
+purchases**, and a guest who buys then signs in with Google keeps it.
+
+---
+
+## Before charging real money
+
+```env
+BILLING_VERIFY_MODE=apple_google
+BILLING_ALLOW_STUB_IN_PRODUCTION=false
+ENTITLEMENTS_DEV_TOGGLE=false
+ENTITLEMENTS_ENFORCE_QUESTION_CAPS=true
+FREE_UNIQUE_QUESTIONS_PER_TOPIC=30
+```
+
+Verify with a fresh guest token that `stub_purchase_allowed` is `false` and
+`billing_mode` is `store`. Then check the paywall on an **India-region store
+account and a US one** — wrong-currency bugs only show up there.
+
+Full store setup, iOS, and the launch checklist: [RELEASE.md](RELEASE.md).

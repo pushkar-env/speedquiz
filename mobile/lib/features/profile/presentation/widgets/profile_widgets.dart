@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
@@ -27,83 +29,92 @@ class ProfileIdentityCard extends StatelessWidget {
     final threshold = xpThresholdForLevel(level);
     final progress = threshold <= 0 ? 0.0 : (xp / threshold).clamp(0.0, 1.0);
 
-    final card = Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppRadii.lg),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: isPremium
-              ? [
-                  AppColors.gold.withValues(alpha: p.isDark ? 0.16 : 0.12),
-                  p.surface,
-                ]
-              : [p.accentWash(p.isDark ? 0.14 : 0.09), p.surface],
+    final card = SqGlowBorder(
+      radius: AppRadii.lg,
+      thickness: 1.4,
+      glow: 0.24,
+      period: const Duration(seconds: 9),
+      colors: isPremium
+          ? const [
+              AppColors.gold,
+              Color(0xFFFFF0C2),
+              Color(0xFFFF9F43),
+              AppColors.gold,
+            ]
+          : null,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isPremium
+                ? [
+                    AppColors.gold.withValues(alpha: p.isDark ? 0.16 : 0.12),
+                    p.surface,
+                  ]
+                : [p.accentWash(p.isDark ? 0.14 : 0.09), p.surface],
+          ),
+          boxShadow: AppShadows.soft(p),
         ),
-        border: Border.all(
-          color: isPremium
-              ? AppColors.gold.withValues(alpha: 0.35)
-              : p.accentWash(0.3),
-        ),
-        boxShadow: AppShadows.soft(p),
-      ),
-      child: Column(
-        children: [
-          SqProgressRing(
-            value: progress,
-            size: compact ? 82 : 96,
-            stroke: 5,
-            gradient: isPremium
-                ? AppColors.premiumGradient
-                : AppColors.brandGradient,
-            child: SqAvatar(
-              name: user?.name,
-              seed: user?.id,
-              avatarId: user?.avatarId,
-              size: compact ? 62 : 74,
-              premium: isPremium,
+        child: Column(
+          children: [
+            SqProgressRing(
+              value: progress,
+              size: compact ? 82 : 96,
+              stroke: 5,
+              gradient: isPremium
+                  ? AppColors.premiumGradient
+                  : AppColors.brandGradient,
+              child: SqAvatar(
+                name: user?.name,
+                seed: user?.id,
+                avatarId: user?.avatarId,
+                size: compact ? 62 : 74,
+                premium: isPremium,
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            user?.name ?? 'Guest',
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            alignment: WrapAlignment.center,
-            children: [
-              SqBadge(
-                label: 'LEVEL $level',
-                icon: Icons.military_tech_rounded,
-              ),
-              SqBadge(
-                label: isPremium ? 'PREMIUM' : 'FREE',
-                color: isPremium ? AppColors.gold : p.accent,
-                gradient: isPremium ? AppColors.premiumGradient : null,
-              ),
-              if (user?.isGuest == true)
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              user?.name ?? 'Guest',
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
                 SqBadge(
-                  label: 'GUEST',
-                  color: p.textSecondary,
-                  icon: Icons.person_outline_rounded,
+                  label: 'LEVEL $level',
+                  icon: Icons.military_tech_rounded,
                 ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          SqProgressTrack(value: progress, height: 7),
-          const SizedBox(height: 6),
-          Text(
-            '$xp / $threshold XP to level ${level + 1}',
-            style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
-          ),
-        ],
+                SqBadge(
+                  label: isPremium ? 'PREMIUM' : 'FREE',
+                  color: isPremium ? AppColors.gold : p.accent,
+                  gradient: isPremium ? AppColors.premiumGradient : null,
+                ),
+                if (user?.isGuest == true)
+                  SqBadge(
+                    label: 'GUEST',
+                    color: p.textSecondary,
+                    icon: Icons.person_outline_rounded,
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            SqProgressTrack(value: progress, height: 7),
+            const SizedBox(height: 6),
+            Text(
+              '$xp / $threshold XP to level ${level + 1}',
+              style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -238,11 +249,16 @@ class SubScreenHeader extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.action,
+    this.fallback = Routes.profile,
   });
 
   final String title;
   final String? subtitle;
   final Widget? action;
+
+  /// Where back lands when this screen is the only page in the stack — a deep
+  /// link or a cold start can open it with nothing underneath.
+  final String fallback;
 
   @override
   Widget build(BuildContext context) {
@@ -260,7 +276,7 @@ class SubScreenHeader extends StatelessWidget {
           SqIconButton(
             icon: Icons.arrow_back_rounded,
             tooltip: 'Back',
-            onPressed: () => Navigator.of(context).maybePop(),
+            onPressed: () => context.popOrGo(fallback),
           ),
           const SizedBox(width: 12),
           Expanded(

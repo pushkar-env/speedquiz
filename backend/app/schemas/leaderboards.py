@@ -10,6 +10,9 @@ class LeaderboardEntryOut(BaseModel):
     username: str
     score: int
     is_me: bool = False
+    avatar_id: str = "avatar_01"
+    #: Drives the subscriber badge — one of the cosmetics Premium sells.
+    is_premium: bool = False
 
 
 class LeaderboardMeOut(BaseModel):

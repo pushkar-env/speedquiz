@@ -17,10 +17,16 @@ elif str(_here.parent) not in sys.path:
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import close_redis, init_redis, redis_ping
+from app.payments.maintenance import expire_lapsed_subscriptions
 from app.services.generation_jobs import process_inventory_maintenance, process_queued_jobs
 
 logger = get_logger(__name__)
 _running = True
+
+#: Idle ticks are ~10s, so this reconciles subscriptions roughly hourly. It is
+#: a backstop for dropped store notifications, not the primary path, so it does
+#: not need to be prompt — it needs to be certain.
+_SUBSCRIPTION_SWEEP_TICKS = 360
 
 
 def _handle_signal(*_: object) -> None:
@@ -58,11 +64,19 @@ async def run() -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.exception("inventory_scan_failed", error=str(exc))
 
+        expired = 0
+        if ticks % _SUBSCRIPTION_SWEEP_TICKS == 0:
+            try:
+                expired = await expire_lapsed_subscriptions()
+            except Exception as exc:  # noqa: BLE001 — never kill the loop
+                logger.exception("subscription_sweep_failed", error=str(exc))
+
         logger.info(
             "worker_heartbeat",
             redis=ok,
             jobs_processed=processed,
             topups_enqueued=enqueued,
+            subscriptions_expired=expired,
         )
         await asyncio.sleep(5 if (processed or enqueued) else 10)
 

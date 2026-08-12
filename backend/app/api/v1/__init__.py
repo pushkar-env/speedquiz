@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     achievements,
     auth,
+    billing_webhooks,
     catalog,
     custom_topics,
     daily,
@@ -25,4 +26,5 @@ api_router.include_router(achievements.router)
 api_router.include_router(daily.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(entitlements.router)
+api_router.include_router(billing_webhooks.router)
 api_router.include_router(share.router)

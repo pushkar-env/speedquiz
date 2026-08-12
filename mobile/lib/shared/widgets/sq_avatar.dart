@@ -41,6 +41,16 @@ class SqAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildAvatar(context);
+    // The rotating gold ring is a Premium cosmetic. Honouring reduce-motion
+    // is not optional here — it renders on every screen the player visits.
+    if (!premium || !ring || MediaQuery.disableAnimationsOf(context)) {
+      return body;
+    }
+    return _PremiumRing(size: size, child: body);
+  }
+
+  Widget _buildAvatar(BuildContext context) {
     final preset = AvatarCatalog.resolve(avatarId, seed: seed ?? name);
     final colors =
         premium ? AppColors.premiumGradient.colors : preset.colors;
@@ -83,6 +93,73 @@ class SqAvatar extends StatelessWidget {
                     height: 1,
                   ),
             ),
+    );
+  }
+}
+
+/// A slowly rotating gradient ring, drawn behind a premium player's avatar.
+class _PremiumRing extends StatefulWidget {
+  const _PremiumRing({required this.size, required this.child});
+
+  final double size;
+  final Widget child;
+
+  @override
+  State<_PremiumRing> createState() => _PremiumRingState();
+}
+
+class _PremiumRingState extends State<_PremiumRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 6),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ringSize = widget.size + 8;
+
+    return SizedBox(
+      width: ringSize,
+      height: ringSize,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          RepaintBoundary(
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                return Transform.rotate(
+                  angle: _controller.value * 2 * 3.1415926535,
+                  child: Container(
+                    width: ringSize,
+                    height: ringSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: SweepGradient(
+                        colors: [
+                          AppColors.gold,
+                          AppColors.gold.withValues(alpha: 0.15),
+                          AppColors.magenta.withValues(alpha: 0.55),
+                          AppColors.gold,
+                        ],
+                        stops: const [0.0, 0.35, 0.7, 1.0],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          widget.child,
+        ],
+      ),
     );
   }
 }

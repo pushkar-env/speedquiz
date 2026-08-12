@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/custom_topics/data/custom_topics_repository.dart';
@@ -71,7 +72,9 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
     });
 
     try {
-      final result = await ref.read(customTopicsRepositoryProvider).create(
+      final result = await ref
+          .read(customTopicsRepositoryProvider)
+          .create(
             prompt: prompt,
             difficulty: _difficulty,
             mode: _mode,
@@ -85,7 +88,8 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
       if (session == null || result.topicId == null) {
         setState(() {
           _preparing = false;
-          _error = 'We could not build enough good questions for that. '
+          _error =
+              'We could not build enough good questions for that. '
               'Try a clearer or broader topic.';
         });
         return;
@@ -141,7 +145,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                     SqIconButton(
                       icon: Icons.close_rounded,
                       tooltip: 'Close',
-                      onPressed: () => Navigator.of(context).maybePop(),
+                      onPressed: () => context.popOrGo(Routes.home),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -308,9 +312,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                                     child: Text(
                                       _error!,
                                       style: theme.textTheme.bodySmall
-                                          ?.copyWith(
-                                        color: AppColors.danger,
-                                      ),
+                                          ?.copyWith(color: AppColors.danger),
                                     ),
                                   ),
                                 ],
@@ -325,10 +327,7 @@ class _CustomTopicScreenState extends ConsumerState<CustomTopicScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      p.background.withValues(alpha: 0),
-                      p.background,
-                    ],
+                    colors: [p.background.withValues(alpha: 0), p.background],
                   ),
                 ),
                 padding: const EdgeInsets.fromLTRB(
@@ -373,15 +372,14 @@ class _GeneratingViewState extends State<_GeneratingView>
     ('🎲', 'Shuffling the good ones in'),
   ];
 
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 3),
-  )..addStatusListener((status) {
-      if (status == AnimationStatus.completed && mounted) {
-        setState(() => _stage = (_stage + 1) % _stages.length);
-        _controller.forward(from: 0);
-      }
-    });
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: const Duration(seconds: 3))
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed && mounted) {
+            setState(() => _stage = (_stage + 1) % _stages.length);
+            _controller.forward(from: 0);
+          }
+        });
 
   int _stage = 0;
 
@@ -496,9 +494,7 @@ class _SuggestionChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.violet.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(AppRadii.pill),
-          border: Border.all(
-            color: AppColors.violet.withValues(alpha: 0.28),
-          ),
+          border: Border.all(color: AppColors.violet.withValues(alpha: 0.28)),
         ),
         child: Text(
           label,

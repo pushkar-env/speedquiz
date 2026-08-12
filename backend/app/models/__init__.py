@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -97,11 +98,38 @@ class QuizSessionStatus(str, enum.Enum):
 
 
 class SubscriptionStatus(str, enum.Enum):
+    """Lifecycle of a store subscription, as we resolve it.
+
+    Entitled states are ACTIVE, GRACE and CANCELLED — a cancelled subscription
+    keeps premium until the paid period runs out, which is what both stores
+    promise the buyer. ON_HOLD, PAUSED, EXPIRED and REVOKED are not entitled.
+    """
+
     NONE = "none"
     ACTIVE = "active"
+    # Renewal payment failed; store is retrying and told us to keep serving.
     GRACE = "grace"
-    EXPIRED = "expired"
+    # Grace elapsed, still in billing retry. Play suspends the entitlement.
+    ON_HOLD = "on_hold"
+    # Play-only: user paused the subscription; resumes automatically.
+    PAUSED = "paused"
+    # Purchase awaiting payment (UPI / net banking / "ask to buy").
+    PENDING = "pending"
+    # Auto-renew off but the paid period has not ended yet.
     CANCELLED = "cancelled"
+    EXPIRED = "expired"
+    # Refunded or charged back — entitlement pulled immediately.
+    REVOKED = "revoked"
+
+
+#: Statuses that grant premium (subject to the period not having elapsed).
+ENTITLED_SUBSCRIPTION_STATUSES = frozenset(
+    {
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.GRACE,
+        SubscriptionStatus.CANCELLED,
+    }
+)
 
 
 class GenerationJobStatus(str, enum.Enum):
@@ -551,7 +579,25 @@ class QuestionReport(Base, TimestampMixin):
 
 
 class Subscription(Base, TimestampMixin):
+    """One store subscription, mirrored from Apple / Google.
+
+    The store is always the source of truth. Every column here is a cache of
+    what a verification call or a server notification last told us, so the
+    resolver can answer "is this user premium?" without a network hop.
+    """
+
     __tablename__ = "subscriptions"
+    __table_args__ = (
+        # Identity of a subscription at the store. Apple gives us a stable
+        # originalTransactionId; on Play we follow linkedPurchaseToken back to
+        # the first token in the upgrade chain and use that.
+        UniqueConstraint(
+            "platform", "store_subscription_id", name="uq_subscription_store_identity"
+        ),
+        Index("ix_subscriptions_user_status", "user_id", "status"),
+        # Drives the "which subscriptions need re-syncing?" sweep.
+        Index("ix_subscriptions_status_expires", "status", "expires_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -561,11 +607,96 @@ class Subscription(Base, TimestampMixin):
         default=SubscriptionStatus.NONE,
         nullable=False,
     )
+    platform: Mapped[str] = mapped_column(String(16), nullable=False, default="android")
     product_id: Mapped[Optional[str]] = mapped_column(String(128))
-    platform: Mapped[Optional[str]] = mapped_column(String(32))  # ios / android
-    original_transaction_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
+    #: PlanCode value — monthly / annual / legacy_lifetime.
+    plan_code: Mapped[Optional[str]] = mapped_column(String(32))
+
+    #: Stable store identity; see the unique constraint above. Text rather than
+    #: a bounded String because on Play this *is* a purchase token, and those
+    #: routinely run past 255 characters.
+    store_subscription_id: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Apple's originalTransactionId. Kept as its own column because restore
+    #: and legacy rows both key off it.
+    original_transaction_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    #: Most recent transaction/order id, for support lookups and refunds.
+    latest_transaction_id: Mapped[Optional[str]] = mapped_column(String(255))
+    #: Play purchase token for the *current* item in the upgrade chain. Long
+    #: enough that String(255) would truncate, so Text.
+    purchase_token: Mapped[Optional[str]] = mapped_column(Text)
+
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    current_period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Set while the store is retrying a failed renewal. Premium survives here.
+    grace_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Play-only: when a paused subscription resumes on its own.
+    auto_resume_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    auto_renewing: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: Free-text reason from the store (user_initiated, billing_error, …).
+    cancel_reason: Mapped[Optional[str]] = mapped_column(String(64))
+    #: True while an introductory / promotional price is being charged.
+    is_intro_offer: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    offer_id: Mapped[Optional[str]] = mapped_column(String(128))
+
+    #: Billing country and money, straight from the store payload. Kept for
+    #: revenue reporting by market (IN vs US) — never used for entitlement.
+    country: Mapped[Optional[str]] = mapped_column(String(8))
+    currency: Mapped[Optional[str]] = mapped_column(String(8))
+    price_micros: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    #: Sandbox / Production. A sandbox purchase must never grant real premium
+    #: in a production deployment.
+    environment: Mapped[Optional[str]] = mapped_column(String(16))
+    #: True for Play licence-test purchases and Apple sandbox transactions.
+    is_test: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    last_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     entitlements: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: Last raw store payload, redacted of tokens. Support and dispute triage.
+    raw: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class BillingEvent(Base):
+    """Append-only log of store notifications.
+
+    Two jobs: idempotency (stores retry notifications aggressively, and Play
+    redelivers the whole Pub/Sub backlog after an outage) and forensics — when
+    a player says "I paid and got nothing", this table is the receipt.
+    """
+
+    __tablename__ = "billing_events"
+    __table_args__ = (
+        # The store's own event id. Unique so a redelivery is a no-op insert
+        # conflict rather than a double-grant.
+        UniqueConstraint("provider", "event_id", name="uq_billing_event_provider_id"),
+        Index("ix_billing_events_store_subscription", "store_subscription_id"),
+        Index("ix_billing_events_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)  # apple / google
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    notification_type: Mapped[Optional[str]] = mapped_column(String(64))
+    subtype: Mapped[Optional[str]] = mapped_column(String(64))
+    #: Play purchase tokens exceed 255 characters; see Subscription above.
+    store_subscription_id: Mapped[Optional[str]] = mapped_column(Text)
+    product_id: Mapped[Optional[str]] = mapped_column(String(128))
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    subscription_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subscriptions.id", ondelete="SET NULL")
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class DailyChallenge(Base, TimestampMixin):

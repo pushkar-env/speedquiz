@@ -31,19 +31,28 @@ CustomTransitionPage<T> sqSharedAxisPage<T>({
 
       return FadeTransition(
         opacity: enter,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.045),
-            end: Offset.zero,
-          ).animate(enter),
+        child: ScaleTransition(
+          // The incoming page arrives from just behind the glass rather than
+          // sliding flat — a little Z travel is what reads as "depth".
+          scale: Tween<double>(begin: 0.965, end: 1).animate(enter),
           child: SlideTransition(
             position: Tween<Offset>(
-              begin: Offset.zero,
-              end: const Offset(0, -0.025),
-            ).animate(leave),
-            child: FadeTransition(
-              opacity: Tween<double>(begin: 1, end: 0.4).animate(leave),
-              child: child,
+              begin: const Offset(0, 0.045),
+              end: Offset.zero,
+            ).animate(enter),
+            child: ScaleTransition(
+              // ...and the outgoing page recedes, instead of just dimming.
+              scale: Tween<double>(begin: 1, end: 0.97).animate(leave),
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: Offset.zero,
+                  end: const Offset(0, -0.025),
+                ).animate(leave),
+                child: FadeTransition(
+                  opacity: Tween<double>(begin: 1, end: 0.4).animate(leave),
+                  child: child,
+                ),
+              ),
             ),
           ),
         ),
@@ -100,12 +109,25 @@ CustomTransitionPage<T> sqModalPage<T>({
         curve: AppMotion.emphasized,
         reverseCurve: AppMotion.exit,
       );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 0.16),
-          end: Offset.zero,
-        ).animate(curved),
-        child: FadeTransition(opacity: curved, child: child),
+      // A sheet should feel like it covers something. The scrim darkens the
+      // page underneath as the sheet climbs, then lifts again on the way out.
+      return Stack(
+        children: [
+          FadeTransition(
+            opacity: Tween<double>(begin: 0, end: 1).animate(curved),
+            child: const ColoredBox(
+              color: Color(0x59000000),
+              child: SizedBox.expand(),
+            ),
+          ),
+          SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.16),
+              end: Offset.zero,
+            ).animate(curved),
+            child: FadeTransition(opacity: curved, child: child),
+          ),
+        ],
       );
     },
   );

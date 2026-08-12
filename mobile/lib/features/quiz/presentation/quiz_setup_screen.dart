@@ -4,13 +4,18 @@ import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
 class QuizSetupScreen extends ConsumerStatefulWidget {
-  const QuizSetupScreen({super.key, this.initialTopicId, this.initialTopicName});
+  const QuizSetupScreen({
+    super.key,
+    this.initialTopicId,
+    this.initialTopicName,
+  });
 
   final String? initialTopicId;
   final String? initialTopicName;
@@ -270,10 +275,7 @@ class _QuizSetupScreenState extends ConsumerState<QuizSetupScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      p.background.withValues(alpha: 0),
-                      p.background,
-                    ],
+                    colors: [p.background.withValues(alpha: 0), p.background],
                   ),
                 ),
                 padding: const EdgeInsets.fromLTRB(
@@ -325,7 +327,10 @@ class _SetupHeader extends StatelessWidget {
           SqIconButton(
             icon: Icons.close_rounded,
             tooltip: 'Close',
-            onPressed: () => Navigator.of(context).maybePop(),
+            // Setup is also entered with `go` (from results → NEW RUN), where
+            // there is nothing to pop — fall through to Home instead of
+            // becoming a dead button.
+            onPressed: () => context.popOrGo(Routes.home),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -413,10 +418,7 @@ class _TopicPicker extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           Row(
             children: [
-              Text(
-                group.category.icon,
-                style: const TextStyle(fontSize: 13),
-              ),
+              Text(group.category.icon, style: const TextStyle(fontSize: 13)),
               const SizedBox(width: 6),
               Text(
                 group.category.name.toUpperCase(),
@@ -526,6 +528,11 @@ class _Choice extends StatelessWidget {
             color: selected ? p.accent : p.border,
             width: selected ? 1.5 : 1,
           ),
+          // A static bloom on the chosen chip: cheap enough to sit on every
+          // chip in a wrap, and it makes the selection findable at a glance.
+          boxShadow: selected
+              ? AppShadows.glow(AppColors.accent, strength: 0.22)
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -573,6 +580,7 @@ class _ModeCard extends StatelessWidget {
     return SqSurface(
       onTap: onTap,
       highlighted: selected,
+      glow: selected,
       accent: tint,
       child: Row(
         children: [

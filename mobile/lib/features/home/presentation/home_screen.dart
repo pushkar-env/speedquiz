@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
@@ -12,6 +13,9 @@ import 'package:speedquiz/features/daily/domain/daily_models.dart';
 import 'package:speedquiz/features/shell/presentation/main_shell.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/features/topics/presentation/topic_tile.dart';
+import 'package:speedquiz/features/welcome/data/welcome_store.dart';
+import 'package:speedquiz/features/welcome/domain/welcome_cue.dart';
+import 'package:speedquiz/features/welcome/presentation/welcome_sheet.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -23,6 +27,52 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _startingDaily = false;
+
+  /// Set only for a player who relaunched the app — they get an inline hello
+  /// rather than a sheet in the face.
+  WelcomeCue? _returningCue;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _greet());
+  }
+
+  /// Consume the greeting raised when the session started, if there is one.
+  Future<void> _greet() async {
+    final cue = ref.read(authControllerProvider.notifier).takeWelcomeCue();
+    if (cue == null || !mounted) return;
+    final store = ref.read(welcomeStoreProvider);
+
+    if (!cue.deservesSheet) {
+      // A relaunch is not an event: at most one quiet hello a day.
+      if (!await store.shouldGreetToday()) return;
+      await store.markGreeted();
+      if (mounted) setState(() => _returningCue = cue);
+      return;
+    }
+
+    await store.markGreeted();
+
+    // Give the daily a moment to land so the sheet can name what is waiting,
+    // but never hold the greeting hostage to the network.
+    DailyChallengeInfo? daily;
+    try {
+      daily = await ref
+          .read(dailyChallengeProvider.future)
+          .timeout(const Duration(milliseconds: 1200));
+    } catch (_) {
+      daily = null;
+    }
+
+    if (!mounted) return;
+    await showWelcomeSheet(
+      context,
+      cue: cue,
+      daily: daily,
+      onPlay: () => context.push(Routes.quizSetup),
+    );
+  }
 
   Future<void> _refresh() async {
     ref.invalidate(dailyChallengeProvider);
@@ -48,9 +98,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           title: 'Today is done',
           message: info.bestScore != null
               ? 'You scored ${formatScore(info.bestScore!)} on today’s '
-                  'challenge. A fresh set unlocks tomorrow.'
+                    'challenge. A fresh set unlocks tomorrow.'
               : 'You already cleared today’s challenge. '
-                  'A fresh set unlocks tomorrow.',
+                    'A fresh set unlocks tomorrow.',
           glyph: '✅',
           tone: SqDialogTone.success,
           actionLabel: 'NICE',
@@ -145,11 +195,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onTap: () => context.go(Routes.profile),
                   ),
                 ),
+                // Only present for a relaunch, and only once a day.
+                AnimatedSize(
+                  duration: AppMotion.normal,
+                  curve: AppMotion.enter,
+                  alignment: Alignment.topCenter,
+                  child: _returningCue == null
+                      ? const SizedBox(width: double.infinity)
+                      : Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.md),
+                          child: WelcomeBanner(
+                            name: _returningCue!.user.name,
+                            onDismiss: () =>
+                                setState(() => _returningCue = null),
+                          ),
+                        ),
+                ),
                 const SizedBox(height: AppSpacing.xl),
                 SqStagger(
                   index: 1,
                   child: Text(
-                    _greeting(),
+                    _greeting(user?.name),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       letterSpacing: 1.4,
                       fontWeight: FontWeight.w700,
@@ -217,12 +283,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  static String _greeting() {
+  /// Time-of-day greeting, addressed to the player when we know their name.
+  static String _greeting(String? name) {
     final hour = DateTime.now().hour;
-    if (hour < 5) return 'BURNING THE MIDNIGHT OIL';
-    if (hour < 12) return 'GOOD MORNING';
-    if (hour < 17) return 'GOOD AFTERNOON';
-    return 'GOOD EVENING';
+    final part = hour < 5
+        ? 'BURNING THE MIDNIGHT OIL'
+        : hour < 12
+            ? 'GOOD MORNING'
+            : hour < 17
+                ? 'GOOD AFTERNOON'
+                : 'GOOD EVENING';
+    if (name == null || name.trim().isEmpty) return part;
+    return '$part, ${name.trim().toUpperCase()}';
   }
 }
 
@@ -308,11 +380,7 @@ class _PlayerBar extends StatelessWidget {
             const SizedBox(width: 10),
             _StreakPill(streak: streak),
             const SizedBox(width: 4),
-            Icon(
-              Icons.chevron_right_rounded,
-              size: 18,
-              color: p.textFaint,
-            ),
+            Icon(Icons.chevron_right_rounded, size: 18, color: p.textFaint),
           ],
         ),
       ),
@@ -352,10 +420,7 @@ class _StreakPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            active ? '🔥' : '💤',
-            style: const TextStyle(fontSize: 13),
-          ),
+          Text(active ? '🔥' : '💤', style: const TextStyle(fontSize: 13)),
           const SizedBox(width: 5),
           Text(
             '$streak',
@@ -409,102 +474,102 @@ class _PlayHeroState extends State<_PlayHero>
     final theme = Theme.of(context);
     final p = theme.sq;
 
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: _pulse,
-        builder: (context, child) {
-          final t = Curves.easeInOut.transform(_pulse.value);
-          return Container(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadii.lg),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: p.isDark
-                    ? [
-                        Color.lerp(
-                          const Color(0xFF14332B),
-                          const Color(0xFF1B4438),
-                          t,
-                        )!,
-                        const Color(0xFF101822),
-                      ]
-                    : [
-                        Color.lerp(
-                          const Color(0xFFE9FBF4),
-                          const Color(0xFFDDF7EC),
-                          t,
-                        )!,
-                        Colors.white,
-                      ],
+    return SqGlowBorder(
+      radius: AppRadii.lg,
+      glow: 0.26,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _pulse,
+          builder: (context, child) {
+            final t = Curves.easeInOut.transform(_pulse.value);
+            return Container(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadii.lg),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: p.isDark
+                      ? [
+                          Color.lerp(
+                            const Color(0xFF14332B),
+                            const Color(0xFF1B4438),
+                            t,
+                          )!,
+                          const Color(0xFF101822),
+                        ]
+                      : [
+                          Color.lerp(
+                            const Color(0xFFE9FBF4),
+                            const Color(0xFFDDF7EC),
+                            t,
+                          )!,
+                          Colors.white,
+                        ],
+                ),
+                boxShadow: AppShadows.glow(
+                  AppColors.accent,
+                  strength: 0.10 + t * 0.07,
+                ),
               ),
-              border: Border.all(
-                color: p.accent.withValues(alpha: 0.22 + t * 0.16),
+              child: child,
+            );
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const SqBreathe(
+                    child: SqBadge(
+                      label: 'READY',
+                      icon: Icons.bolt_rounded,
+                      dense: true,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'SERVER-SCORED',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: p.textFaint,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
               ),
-              boxShadow: AppShadows.glow(
-                AppColors.accent,
-                strength: 0.10 + t * 0.07,
+              const SizedBox(height: AppSpacing.md),
+              Text('Start a run', style: theme.textTheme.headlineMedium),
+              const SizedBox(height: 4),
+              Text(
+                'Timed questions, speed bonuses and streak multipliers. '
+                'Five modes to pick from.',
+                style: theme.textTheme.bodyMedium,
               ),
-            ),
-            child: child,
-          );
-        },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                SqBadge(
-                  label: 'READY',
-                  icon: Icons.bolt_rounded,
-                  dense: true,
-                ),
-                const Spacer(),
-                Text(
-                  'SERVER-SCORED',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: p.textFaint,
-                    letterSpacing: 1.2,
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: SqButton(
+                      label: 'PLAY',
+                      icon: Icons.play_arrow_rounded,
+                      onPressed: widget.onPlay,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              'Start a run',
-              style: theme.textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Timed questions, speed bonuses and streak multipliers. '
-              'Five modes to pick from.',
-              style: theme.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: SqButton(
-                    label: 'PLAY',
-                    icon: Icons.play_arrow_rounded,
-                    onPressed: widget.onPlay,
+                  const SizedBox(width: 10),
+                  // One tap, no decisions — random topic, adaptive difficulty.
+                  Expanded(
+                    flex: 2,
+                    child: SqButton(
+                      label: 'SURPRISE',
+                      variant: SqButtonVariant.ghost,
+                      onPressed: widget.onSurprise,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                // One tap, no decisions — random topic, adaptive difficulty.
-                Expanded(
-                  flex: 2,
-                  child: SqButton(
-                    label: 'SURPRISE',
-                    variant: SqButtonVariant.ghost,
-                    onPressed: widget.onSurprise,
-                  ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -554,15 +619,17 @@ class _DailyCard extends StatelessWidget {
         final done = daily.isCompleted;
         final subtitle = done
             ? (daily.bestScore != null
-                ? 'Cleared · ${formatScore(daily.bestScore!)} pts'
-                : 'Cleared · back tomorrow')
+                  ? 'Cleared · ${formatScore(daily.bestScore!)} pts'
+                  : 'Cleared · back tomorrow')
             : daily.isInProgress
-                ? 'Resume · ${daily.topicName}'
-                : '${daily.topicName} · ${daily.questionCount} questions';
+            ? 'Resume · ${daily.topicName}'
+            : '${daily.topicName} · ${daily.questionCount} questions';
 
         return SqSurface(
           onTap: busy ? null : onTap,
           highlighted: !done,
+          // Only while it is still waiting to be played.
+          glow: !done,
           accent: done ? AppColors.success : AppColors.warning,
           child: Row(
             children: [

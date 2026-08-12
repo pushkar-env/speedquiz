@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/entitlements/presentation/premium_offer.dart';
 import 'package:speedquiz/features/profile/presentation/widgets/profile_widgets.dart';
@@ -51,7 +53,7 @@ class PremiumScreen extends StatelessWidget {
                     AppSpacing.xxl,
                   ),
                   child: PremiumOffer(
-                    onDone: () => Navigator.of(context).maybePop(),
+                    onDone: () => context.popOrGo(Routes.profile),
                   ),
                 ),
               ),

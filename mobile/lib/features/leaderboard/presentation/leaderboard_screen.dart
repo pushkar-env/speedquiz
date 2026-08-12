@@ -256,8 +256,10 @@ class _PodiumSlot extends StatelessWidget {
         SqAvatar(
           name: entry!.username,
           seed: entry!.username,
+          avatarId: entry!.avatarId,
           size: place == 1 ? 52 : 42,
           ring: true,
+          premium: entry!.isPremium,
         ),
         const SizedBox(height: 6),
         Text(
@@ -398,17 +400,38 @@ class _RankRow extends StatelessWidget {
               ),
             ),
           ),
-          SqAvatar(name: entry.username, seed: entry.username, size: 32),
+          SqAvatar(
+            name: entry.username,
+            seed: entry.username,
+            avatarId: entry.avatarId,
+            size: 32,
+            premium: entry.isPremium,
+          ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              entry.username,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: entry.isMe ? p.accent : p.textPrimary,
-                fontWeight: entry.isMe ? FontWeight.w800 : FontWeight.w600,
-              ),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    entry.username,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: entry.isMe ? p.accent : p.textPrimary,
+                      fontWeight:
+                          entry.isMe ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (entry.isPremium) ...[
+                  const SizedBox(width: 5),
+                  const Icon(
+                    Icons.workspace_premium_rounded,
+                    size: 14,
+                    color: AppColors.gold,
+                  ),
+                ],
+              ],
             ),
           ),
           Text(

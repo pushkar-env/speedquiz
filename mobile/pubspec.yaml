@@ -19,8 +19,16 @@ dependencies:
   share_plus: ^13.3.0
   app_links: ^7.2.1
   in_app_purchase: ^3.3.0
+  # Referenced directly for the platform-specific purchase params: Play needs
+  # ChangeSubscriptionParam to make a plan switch replace the old subscription
+  # instead of running two, and both stores need the account id passed through.
+  in_app_purchase_android: ^0.5.2
+  in_app_purchase_storekit: ^0.4.11
   google_sign_in: ^7.2.0
   audioplayers: ^6.8.1
+  # Opens the store-managed subscription screen — the only place a user can
+  # cancel or fix a failed payment method.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

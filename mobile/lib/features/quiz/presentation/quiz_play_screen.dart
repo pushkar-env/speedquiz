@@ -633,7 +633,7 @@ class _TimerRingState extends State<_TimerRing> {
     if (widget.frozen || !low || seconds <= 0 || seconds > 3) return;
     if (seconds == _lastTickSecond) return;
     _lastTickSecond = seconds;
-    widget.audio.play(Sfx.tick, volume: 0.6);
+    widget.audio.play(Sfx.tick);
   }
 
   @override

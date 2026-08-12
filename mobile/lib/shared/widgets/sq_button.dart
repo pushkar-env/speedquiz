@@ -3,6 +3,7 @@ import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/shared/widgets/sq_glow.dart';
 import 'package:speedquiz/shared/widgets/sq_press.dart';
 import 'package:speedquiz/shared/widgets/sq_shake.dart';
 
@@ -117,6 +118,8 @@ class SqButtonState extends State<SqButton> with SingleTickerProviderStateMixin 
             ],
           );
 
+    final filled = style.gradient != null;
+
     final surface = AnimatedOpacity(
       duration: AppMotion.fast,
       opacity: _disabled ? 0.55 : 1,
@@ -158,7 +161,13 @@ class SqButtonState extends State<SqButton> with SingleTickerProviderStateMixin 
                 Sound.tap();
                 widget.onPressed!.call();
               },
-        child: surface,
+        // Only the gradient variants catch the light; a ghost button glinting
+        // would read as a loading state.
+        child: SqSheen(
+          active: filled && !_disabled,
+          radius: AppRadii.md,
+          child: surface,
+        ),
       ),
     );
   }

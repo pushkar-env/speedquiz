@@ -7,6 +7,7 @@ import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/achievements/data/achievements_repository.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
+import 'package:speedquiz/features/profile/presentation/widgets/account_card.dart';
 import 'package:speedquiz/features/profile/presentation/widgets/profile_widgets.dart';
 import 'package:speedquiz/features/shell/presentation/main_shell.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
@@ -110,9 +111,11 @@ class ProfileScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.md),
+                SqStagger(index: 3, child: AccountCard(user: user)),
                 const SizedBox(height: AppSpacing.xl),
                 SqStagger(
-                  index: 3,
+                  index: 4,
                   child: ProfileNavTile(
                     icon: Icons.badge_outlined,
                     title: 'Profile details',
@@ -122,7 +125,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
                 SqStagger(
-                  index: 4,
+                  index: 5,
                   child: ProfileNavTile(
                     icon: Icons.emoji_events_outlined,
                     title: 'Achievements',
@@ -138,7 +141,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
                 SqStagger(
-                  index: 5,
+                  index: 6,
                   child: ProfileNavTile(
                     icon: Icons.insights_rounded,
                     title: 'Statistics',
@@ -149,7 +152,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
                 SqStagger(
-                  index: 6,
+                  index: 7,
                   child: ProfileNavTile(
                     icon: isPremium
                         ? Icons.workspace_premium_rounded
@@ -164,7 +167,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
                 SqStagger(
-                  index: 7,
+                  index: 8,
                   child: ProfileNavTile(
                     icon: Icons.tune_rounded,
                     title: 'Settings',

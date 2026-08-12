@@ -92,9 +92,9 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
     final text = result.shareText.isNotEmpty
         ? result.shareText
         : 'SPEEDQUIZ\n\n${result.topicName}\n'
-            'Score: ${formatScore(result.finalScore)}\n'
-            'Accuracy: ${result.accuracy.toStringAsFixed(0)}%\n'
-            'Best streak: ${result.bestStreak}';
+              'Score: ${formatScore(result.finalScore)}\n'
+              'Accuracy: ${result.accuracy.toStringAsFixed(0)}%\n'
+              'Best streak: ${result.bestStreak}';
     try {
       await SharePlus.instance.share(ShareParams(text: text));
     } catch (_) {
@@ -152,15 +152,15 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                           const SizedBox(height: AppSpacing.md),
                           SqStagger(
                             index: 1,
-                            child: _LevelUpBanner(
-                              level: result.level ?? 1,
-                            ),
+                            child: _LevelUpBanner(level: result.level ?? 1),
                           ),
                         ],
                         const SizedBox(height: AppSpacing.lg),
                         ScaleTransition(
-                          scale: Tween<double>(begin: 0.7, end: 1)
-                              .animate(_scoreScale),
+                          scale: Tween<double>(
+                            begin: 0.7,
+                            end: 1,
+                          ).animate(_scoreScale),
                           child: Center(
                             child: SqAnimatedCounter(
                               value: result.finalScore,
@@ -303,8 +303,7 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                                   label: 'NEW RUN',
                                   icon: Icons.tune_rounded,
                                   variant: SqButtonVariant.ghost,
-                                  onPressed: () =>
-                                      context.go(Routes.quizSetup),
+                                  onPressed: () => context.go(Routes.quizSetup),
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -354,36 +353,47 @@ class _LevelUpBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.gold.withValues(alpha: 0.26),
-            AppColors.warning.withValues(alpha: 0.10),
-          ],
+    return SqGlowBorder(
+      radius: AppRadii.md,
+      thickness: 1.4,
+      glow: 0.32,
+      period: const Duration(seconds: 4),
+      colors: const [
+        AppColors.gold,
+        Color(0xFFFFF0C2),
+        AppColors.warning,
+        AppColors.gold,
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.gold.withValues(alpha: 0.26),
+              AppColors.warning.withValues(alpha: 0.10),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          boxShadow: AppShadows.glow(AppColors.gold, strength: 0.22),
         ),
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        border: Border.all(color: AppColors.gold.withValues(alpha: 0.45)),
-        boxShadow: AppShadows.glow(AppColors.gold, strength: 0.22),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('🎉', style: TextStyle(fontSize: 18)),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              'LEVEL UP — you hit level $level',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: AppColors.gold,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.4,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🎉', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'LEVEL UP — you hit level $level',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: AppColors.gold,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.4,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -476,9 +486,7 @@ class _XpCard extends StatelessWidget {
                 prefix: '+',
                 suffix: ' XP',
                 grouped: false,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: p.accent,
-                ),
+                style: theme.textTheme.headlineSmall?.copyWith(color: p.accent),
               ),
               const Spacer(),
               SqBadge(label: 'LEVEL $currentLevel'),
@@ -516,19 +524,24 @@ class _UnlockCard extends StatelessWidget {
     return SqSurface(
       accent: AppColors.gold,
       highlighted: true,
+      glow: true,
       child: Row(
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AppColors.premiumGradient,
-            ),
-            child: Text(
-              achievementGlyph(achievement.icon),
-              style: const TextStyle(fontSize: 20),
+          SqBreathe(
+            scale: 0.05,
+            period: const Duration(milliseconds: 2200),
+            child: Container(
+              width: 46,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: AppColors.premiumGradient,
+              ),
+              child: Text(
+                achievementGlyph(achievement.icon),
+                style: const TextStyle(fontSize: 20),
+              ),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -538,10 +551,7 @@ class _UnlockCard extends StatelessWidget {
               children: [
                 Text(achievement.name, style: theme.textTheme.titleSmall),
                 const SizedBox(height: 1),
-                Text(
-                  achievement.description,
-                  style: theme.textTheme.bodySmall,
-                ),
+                Text(achievement.description, style: theme.textTheme.bodySmall),
                 if (rewards.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Text(

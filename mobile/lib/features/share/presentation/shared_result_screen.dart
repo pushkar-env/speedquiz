@@ -90,10 +90,7 @@ class _SharedCard extends StatelessWidget {
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        p.accentWash(p.isDark ? 0.14 : 0.10),
-                        p.surface,
-                      ],
+                      colors: [p.accentWash(p.isDark ? 0.14 : 0.10), p.surface],
                     ),
                     border: Border.all(color: p.accentWash(0.32)),
                     boxShadow: AppShadows.lifted(p),
@@ -101,10 +98,7 @@ class _SharedCard extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SqBadge(
-                        label: 'SHARED RUN',
-                        icon: Icons.share_rounded,
-                      ),
+                      SqBadge(label: 'SHARED RUN', icon: Icons.share_rounded),
                       const SizedBox(height: AppSpacing.md),
                       SqAnimatedCounter(
                         value: result.finalScore,
@@ -125,8 +119,7 @@ class _SharedCard extends StatelessWidget {
                           Expanded(
                             child: _MiniStat(
                               label: 'Accuracy',
-                              value:
-                                  '${result.accuracy.toStringAsFixed(0)}%',
+                              value: '${result.accuracy.toStringAsFixed(0)}%',
                             ),
                           ),
                           Expanded(

@@ -57,6 +57,79 @@ class TestProductionGuards:
         assert Settings(app_env="development").docs_enabled is True
 
 
+APPLE_CREDS = {
+    "billing_verify_mode": "apple_google",
+    "apple_iap_issuer_id": "issuer",
+    "apple_iap_key_id": "key",
+    "apple_iap_private_key": "-----BEGIN PRIVATE KEY-----\nX\n-----END PRIVATE KEY-----",
+    "apple_root_ca_path": "certs/DOES_NOT_EXIST.cer",
+    "apple_root_ca_pem": "",
+}
+
+FAKE_ROOT_PEM = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"
+
+
+class TestBillingGuards:
+    def test_apple_iap_without_a_pinned_root_ca_is_rejected(self):
+        # App Store notifications arrive on a public endpoint and are
+        # authenticated only by their signature. With no pinned root there is
+        # no way to tell a real subscription event from a forged one.
+        with pytest.raises(ValueError, match="Apple Root CA"):
+            _settings(**APPLE_CREDS)
+
+    def test_apple_iap_boots_once_the_root_is_supplied(self):
+        settings = _settings(**{**APPLE_CREDS, "apple_root_ca_pem": FAKE_ROOT_PEM})
+        assert settings.store_verification_enabled
+        assert settings.apple_root_ca_material
+
+    def test_the_guard_does_not_block_an_android_only_deployment(self):
+        # Shipping Android first is normal; the guard must be scoped to
+        # whether Apple IAP is actually configured.
+        settings = _settings(
+            billing_verify_mode="apple_google",
+            google_play_service_account_json='{"client_email":"a@b.c"}',
+            apple_root_ca_path="certs/DOES_NOT_EXIST.cer",
+        )
+        assert settings.apple_iap_configured is False
+        assert settings.google_play_configured is True
+
+    def test_stub_mode_does_not_require_store_credentials(self):
+        settings = _settings()
+        assert settings.store_verification_enabled is False
+
+
+class TestStubPurchaseGate:
+    """Controls whether the paywall may offer a simulated purchase.
+
+    It must track exactly what `purchases/verify` would accept — offering a
+    test purchase the server then refuses is a dead end, and offering one on a
+    real deployment would be free premium.
+    """
+
+    def test_development_allows_a_simulated_purchase(self):
+        assert Settings(app_env="development").stub_purchase_allowed is True
+
+    def test_production_refuses_by_default(self):
+        assert _settings().stub_purchase_allowed is False
+
+    def test_production_allows_it_only_when_explicitly_enabled(self):
+        settings = _settings(billing_allow_stub_in_production=True)
+        assert settings.stub_purchase_allowed is True
+
+    def test_real_store_verification_always_wins(self):
+        # Once the store adapters are on, a simulated purchase must never be
+        # offered — even on a dev box, since verify would reject it anyway.
+        for env in ("development", "production"):
+            settings = Settings(
+                app_env=env,
+                debug=False,
+                jwt_secret=STRONG_SECRET,
+                billing_verify_mode="apple_google",
+                billing_allow_stub_in_production=True,
+            )
+            assert settings.stub_purchase_allowed is False, env
+
+
 class TestConnectionPool:
     def test_pool_settings_come_from_env(self):
         settings = Settings(db_pool_size=3, db_max_overflow=7)

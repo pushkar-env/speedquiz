@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/routing/page_transitions.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/custom_topics/presentation/custom_topic_screen.dart';
@@ -73,17 +74,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: Routes.splash,
-        pageBuilder: (context, state) => sqFadeThroughPage(
-          state: state,
-          child: const SplashScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            sqFadeThroughPage(state: state, child: const SplashScreen()),
       ),
       GoRoute(
         path: Routes.landing,
-        pageBuilder: (context, state) => sqFadeThroughPage(
-          state: state,
-          child: const LandingScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            sqFadeThroughPage(state: state, child: const LandingScreen()),
       ),
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
@@ -91,17 +88,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: Routes.home,
-            pageBuilder: (context, state) => sqFadeThroughPage(
-              state: state,
-              child: const HomeScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                sqFadeThroughPage(state: state, child: const HomeScreen()),
           ),
           GoRoute(
             path: Routes.explore,
-            pageBuilder: (context, state) => sqFadeThroughPage(
-              state: state,
-              child: const ExploreScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                sqFadeThroughPage(state: state, child: const ExploreScreen()),
           ),
           GoRoute(
             path: Routes.leaderboard,
@@ -112,10 +105,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: Routes.profile,
-            pageBuilder: (context, state) => sqFadeThroughPage(
-              state: state,
-              child: const ProfileScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                sqFadeThroughPage(state: state, child: const ProfileScreen()),
           ),
         ],
       ),
@@ -126,7 +117,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.profileEdit,
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: const ProfileEditScreen(),
+          child: const SqBackGuard(
+            fallback: Routes.profile,
+            child: ProfileEditScreen(),
+          ),
         ),
       ),
       GoRoute(
@@ -134,7 +128,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.achievements,
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: const AchievementsScreen(),
+          child: const SqBackGuard(
+            fallback: Routes.profile,
+            child: AchievementsScreen(),
+          ),
         ),
       ),
       GoRoute(
@@ -142,7 +139,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.stats,
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: const StatsScreen(),
+          child: const SqBackGuard(
+            fallback: Routes.profile,
+            child: StatsScreen(),
+          ),
         ),
       ),
       GoRoute(
@@ -150,7 +150,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.premium,
         pageBuilder: (context, state) => sqModalPage(
           state: state,
-          child: const PremiumScreen(),
+          child: const SqBackGuard(
+            fallback: Routes.profile,
+            child: PremiumScreen(),
+          ),
         ),
       ),
       GoRoute(
@@ -158,7 +161,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.settings,
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: const SettingsScreen(),
+          child: const SqBackGuard(
+            fallback: Routes.profile,
+            child: SettingsScreen(),
+          ),
         ),
       ),
       GoRoute(
@@ -168,9 +174,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>?;
           return sqModalPage(
             state: state,
-            child: QuizSetupScreen(
-              initialTopicId: extra?['topicId'] as String?,
-              initialTopicName: extra?['topicName'] as String?,
+            child: SqBackGuard(
+              fallback: Routes.home,
+              child: QuizSetupScreen(
+                initialTopicId: extra?['topicId'] as String?,
+                initialTopicName: extra?['topicName'] as String?,
+              ),
             ),
           );
         },
@@ -180,7 +189,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.customTopic,
         pageBuilder: (context, state) => sqModalPage(
           state: state,
-          child: const CustomTopicScreen(),
+          child: const SqBackGuard(
+            fallback: Routes.home,
+            child: CustomTopicScreen(),
+          ),
         ),
       ),
       GoRoute(
@@ -197,7 +209,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               mode: extra['mode'] as String? ?? 'casual',
               difficulty: extra['difficulty'] as String? ?? 'medium',
               adaptive: extra['adaptive'] as bool? ?? false,
-              existingSession: sessionExtra is QuizSession ? sessionExtra : null,
+              existingSession: sessionExtra is QuizSession
+                  ? sessionExtra
+                  : null,
             ),
           );
         },
@@ -216,9 +230,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           };
           return sqSharedAxisPage(
             state: state,
-            child: QuizResultsLoaderScreen(
-              sessionId: state.pathParameters['sessionId']!,
-              args: args,
+            child: SqBackGuard(
+              fallback: Routes.home,
+              child: QuizResultsLoaderScreen(
+                sessionId: state.pathParameters['sessionId']!,
+                args: args,
+              ),
             ),
           );
         },
@@ -228,8 +245,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/share/results/:sessionId',
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: SharedResultScreen(
-            sessionId: state.pathParameters['sessionId']!,
+          child: SqBackGuard(
+            fallback: Routes.home,
+            child: SharedResultScreen(
+              sessionId: state.pathParameters['sessionId']!,
+            ),
           ),
         ),
       ),

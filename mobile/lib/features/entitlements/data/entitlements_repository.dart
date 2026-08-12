@@ -44,6 +44,18 @@ class EntitlementsRepository {
     return EntitlementsMe.fromJson(response.data as Map<String, dynamic>);
   }
 
+  /// The plans the paywall may offer, without prices — those come from the
+  /// store so they are localised and always match what the player is charged.
+  Future<List<PremiumPlan>> fetchPlans() async {
+    final response = await _dio.get('${AppConfig.apiPrefix}/entitlements/plans');
+    final data = response.data as Map<String, dynamic>;
+    final raw = (data['plans'] as List<dynamic>? ?? const []);
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(PremiumPlan.fromJson)
+        .toList(growable: false);
+  }
+
   Future<EntitlementsMe> setDevPremium({required bool enabled}) async {
     final response = await _dio.post(
       '${AppConfig.apiPrefix}/entitlements/dev/premium',
@@ -76,4 +88,10 @@ final entitlementsRepositoryProvider = Provider<EntitlementsRepository>((ref) {
 final entitlementsProvider =
     FutureProvider.autoDispose<EntitlementsMe>((ref) {
   return ref.watch(entitlementsRepositoryProvider).fetchMe();
+});
+
+/// Cached for the session — the plan *shape* only changes on a deploy, and the
+/// paywall should not wait on a round trip to render.
+final premiumPlansProvider = FutureProvider<List<PremiumPlan>>((ref) {
+  return ref.watch(entitlementsRepositoryProvider).fetchPlans();
 });

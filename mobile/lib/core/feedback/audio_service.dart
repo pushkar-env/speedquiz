@@ -6,18 +6,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/settings/app_settings.dart';
 
 /// Every one-shot cue the game can play.
+///
+/// [gain] is the cue's place in the mix, applied on top of the asset's own
+/// level. The assets are mastered to roughly -20 dBFS with soft attacks and
+/// low fundamentals, so callers no longer pass volumes by hand — the balance
+/// between cues lives here, in one place.
 enum Sfx {
-  tap('tap.wav'),
-  tick('tick.wav'),
-  correct('correct.wav'),
-  wrong('wrong.wav'),
-  streak('streak.wav'),
-  finish('finish.wav'),
-  unlock('unlock.wav');
+  /// Fires on every button. Deliberately the quietest thing in the app.
+  tap('tap.wav', 0.85),
 
-  const Sfx(this.asset);
+  /// Repeats once a second during a countdown, so it sits under everything.
+  tick('tick.wav', 0.7),
+
+  correct('correct.wav', 1),
+  wrong('wrong.wav', 0.95),
+  streak('streak.wav', 1),
+  finish('finish.wav', 1),
+  unlock('unlock.wav', 1);
+
+  const Sfx(this.asset, this.gain);
 
   final String asset;
+
+  /// Relative loudness within the cue set, 0..1.
+  final double gain;
 
   String get path => 'audio/$asset';
 }
@@ -66,6 +78,14 @@ class AudioService {
   Future<void> _ensurePool() async {
     if (_pool.isNotEmpty || _broken) return;
     try {
+      // Never take audio focus. A quiz cue must not pause the player's music
+      // — on Android `mixWithOthers` maps to no focus request at all, so
+      // Spotify keeps going while the app ticks over the top.
+      await AudioPlayer.global.setAudioContext(
+        AudioContextConfig(
+          focus: AudioContextConfigFocus.mixWithOthers,
+        ).build(),
+      );
       for (var i = 0; i < _poolSize; i++) {
         final player = AudioPlayer()
           ..setReleaseMode(ReleaseMode.stop)
@@ -81,9 +101,12 @@ class AudioService {
   }
 
   /// Play a one-shot cue. Silently does nothing when sound is off.
+  ///
+  /// [volume] scales the cue's own [Sfx.gain]; leave it alone unless a call
+  /// site genuinely needs to duck a cue below its designed level.
   void play(Sfx sfx, {double volume = 1.0}) {
     if (!_sfxEnabled || _disposed || _broken) return;
-    unawaited(_playAsync(sfx, volume));
+    unawaited(_playAsync(sfx, sfx.gain * volume));
   }
 
   Future<void> _playAsync(Sfx sfx, double volume) async {
@@ -104,7 +127,8 @@ class AudioService {
     if (_disposed || _broken || !_musicEnabled) return;
     try {
       _ambient ??= AudioPlayer()..setReleaseMode(ReleaseMode.loop);
-      await _ambient!.setVolume(0.16);
+      // The pad is a bed, not a track — it should register as room tone.
+      await _ambient!.setVolume(0.22);
       await _ambient!.play(AssetSource('audio/ambient.wav'));
     } catch (error) {
       debugPrint('audio_ambient_failed: $error');
@@ -164,5 +188,5 @@ abstract final class Sound {
       _service?.play(sfx, volume: volume);
 
   /// UI tick for deliberate actions (buttons, tab switches).
-  static void tap() => play(Sfx.tap, volume: 0.45);
+  static void tap() => play(Sfx.tap);
 }

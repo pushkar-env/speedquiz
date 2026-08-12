@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/core/utils/formatters.dart';
+import 'package:speedquiz/shared/widgets/sq_glow.dart';
 import 'package:speedquiz/shared/widgets/sq_press.dart';
 
 /// The standard card surface: bordered, rounded, optionally highlighted, and
@@ -17,6 +18,7 @@ class SqSurface extends StatelessWidget {
     this.elevated = false,
     this.radius = AppRadii.md,
     this.gradient,
+    this.glow = false,
   });
 
   final Widget child;
@@ -30,6 +32,10 @@ class SqSurface extends StatelessWidget {
   final double radius;
   final Gradient? gradient;
 
+  /// Trades the static highlight border for a living one. Opt-in: a screen
+  /// full of travelling borders is a screen with no focal point.
+  final bool glow;
+
   @override
   Widget build(BuildContext context) {
     final p = context.sq;
@@ -39,7 +45,9 @@ class SqSurface extends StatelessWidget {
         ? tint.withValues(alpha: p.isDark ? 0.1 : 0.07)
         : (elevated ? p.surfaceElevated : p.surface);
 
-    final content = AnimatedContainer(
+    final glowing = glow && highlighted;
+
+    Widget content = AnimatedContainer(
       duration: AppMotion.fast,
       curve: AppMotion.standard,
       width: double.infinity,
@@ -48,11 +56,31 @@ class SqSurface extends StatelessWidget {
         color: gradient == null ? background : null,
         gradient: gradient,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: border, width: highlighted ? 1.5 : 1),
+        border: Border.all(
+          // The animated border draws its own edge; a static one underneath
+          // would double up and read as a seam.
+          color: glowing ? Colors.transparent : border,
+          width: highlighted ? 1.5 : 1,
+        ),
         boxShadow: elevated ? AppShadows.soft(p) : null,
       ),
       child: child,
     );
+
+    if (glowing) {
+      content = SqGlowBorder(
+        radius: radius,
+        thickness: 1.5,
+        glow: 0.22,
+        colors: [
+          tint,
+          Color.lerp(tint, Colors.white, 0.45)!,
+          tint.withValues(alpha: 0.35),
+          tint,
+        ],
+        child: content,
+      );
+    }
 
     if (onTap == null) return content;
     return SqPressable(

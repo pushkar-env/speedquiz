@@ -7,6 +7,8 @@ class LeaderboardEntry extends Equatable {
     required this.username,
     required this.score,
     required this.isMe,
+    this.avatarId,
+    this.isPremium = false,
   });
 
   final int rank;
@@ -14,6 +16,10 @@ class LeaderboardEntry extends Equatable {
   final String username;
   final int score;
   final bool isMe;
+  final String? avatarId;
+
+  /// Drives the subscriber badge — one of the cosmetics Premium sells.
+  final bool isPremium;
 
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
@@ -22,11 +28,13 @@ class LeaderboardEntry extends Equatable {
       username: json['username'] as String? ?? 'Player',
       score: json['score'] as int,
       isMe: json['is_me'] as bool? ?? false,
+      avatarId: json['avatar_id'] as String?,
+      isPremium: json['is_premium'] as bool? ?? false,
     );
   }
 
   @override
-  List<Object?> get props => [rank, userId, score];
+  List<Object?> get props => [rank, userId, score, isPremium];
 }
 
 class LeaderboardMe extends Equatable {

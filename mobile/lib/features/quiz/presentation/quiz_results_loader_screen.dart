@@ -83,8 +83,7 @@ class QuizResultsLoaderScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     TextButton(
-                      onPressed: () =>
-                          context.go('/share/results/$sessionId'),
+                      onPressed: () => context.go('/share/results/$sessionId'),
                       child: const Text('Open the shared card instead'),
                     ),
                   ],
@@ -94,14 +93,12 @@ class QuizResultsLoaderScreen extends ConsumerWidget {
           ),
         ),
       ),
-      data: (result) => QuizResultsScreen(
-        args: QuizResultArgs(result: result),
-      ),
+      data: (result) => QuizResultsScreen(args: QuizResultArgs(result: result)),
     );
   }
 }
 
-final _ownerResultProvider =
-    FutureProvider.autoDispose.family<QuizResult, String>((ref, sessionId) {
-  return ref.watch(quizRepositoryProvider).getResult(sessionId);
-});
+final _ownerResultProvider = FutureProvider.autoDispose
+    .family<QuizResult, String>((ref, sessionId) {
+      return ref.watch(quizRepositoryProvider).getResult(sessionId);
+    });
