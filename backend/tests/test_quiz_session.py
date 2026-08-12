@@ -1,18 +1,46 @@
 """Tests for quiz option ordering and end-condition helpers."""
 
 from app.models import GameMode, QuizSession, QuizSessionStatus
-from app.services.quiz_service import MODE_DEFAULTS, _should_end_run
+from app.services import survival
+from app.services.quiz_service import (
+    MODE_DEFAULTS,
+    RETIRED_MODES,
+    SELECTABLE_MODES,
+    _defaults_for,
+    _should_end_run,
+)
 from app.services.scoring import ScoringService
 
 
 def test_mode_defaults_cover_core_modes():
     assert MODE_DEFAULTS[GameMode.CASUAL]["question_time_limit_ms"] == 15000
-    assert MODE_DEFAULTS[GameMode.SURVIVAL]["lives"] == 3
-    assert MODE_DEFAULTS[GameMode.NEGATIVE]["score"] == 1000
-    assert MODE_DEFAULTS[GameMode.SPEEDRUN]["time_budget_ms"] == 60000
+    assert MODE_DEFAULTS[GameMode.SURVIVAL]["lives"] == survival.START_LIVES
+    assert MODE_DEFAULTS[GameMode.SPEEDRUN]["time_budget_ms"] == 45000
 
 
-def test_sudden_death_ends_on_wrong():
+def test_retired_modes_are_not_selectable():
+    """Negative and sudden death are gone from the offering."""
+    assert GameMode.NEGATIVE in RETIRED_MODES
+    assert GameMode.SUDDEN_DEATH in RETIRED_MODES
+    assert RETIRED_MODES.isdisjoint(SELECTABLE_MODES)
+    assert SELECTABLE_MODES == {
+        GameMode.CASUAL,
+        GameMode.SPEEDRUN,
+        GameMode.SURVIVAL,
+    }
+
+
+def test_retired_modes_still_resolve_defaults():
+    """A run started just before the deploy must stay finishable.
+
+    Their enum labels remain in the database because historical sessions and
+    scores reference them, so the lookup has to answer rather than KeyError.
+    """
+    for mode in RETIRED_MODES:
+        assert _defaults_for(mode) == MODE_DEFAULTS[GameMode.CASUAL]
+
+
+def test_retired_mode_no_longer_ends_a_run_early():
     session = QuizSession(
         mode=GameMode.SUDDEN_DEATH,
         status=QuizSessionStatus.ACTIVE,
@@ -22,8 +50,7 @@ def test_sudden_death_ends_on_wrong():
         topic_id=__import__("uuid").uuid4(),
         user_id=__import__("uuid").uuid4(),
     )
-    assert _should_end_run(session, is_correct=False) is True
-    assert _should_end_run(session, is_correct=True) is False
+    assert _should_end_run(session, is_correct=False) is False
 
 
 def test_survival_ends_at_zero_lives():

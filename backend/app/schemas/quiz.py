@@ -81,6 +81,19 @@ class AnswerFeedbackOut(BaseModel):
     run_ended: bool
     next_question: Optional[PlayableQuestionOut] = None
 
+    # --- Speedrun ---------------------------------------------------------
+    # Defaulted so every other mode (and any older client) is unaffected.
+    #: Lump bonus for crossing a streak milestone, already inside points_awarded.
+    milestone_bonus: int = 0
+    #: Signed clock change the answer itself earned: refund or penalty.
+    time_delta_ms: Optional[int] = None
+    #: What the question plus its verdict flash cost off the clock.
+    time_burned_ms: Optional[int] = None
+    #: Streak is hot — the HUD switches to its overdrive treatment.
+    overdrive: bool = False
+    #: blitz | fast | clean | clutch — how quick the correct answer was.
+    speed_tier: Optional[str] = None
+
 
 class QuizResultOut(BaseModel):
     session_id: UUID
@@ -94,6 +107,8 @@ class QuizResultOut(BaseModel):
     correct_count: int
     incorrect_count: int
     average_answer_ms: int
+    #: Wall time the run lasted. The headline stat for a speedrun.
+    duration_ms: int = 0
     xp_earned: int
     is_personal_best: bool
     previous_best: int

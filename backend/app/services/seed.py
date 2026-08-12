@@ -19,25 +19,69 @@ CATEGORIES = [
     ("academic", "Academic", "📚", 80),
 ]
 
+#: (slug, name, category, icon, trending)
+#:
+#: Kept roughly balanced across categories — a picker where Science has six
+#: entries and Sports has one looks unfinished, and thin categories are the
+#: first thing a player notices when browsing.
+#:
+#: New rows start with an empty bank and are therefore not offered until the
+#: worker's inventory sweep fills them past the low watermark. Adding a topic
+#: here schedules generation; it does not make it playable immediately.
 TOPICS = [
-    ("mathematics", "Mathematics", "academic", "🔢", False),
+    # --- Science ---
     ("science", "Science", "science", "🧠", True),
     ("physics", "Physics", "science", "⚛️", False),
     ("chemistry", "Chemistry", "science", "🧪", False),
     ("biology", "Biology", "science", "🧬", False),
     ("astronomy", "Astronomy", "science", "🌌", True),
-    ("history", "History", "history", "🏛️", False),
-    ("geography", "Geography", "academic", "🌍", True),
-    ("psychology", "Psychology", "academic", "🧩", False),
+    ("space-exploration", "Space Exploration", "science", "🚀", True),
+    ("human-body", "Human Body", "science", "🫀", False),
+    ("earth-and-climate", "Earth & Climate", "science", "🌋", False),
+    # --- Technology ---
     ("artificial-intelligence", "Artificial Intelligence", "technology", "🤖", True),
     ("programming", "Programming", "technology", "💻", True),
     ("technology", "Technology", "technology", "🛠️", False),
-    ("finance", "Finance", "lifestyle", "💰", False),
+    ("cybersecurity", "Cybersecurity", "technology", "🔐", False),
+    ("internet-culture", "Internet Culture", "technology", "🌐", True),
+    ("gadgets", "Gadgets", "technology", "📱", False),
+    # --- History ---
+    ("history", "History", "history", "🏛️", False),
+    ("ancient-civilizations", "Ancient Civilizations", "history", "🏺", False),
+    ("world-wars", "World Wars", "history", "⚔️", False),
+    ("indian-history", "Indian History", "history", "🕌", True),
+    ("inventions", "Inventions", "history", "💡", False),
+    # --- Entertainment ---
     ("movies", "Movies", "entertainment", "🎥", False),
-    ("gaming", "Gaming", "gaming", "🎮", True),
-    ("sports", "Sports", "sports", "⚽", False),
     ("literature", "Literature", "entertainment", "📖", False),
+    ("music", "Music", "entertainment", "🎵", True),
+    ("television", "Television", "entertainment", "📺", False),
+    ("anime-and-manga", "Anime & Manga", "entertainment", "🌸", True),
+    # --- Gaming ---
+    ("gaming", "Gaming", "gaming", "🎮", True),
+    ("esports", "Esports", "gaming", "🕹️", False),
+    ("game-history", "Game History", "gaming", "👾", False),
+    ("board-games", "Board Games", "gaming", "🎲", False),
+    # --- Sports ---
+    ("sports", "Sports", "sports", "⚽", False),
+    ("cricket", "Cricket", "sports", "🏏", True),
+    ("football", "Football", "sports", "🥅", False),
+    ("olympics", "Olympics", "sports", "🥇", False),
+    ("motorsport", "Motorsport", "sports", "🏎️", False),
+    # --- Lifestyle ---
+    ("finance", "Finance", "lifestyle", "💰", False),
+    ("food-and-drink", "Food & Drink", "lifestyle", "🍜", True),
+    ("travel", "Travel", "lifestyle", "✈️", False),
+    ("health-and-fitness", "Health & Fitness", "lifestyle", "💪", False),
+    # --- Academic ---
+    ("mathematics", "Mathematics", "academic", "🔢", False),
+    ("geography", "Geography", "academic", "🌍", True),
+    ("psychology", "Psychology", "academic", "🧩", False),
     ("general-knowledge", "General Knowledge", "academic", "✨", True),
+    ("philosophy", "Philosophy", "academic", "🤔", False),
+    ("economics", "Economics", "academic", "📈", False),
+    ("languages", "Languages", "academic", "🗣️", False),
+    ("art-and-design", "Art & Design", "academic", "🎨", False),
 ]
 
 ACHIEVEMENTS = [

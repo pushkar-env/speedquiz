@@ -42,6 +42,7 @@ from app.schemas.quiz import (
 from app.core.config import get_settings
 from app.payments.entitlements import unique_question_allowance
 from app.services import achievements as achievements_service
+from app.services import speedrun, survival
 from app.services.adaptive import (
     nudge_label,
     parse_difficulty_label,
@@ -66,12 +67,51 @@ DIFFICULTY_RANGES: dict[DifficultyLabel, tuple[float, float]] = {
 
 MODE_DEFAULTS: dict[GameMode, dict] = {
     GameMode.CASUAL: {"question_time_limit_ms": 15000, "lives": None, "score": 0, "time_budget_ms": None},
-    GameMode.SPEEDRUN: {"question_time_limit_ms": 10000, "lives": None, "score": 0, "time_budget_ms": 60000},
-    GameMode.SURVIVAL: {"question_time_limit_ms": 15000, "lives": 3, "score": 0, "time_budget_ms": None},
-    GameMode.NEGATIVE: {"question_time_limit_ms": 15000, "lives": None, "score": 1000, "time_budget_ms": None},
-    GameMode.SUDDEN_DEATH: {"question_time_limit_ms": 12000, "lives": None, "score": 0, "time_budget_ms": None},
+    # Speedrun's per-question limit is only the *opening* value — it tightens
+    # as the run goes deeper. See app.services.speedrun.
+    GameMode.SPEEDRUN: {
+        "question_time_limit_ms": speedrun.QUESTION_LIMIT_START_MS,
+        "lives": None,
+        "score": 0,
+        "time_budget_ms": speedrun.START_CLOCK_MS,
+    },
+    # Survival's limit also tightens with depth. See app.services.survival.
+    GameMode.SURVIVAL: {
+        "question_time_limit_ms": survival.QUESTION_LIMIT_START_MS,
+        "lives": survival.START_LIVES,
+        "score": 0,
+        "time_budget_ms": None,
+    },
     GameMode.DAILY: {"question_time_limit_ms": 15000, "lives": None, "score": 0, "time_budget_ms": None},
 }
+
+#: Modes the app no longer offers.
+#:
+#: Negative was casual with the sign flipped, and sudden death ended most runs
+#: on question three — neither gave a reason to play twice. Survival absorbed
+#: what was interesting about both: real stakes that escalate.
+#:
+#: The enum *labels* deliberately stay in the database. `quiz_sessions.mode`
+#: and `scores.mode` reference them on historical rows, and dropping a value
+#: from a Postgres enum would orphan every run anyone already played.
+RETIRED_MODES: frozenset[GameMode] = frozenset(
+    {GameMode.NEGATIVE, GameMode.SUDDEN_DEATH}
+)
+
+#: Modes a player may start. Daily is excluded because it is created by the
+#: daily-challenge flow, not chosen in setup.
+SELECTABLE_MODES: frozenset[GameMode] = frozenset(
+    {GameMode.CASUAL, GameMode.SPEEDRUN, GameMode.SURVIVAL}
+)
+
+
+def _defaults_for(mode: GameMode) -> dict:
+    """Session defaults, falling back to casual for a retired mode.
+
+    A run created just before a deploy that retires its mode must still be
+    finishable rather than 500ing on a missing key.
+    """
+    return MODE_DEFAULTS.get(mode, MODE_DEFAULTS[GameMode.CASUAL])
 
 INITIAL_BATCH = 20
 ANSWER_GRACE_MS = 1500
@@ -259,6 +299,19 @@ async def _select_questions(
 
 
 
+def _question_time_limit_ms(session: QuizSession, sequence_index: int) -> int:
+    """Time allowed for one question.
+
+    Fixed per session except in speedrun and survival, where it ratchets down
+    with depth so a long run gets genuinely harder rather than merely longer.
+    """
+    if session.mode == GameMode.SPEEDRUN:
+        return speedrun.question_time_limit_ms(sequence_index)
+    if session.mode == GameMode.SURVIVAL:
+        return survival.question_time_limit_ms(sequence_index)
+    return session.question_time_limit_ms
+
+
 def _playable_from_quiz_question(
     session: QuizSession,
     qq: QuizQuestion,
@@ -277,7 +330,7 @@ def _playable_from_quiz_question(
         sequence_index=qq.sequence_index,
         prompt=question.prompt,
         options=options,
-        time_limit_ms=session.question_time_limit_ms,
+        time_limit_ms=_question_time_limit_ms(session, qq.sequence_index),
         # Client starts its own timer when the question is shown — do not leak a
         # premature server served_at (feedback reading time must not burn the clock).
         served_at=qq.served_at or _now(),
@@ -406,11 +459,23 @@ async def create_session(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Adaptive mode is not available for daily challenge",
         )
+    if payload.mode not in SELECTABLE_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Mode '{payload.mode.value}' is no longer available",
+        )
 
     topic = await _load_topic(db, payload.topic_id)
     await _raise_if_unique_cap(db, user, topic.id)
-    defaults = MODE_DEFAULTS[payload.mode]
-    question_time = payload.question_time_limit_ms or defaults["question_time_limit_ms"]
+    defaults = _defaults_for(payload.mode)
+    # Speedrun and survival own their pacing curves — a client-supplied limit
+    # would break the ramp that makes every run finite.
+    question_time = defaults["question_time_limit_ms"]
+    if (
+        payload.mode not in (GameMode.SPEEDRUN, GameMode.SURVIVAL)
+        and payload.question_time_limit_ms
+    ):
+        question_time = payload.question_time_limit_ms
 
     stats = user.statistics or await db.scalar(
         select(PlayerStatistics).where(PlayerStatistics.user_id == user.id)
@@ -564,11 +629,7 @@ async def get_session(
 
 
 def _should_end_run(session: QuizSession, is_correct: bool) -> bool:
-    if session.mode == GameMode.SUDDEN_DEATH and not is_correct:
-        return True
     if session.mode == GameMode.SURVIVAL and (session.lives or 0) <= 0:
-        return True
-    if session.mode == GameMode.NEGATIVE and session.score <= 0:
         return True
     if session.mode == GameMode.SPEEDRUN and (session.time_remaining_ms or 0) <= 0:
         return True
@@ -624,7 +685,7 @@ async def submit_answer(
     # Persist normalized order if JSONB had drifted
     qq.option_order = option_order
 
-    limit = session.question_time_limit_ms
+    limit = _question_time_limit_ms(session, qq.sequence_index)
     client_elapsed = payload.client_elapsed_ms
 
     selected_original: Optional[int] = None
@@ -671,9 +732,20 @@ async def submit_answer(
 
     remaining = 0 if timed_out or elapsed >= limit else max(0, limit - elapsed)
 
+    clock: Optional[speedrun.ClockOutcome] = None
     if session.mode == GameMode.SPEEDRUN and session.time_remaining_ms is not None:
-        spent = min(elapsed, limit)
-        session.time_remaining_ms = max(0, session.time_remaining_ms - spent)
+        clock = speedrun.apply_clock(
+            clock_ms=session.time_remaining_ms,
+            elapsed_ms=elapsed,
+            limit_ms=limit,
+            is_correct=is_correct,
+            depth=qq.sequence_index,
+        )
+        session.time_remaining_ms = clock.remaining_ms
+
+    # How many lives this run has already clawed back. Each one makes the next
+    # comeback more expensive, so it has to be remembered across answers.
+    lives_regained = int((session.config or {}).get("lives_regained", 0))
 
     breakdown = scoring_service.score_answer(
         is_correct=is_correct,
@@ -681,6 +753,9 @@ async def submit_answer(
         remaining_ms=remaining,
         total_ms=limit,
         mode=session.mode,
+        lives=session.lives or 0,
+        lives_regained=lives_regained,
+        correct_count=session.correct_count,
     )
     points = clamp_points_awarded(breakdown.points_awarded)
 
@@ -688,7 +763,16 @@ async def submit_answer(
     session.streak = breakdown.new_streak
     session.best_streak = max(session.best_streak, session.streak)
     if breakdown.lives_delta and session.lives is not None:
-        session.lives = max(0, session.lives + breakdown.lives_delta)
+        session.lives = max(
+            0,
+            min(survival.MAX_LIVES, session.lives + breakdown.lives_delta),
+        )
+        if breakdown.lives_delta > 0:
+            # JSONB columns need a new object to be seen as dirty.
+            session.config = {
+                **(session.config or {}),
+                "lives_regained": lives_regained + breakdown.lives_delta,
+            }
 
     if is_correct:
         session.correct_count += 1
@@ -833,6 +917,18 @@ async def submit_answer(
         session_status=session.status,
         run_ended=run_ended or session.status == QuizSessionStatus.COMPLETED,
         next_question=next_question,
+        milestone_bonus=breakdown.milestone_bonus,
+        time_delta_ms=clock.delta_ms if clock else None,
+        time_burned_ms=clock.burned_ms if clock else None,
+        overdrive=(
+            session.mode == GameMode.SPEEDRUN
+            and speedrun.is_overdrive(session.streak)
+        ),
+        speed_tier=(
+            speedrun.speed_tier(remaining, limit)
+            if clock and is_correct
+            else None
+        ),
     )
 
 
@@ -851,6 +947,17 @@ async def finish_session(
     return await get_result(db, user, session_id)
 
 
+def _run_duration_ms(session: QuizSession) -> int:
+    """Wall time the run lasted. Cosmetic — never let it break a finalize."""
+    try:
+        started, finished = session.started_at, session.finished_at
+        if not started or not finished:
+            return 0
+        return max(0, int((finished - started).total_seconds() * 1000))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) -> None:
     if session.status == QuizSessionStatus.COMPLETED:
         return
@@ -858,6 +965,7 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     session.status = QuizSessionStatus.COMPLETED
     session.finished_at = _now()
     answered = session.correct_count + session.incorrect_count
+    duration_ms = _run_duration_ms(session)
     accuracy = round(100.0 * session.correct_count / answered, 2) if answered else 0.0
     xp = max(10, session.score // 10) if session.score > 0 else (5 if answered else 0)
 
@@ -921,6 +1029,7 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
         "average_answer_ms": average_answer_ms,
         "xp_earned": xp,
         "topic_name": topic.name,
+        "duration_ms": duration_ms,
     }
     comparisons = {
         "previous_best": previous_best_i,
@@ -1150,6 +1259,7 @@ async def get_result(
         correct_count=int(summary.get("correct_count", session.correct_count)),
         incorrect_count=int(summary.get("incorrect_count", session.incorrect_count)),
         average_answer_ms=int(summary.get("average_answer_ms", 0)),
+        duration_ms=int(summary.get("duration_ms", 0) or 0),
         xp_earned=score.xp_earned if score else int(summary.get("xp_earned", 0)),
         is_personal_best=bool(comparisons.get("is_personal_best", False)),
         previous_best=int(comparisons.get("previous_best", 0)),

@@ -1,4 +1,5 @@
 from app.models import GameMode
+from app.services import survival
 from app.services.scoring import ScoringService
 
 
@@ -47,19 +48,7 @@ def test_wrong_answer_resets_streak_casual():
     assert result.points_awarded == 0
 
 
-def test_negative_mode_penalty():
-    svc = ScoringService()
-    result = svc.score_answer(
-        is_correct=False,
-        current_streak=3,
-        remaining_ms=1000,
-        total_ms=15000,
-        mode=GameMode.NEGATIVE,
-    )
-    assert result.points_awarded == -150
-
-
-def test_survival_life_loss_and_restore():
+def test_survival_costs_a_life_on_a_miss():
     svc = ScoringService()
     miss = svc.score_answer(
         is_correct=False,
@@ -67,15 +56,118 @@ def test_survival_life_loss_and_restore():
         remaining_ms=1000,
         total_ms=15000,
         mode=GameMode.SURVIVAL,
+        lives=3,
     )
     assert miss.lives_delta == -1
+    assert miss.new_streak == 0
+    assert miss.points_awarded == 0
 
+
+def test_survival_regains_a_life_on_the_threshold_streak():
+    svc = ScoringService()
     restore = svc.score_answer(
         is_correct=True,
-        current_streak=9,
+        current_streak=survival.REGAIN_BASE_STREAK - 1,
+        remaining_ms=10000,
+        total_ms=15000,
+        mode=GameMode.SURVIVAL,
+        lives=2,
+        lives_regained=0,
+    )
+    assert restore.new_streak == survival.REGAIN_BASE_STREAK
+    assert restore.lives_delta == 1
+
+
+def test_survival_second_comeback_costs_more():
+    """Each life already regained pushes the next threshold further out."""
+    svc = ScoringService()
+    # The first threshold no longer pays once a life has been regained.
+    at_old = svc.score_answer(
+        is_correct=True,
+        current_streak=survival.REGAIN_BASE_STREAK - 1,
+        remaining_ms=10000,
+        total_ms=15000,
+        mode=GameMode.SURVIVAL,
+        lives=2,
+        lives_regained=1,
+    )
+    assert at_old.lives_delta == 0
+
+    needed = survival.streak_needed_for_regain(1)
+    at_new = svc.score_answer(
+        is_correct=True,
+        current_streak=needed - 1,
+        remaining_ms=10000,
+        total_ms=15000,
+        mode=GameMode.SURVIVAL,
+        lives=2,
+        lives_regained=1,
+    )
+    assert at_new.lives_delta == 1
+
+
+def test_survival_never_regains_past_the_cap():
+    svc = ScoringService()
+    full = svc.score_answer(
+        is_correct=True,
+        current_streak=survival.REGAIN_BASE_STREAK - 1,
+        remaining_ms=10000,
+        total_ms=15000,
+        mode=GameMode.SURVIVAL,
+        lives=survival.MAX_LIVES,
+    )
+    assert full.lives_delta == 0
+
+
+def test_survival_last_stand_pays_more_on_the_final_life():
+    """The brink is the best place to be — that is the whole hook."""
+    svc = ScoringService()
+    kwargs = dict(
+        is_correct=True,
+        current_streak=4,
         remaining_ms=10000,
         total_ms=15000,
         mode=GameMode.SURVIVAL,
     )
-    assert restore.new_streak == 10
-    assert restore.lives_delta == 1
+    safe = svc.score_answer(**kwargs, lives=3)
+    brink = svc.score_answer(**kwargs, lives=1)
+
+    assert brink.points_awarded > safe.points_awarded
+    assert brink.streak_multiplier == (
+        safe.streak_multiplier * survival.LAST_STAND_MULTIPLIER
+    )
+
+
+def test_survival_checkpoint_bonus_every_tenth_correct():
+    svc = ScoringService()
+    # correct_count is the tally *before* this answer, so 9 makes this the 10th.
+    crossing = svc.score_answer(
+        is_correct=True,
+        current_streak=3,
+        remaining_ms=8000,
+        total_ms=15000,
+        mode=GameMode.SURVIVAL,
+        lives=3,
+        correct_count=9,
+    )
+    assert crossing.milestone_bonus == survival.CHECKPOINT_POINTS
+
+    between = svc.score_answer(
+        is_correct=True,
+        current_streak=3,
+        remaining_ms=8000,
+        total_ms=15000,
+        mode=GameMode.SURVIVAL,
+        lives=3,
+        correct_count=8,
+    )
+    assert between.milestone_bonus == 0
+
+
+def test_survival_clock_tightens_with_depth():
+    """Without this a strong player could sit on three lives forever."""
+    opening = survival.question_time_limit_ms(0)
+    deeper = survival.question_time_limit_ms(20)
+    assert opening == survival.QUESTION_LIMIT_START_MS
+    assert deeper < opening
+    assert survival.question_time_limit_ms(500) == survival.QUESTION_LIMIT_FLOOR_MS

@@ -8,13 +8,20 @@ from uuid import UUID
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.redis import get_redis
+from app.services import speedrun
 
 logger = get_logger(__name__)
 
 # Max points for one correct answer: base + speed_bonus_max * highest streak tier (~1.5)
 def max_points_per_answer() -> int:
     settings = get_settings()
-    return int(round((settings.score_base_points + settings.score_speed_bonus_max) * 1.5)) + 50
+    shared = (
+        int(round((settings.score_base_points + settings.score_speed_bonus_max) * 1.5))
+        + 50
+    )
+    # Speedrun pays on its own, much taller curve. Clamping to the shared
+    # ceiling would quietly shave points off legitimate overdrive answers.
+    return max(shared, speedrun.max_points_per_answer())
 
 
 def resolve_answer_elapsed_ms(

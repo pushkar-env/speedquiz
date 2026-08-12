@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from app.core.config import get_settings
 from app.models import GameMode
+from app.services import speedrun, survival
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,9 @@ class ScoreBreakdown:
     points_awarded: int
     new_streak: int
     lives_delta: int = 0
+    #: Lump bonus for crossing a streak milestone. Already inside
+    #: [points_awarded]; carried separately so the HUD can celebrate it.
+    milestone_bonus: int = 0
 
 
 class ScoringService:
@@ -48,36 +52,81 @@ class ScoringService:
         ratio = min(max(remaining_ms / total_ms, 0.0), 1.0)
         return int(round(ratio * self.settings.score_speed_bonus_max))
 
-    def score_answer(
+    def _score_speedrun(
         self,
         *,
         is_correct: bool,
         current_streak: int,
         remaining_ms: int,
         total_ms: int,
-        mode: GameMode,
     ) -> ScoreBreakdown:
+        """Speedrun pays for speed, not for turning up.
+
+        Its own curves live in [app.services.speedrun]: a steeper speed bonus,
+        multipliers that climb to x3, and a lump bonus every fifth answer of a
+        streak. The real punishment for a miss is the clock and the broken
+        streak — the point penalty is only there so the number moves.
+        """
         if not is_correct:
-            new_streak = 0
-            if mode == GameMode.NEGATIVE:
-                return ScoreBreakdown(0, 0, Decimal("1.0"), -150, new_streak)
-            if mode == GameMode.SPEEDRUN:
-                return ScoreBreakdown(0, 0, Decimal("1.0"), -50, new_streak)
-            if mode == GameMode.SURVIVAL:
-                return ScoreBreakdown(0, 0, Decimal("1.0"), 0, new_streak, lives_delta=-1)
-            if mode == GameMode.SUDDEN_DEATH:
-                return ScoreBreakdown(0, 0, Decimal("1.0"), 0, new_streak)
-            return ScoreBreakdown(0, 0, Decimal("1.0"), 0, new_streak)
+            return ScoreBreakdown(
+                0, 0, Decimal("1.0"), -speedrun.WRONG_PENALTY_POINTS, 0
+            )
 
         new_streak = current_streak + 1
-        multiplier = self.streak_multiplier(new_streak)
+        multiplier = speedrun.streak_multiplier(new_streak)
         base = self.settings.score_base_points
-        speed = self.speed_bonus(remaining_ms, total_ms)
-        awarded = int(round((base + speed) * float(multiplier)))
+        speed = speedrun.speed_bonus_points(remaining_ms, total_ms)
+        milestone = speedrun.milestone_bonus(new_streak)
+        awarded = int(round((base + speed) * float(multiplier))) + milestone
 
-        lives_delta = 0
-        if mode == GameMode.SURVIVAL and new_streak > 0 and new_streak % 10 == 0:
-            lives_delta = 1
+        return ScoreBreakdown(
+            base_points=base,
+            speed_bonus=speed,
+            streak_multiplier=multiplier,
+            points_awarded=awarded,
+            new_streak=new_streak,
+            milestone_bonus=milestone,
+        )
+
+    def _score_survival(
+        self,
+        *,
+        is_correct: bool,
+        current_streak: int,
+        remaining_ms: int,
+        total_ms: int,
+        lives: int,
+        lives_regained: int,
+        correct_count: int,
+    ) -> ScoreBreakdown:
+        """Survival pays most when you are closest to dying.
+
+        Its curves live in [app.services.survival]: a last-stand multiplier on
+        the final life, checkpoint bonuses every tenth correct answer, and
+        lives that come back on a streak that gets longer each time.
+        """
+        if not is_correct:
+            return ScoreBreakdown(0, 0, Decimal("1.0"), 0, 0, lives_delta=-1)
+
+        new_streak = current_streak + 1
+        multiplier = survival.streak_multiplier(new_streak)
+        if survival.is_last_stand(lives):
+            multiplier *= survival.LAST_STAND_MULTIPLIER
+
+        base = self.settings.score_base_points
+        speed = survival.speed_bonus_points(remaining_ms, total_ms)
+        checkpoint = survival.checkpoint_bonus(correct_count + 1)
+        awarded = int(round((base + speed) * float(multiplier))) + checkpoint
+
+        lives_delta = (
+            1
+            if survival.should_regain_life(
+                streak=new_streak,
+                lives=lives,
+                lives_regained=lives_regained,
+            )
+            else 0
+        )
 
         return ScoreBreakdown(
             base_points=base,
@@ -86,6 +135,55 @@ class ScoringService:
             points_awarded=awarded,
             new_streak=new_streak,
             lives_delta=lives_delta,
+            milestone_bonus=checkpoint,
+        )
+
+    def score_answer(
+        self,
+        *,
+        is_correct: bool,
+        current_streak: int,
+        remaining_ms: int,
+        total_ms: int,
+        mode: GameMode,
+        lives: int = 0,
+        lives_regained: int = 0,
+        correct_count: int = 0,
+    ) -> ScoreBreakdown:
+        if mode == GameMode.SPEEDRUN:
+            return self._score_speedrun(
+                is_correct=is_correct,
+                current_streak=current_streak,
+                remaining_ms=remaining_ms,
+                total_ms=total_ms,
+            )
+
+        if mode == GameMode.SURVIVAL:
+            return self._score_survival(
+                is_correct=is_correct,
+                current_streak=current_streak,
+                remaining_ms=remaining_ms,
+                total_ms=total_ms,
+                lives=lives,
+                lives_regained=lives_regained,
+                correct_count=correct_count,
+            )
+
+        if not is_correct:
+            return ScoreBreakdown(0, 0, Decimal("1.0"), 0, 0)
+
+        new_streak = current_streak + 1
+        multiplier = self.streak_multiplier(new_streak)
+        base = self.settings.score_base_points
+        speed = self.speed_bonus(remaining_ms, total_ms)
+        awarded = int(round((base + speed) * float(multiplier)))
+
+        return ScoreBreakdown(
+            base_points=base,
+            speed_bonus=speed,
+            streak_multiplier=multiplier,
+            points_awarded=awarded,
+            new_streak=new_streak,
         )
 
 
