@@ -7,6 +7,8 @@ from typing import Optional
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
+    Computed,
     Date,
     DateTime,
     Enum,
@@ -19,6 +21,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -156,6 +159,119 @@ class GenerationJobStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class FriendshipStatus(str, enum.Enum):
+    """Lifecycle of one directed friend request.
+
+    Only PENDING and ACCEPTED occupy the unordered-pair slot (see the partial
+    unique index on ``friendships``), so a declined request can be sent again
+    later without a delete-then-insert dance.
+    """
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+    CANCELLED = "cancelled"
+
+
+class MatchFormat(str, enum.Enum):
+    """How many seats a match has."""
+
+    #: Exactly two players. The only format that can be rated.
+    DUEL = "duel"
+    #: 3-8 players in a private, code-joined room.
+    ROOM = "room"
+
+
+class MatchKind(str, enum.Enum):
+    #: Friend challenge or private room. Never touches rating.
+    FRIENDLY = "friendly"
+    #: Matchmade 1v1 from the ranked queue. Moves Elo.
+    RANKED = "ranked"
+
+
+class MatchDelivery(str, enum.Enum):
+    """Whether players are answering at the same moment.
+
+    A LIVE match runs on a shared server clock over the realtime channel. An
+    ASYNC match hands each player the identical question set to play whenever
+    they open the app — which is what a challenge to an offline friend becomes,
+    and what a live match degrades to when the opponent never connects.
+    """
+
+    LIVE = "live"
+    ASYNC = "async"
+
+
+class MatchStatus(str, enum.Enum):
+    #: Created; at least one invitee has neither joined nor declined.
+    PENDING = "pending"
+    #: Everyone present, waiting on the host (or the countdown) to start.
+    LOBBY = "lobby"
+    #: Rounds are being served.
+    LIVE = "live"
+    #: Async only — one side has played, the other has not yet.
+    AWAITING_OPPONENT = "awaiting_opponent"
+    COMPLETED = "completed"
+    #: Nobody ever played, or the async deadline passed with one side idle.
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+#: Statuses where the match can still change. Anything else is history.
+OPEN_MATCH_STATUSES = frozenset(
+    {
+        MatchStatus.PENDING,
+        MatchStatus.LOBBY,
+        MatchStatus.LIVE,
+        MatchStatus.AWAITING_OPPONENT,
+    }
+)
+
+
+class ParticipantStatus(str, enum.Enum):
+    #: Challenged, has not answered the invite.
+    INVITED = "invited"
+    #: In the lobby.
+    JOINED = "joined"
+    #: Tapped ready; the match starts when everyone has.
+    READY = "ready"
+    PLAYING = "playing"
+    FINISHED = "finished"
+    DECLINED = "declined"
+    #: Walked out mid-match, or ran out the async clock. Scores what they had.
+    FORFEITED = "forfeited"
+
+
+#: Participants who still owe the match something, so it cannot be finalized.
+ACTIVE_PARTICIPANT_STATUSES = frozenset(
+    {
+        ParticipantStatus.JOINED,
+        ParticipantStatus.READY,
+        ParticipantStatus.PLAYING,
+    }
+)
+
+
+class MatchOutcome(str, enum.Enum):
+    WIN = "win"
+    LOSS = "loss"
+    DRAW = "draw"
+
+
+class NotificationType(str, enum.Enum):
+    FRIEND_REQUEST = "friend_request"
+    FRIEND_ACCEPTED = "friend_accepted"
+    MATCH_INVITE = "match_invite"
+    MATCH_YOUR_TURN = "match_your_turn"
+    MATCH_RESULT = "match_result"
+    MATCH_EXPIRING = "match_expiring"
+
+
+class DevicePlatform(str, enum.Enum):
+    ANDROID = "android"
+    IOS = "ios"
+
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
@@ -184,7 +300,27 @@ class UserProfile(Base, TimestampMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
+    #: The handle other players search for and challenge by. Uniqueness is
+    #: enforced case-insensitively by ``uq_user_profiles_username_lower`` — a
+    #: plain unique constraint would happily seat both `Ravi` and `ravi`, which
+    #: makes "add ravi" ambiguous and impersonation trivial.
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    #: Folded form of `username` used to judge whether two handles are
+    #: confusable: lowercased, separators dropped, and digits mapped to the
+    #: letters they imitate, so `Ravi`, `r_a_v_i` and `R4vi` all reduce to
+    #: `ravi`. Unique, because the impersonation this prevents is the whole
+    #: reason a stranger can be challenged by name. Maintained by
+    #: `app.services.usernames` — never write `username` without it.
+    username_skeleton: Mapped[str] = mapped_column(
+        String(32), unique=True, index=True, nullable=False, default=""
+    )
+    #: When the handle was last changed, for the rename cooldown. NULL means the
+    #: player still has the auto-generated one and their first change is free.
+    username_changed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Short, unambiguous invite code (Crockford-ish alphabet, no vowels, so it
+    #: cannot spell anything and cannot be misread as 0/O or 1/I). Shared as a
+    #: deep link; never used for login.
+    friend_code: Mapped[Optional[str]] = mapped_column(String(12), unique=True, index=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(64))
     avatar_id: Mapped[str] = mapped_column(String(64), default="avatar_01", nullable=False)
     bio: Mapped[Optional[str]] = mapped_column(String(280))
@@ -196,6 +332,10 @@ class UserProfile(Base, TimestampMixin):
     daily_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_played_date: Mapped[Optional[date]] = mapped_column(Date)
     favorite_topic_ids: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    #: Per-event push opt-outs, e.g. ``{"match_invite": false}``. Absent keys
+    #: mean opted in, so a new notification type does not need a backfill and
+    #: an old client that cannot render the toggle still receives it.
+    notification_prefs: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     theme_preference: Mapped[str] = mapped_column(String(16), default="dark", nullable=False)
     #: Language the app chrome is drawn in. The client owns this setting; we
@@ -225,6 +365,14 @@ class PlayerStatistics(Base, TimestampMixin):
     average_answer_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     topic_mastery: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     skill_ratings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    #: Head-to-head record across every finished match, friendly and ranked.
+    #: Separate from `player_ratings`, which is per-season and ranked-only —
+    #: this is the lifetime number a profile shows.
+    multiplayer_played: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    multiplayer_wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    multiplayer_losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    multiplayer_draws: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     user: Mapped[User] = relationship(back_populates="statistics")
 
@@ -795,6 +943,389 @@ class GenerationJob(Base, TimestampMixin):
     language: Mapped[str] = language_column()
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class Friendship(Base, TimestampMixin):
+    """One directed friend request and, once accepted, the friendship itself.
+
+    Kept as a single directed row rather than a request table plus an edge
+    table: who asked matters (the addressee is the one who can accept), and
+    collapsing the two states into one row means accepting is an UPDATE and
+    can never leave a request and an edge disagreeing with each other.
+
+    ``pair_key`` is generated by Postgres so the unordered pair {A,B} has one
+    canonical spelling no matter which direction the row was written in. The
+    partial unique index on it is what stops A and B from each holding an open
+    request to the other; the service turns that crossing case into an instant
+    mutual accept instead.
+    """
+
+    __tablename__ = "friendships"
+    __table_args__ = (
+        Index(
+            "uq_friendship_open_pair",
+            "pair_key",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'accepted')"),
+        ),
+        # "Who are my friends?" and "who is waiting on me?" both read from here.
+        Index("ix_friendships_addressee_status", "addressee_id", "status"),
+        Index("ix_friendships_requester_status", "requester_id", "status"),
+        CheckConstraint("requester_id <> addressee_id", name="ck_friendship_not_self"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    requester_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    addressee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[FriendshipStatus] = mapped_column(
+        pg_enum(FriendshipStatus, "friendship_status"),
+        default=FriendshipStatus.PENDING,
+        nullable=False,
+    )
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Canonical spelling of the unordered pair — see the class docstring.
+    pair_key: Mapped[str] = mapped_column(
+        String(73),
+        Computed(
+            "CASE WHEN requester_id < addressee_id "
+            "THEN requester_id::text || ':' || addressee_id::text "
+            "ELSE addressee_id::text || ':' || requester_id::text END",
+            persisted=True,
+        ),
+        nullable=False,
+    )
+
+
+class UserBlock(Base, TimestampMixin):
+    """A one-way block. Hides the blocker, and refuses requests and invites.
+
+    Separate from ``friendships`` on purpose: a block must survive unfriending
+    and must not occupy the open-pair slot, or unblocking someone would leave
+    the pair unable to become friends again.
+    """
+
+    __tablename__ = "user_blocks"
+    __table_args__ = (
+        UniqueConstraint("blocker_id", "blocked_id", name="uq_user_block_pair"),
+        CheckConstraint("blocker_id <> blocked_id", name="ck_user_block_not_self"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    blocker_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    blocked_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    reason: Mapped[Optional[str]] = mapped_column(String(64))
+
+
+class Match(Base, TimestampMixin):
+    """One multiplayer game: a duel, a private room, or a ranked pairing.
+
+    The question set is decided once, at creation, and frozen into
+    ``question_ids`` + ``option_orders``. Everyone in the match therefore sees
+    the same prompts in the same order with the same answer buttons in the same
+    positions — which is what makes the comparison meaningful, and what lets an
+    async opponent play the identical board hours later.
+
+    The answer key is deliberately *not* stored here. Correctness is resolved
+    against the `questions` row at submit time, so nothing the client can reach
+    ever contains it.
+    """
+
+    __tablename__ = "matches"
+    __table_args__ = (
+        # The lobby list and the "do I owe someone a turn?" badge both scan by
+        # status; the created_at leg keeps the newest-first ordering indexed.
+        Index("ix_matches_status_created", "status", "created_at"),
+        # Drives the expiry sweep for abandoned async challenges.
+        Index("ix_matches_status_expires", "status", "expires_at"),
+        CheckConstraint("max_players BETWEEN 2 AND 8", name="ck_match_seat_count"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    #: Shareable room code. Only friendly matches get one — a ranked pairing is
+    #: not something you invite anyone into.
+    code: Mapped[Optional[str]] = mapped_column(String(12), unique=True, index=True)
+    format: Mapped[MatchFormat] = mapped_column(
+        pg_enum(MatchFormat, "match_format"), default=MatchFormat.DUEL, nullable=False
+    )
+    kind: Mapped[MatchKind] = mapped_column(
+        pg_enum(MatchKind, "match_kind"), default=MatchKind.FRIENDLY, nullable=False
+    )
+    delivery: Mapped[MatchDelivery] = mapped_column(
+        pg_enum(MatchDelivery, "match_delivery"), default=MatchDelivery.LIVE, nullable=False
+    )
+    status: Mapped[MatchStatus] = mapped_column(
+        pg_enum(MatchStatus, "match_status"), default=MatchStatus.PENDING, nullable=False
+    )
+
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("topics.id", ondelete="CASCADE"), nullable=False
+    )
+    mode: Mapped[GameMode] = mapped_column(
+        pg_enum(GameMode, "game_mode", create_constraint=False),
+        default=GameMode.CASUAL,
+        nullable=False,
+    )
+    difficulty: Mapped[DifficultyLabel] = mapped_column(
+        pg_enum(DifficultyLabel, "difficulty_label", create_constraint=False),
+        default=DifficultyLabel.MEDIUM,
+        nullable=False,
+    )
+    #: Content language for the whole match. Every participant plays the same
+    #: language, because they are playing the same questions.
+    language: Mapped[str] = language_column()
+
+    max_players: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
+    question_time_limit_ms: Mapped[int] = mapped_column(Integer, default=15000, nullable=False)
+
+    #: Ordered bank question ids, one per round.
+    question_ids: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    #: Per-round option permutation, parallel to `question_ids`. Shared, so two
+    #: players comparing screens see the same button in the same place.
+    option_orders: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    #: Seed the set was drawn with. Kept for support and dispute triage.
+    seed: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+
+    current_round_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: When the live round clock started. NULL between rounds.
+    round_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Async deadline, or the lobby's patience for a live match nobody joins.
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    #: True once Elo has been settled, so a replayed finalize cannot double-pay.
+    rating_applied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: Season the ranked result counted toward, e.g. "2026-08".
+    season_key: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    participants: Mapped[list["MatchParticipant"]] = relationship(
+        back_populates="match", cascade="all, delete-orphan"
+    )
+
+
+class MatchParticipant(Base, TimestampMixin):
+    __tablename__ = "match_participants"
+    __table_args__ = (
+        UniqueConstraint("match_id", "user_id", name="uq_match_participant"),
+        # "My matches" reads this: every list the player sees starts here.
+        Index("ix_match_participants_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[ParticipantStatus] = mapped_column(
+        pg_enum(ParticipantStatus, "participant_status"),
+        default=ParticipantStatus.INVITED,
+        nullable=False,
+    )
+    is_host: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    incorrect_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    best_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Sum of server-resolved answer times. Breaks a tie on equal score, which
+    #: is common on short question sets.
+    total_answer_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: How far this player has got. In an async match the two sides diverge.
+    rounds_answered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: When this player was handed their current round. A live match times
+    #: every player off one shared clock on the match row; an async match has
+    #: no shared clock at all, so each side's speed bonus is measured from the
+    #: moment *they* were served.
+    round_served_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    joined_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Last realtime heartbeat, for the live presence dot and drop detection.
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    placement: Mapped[Optional[int]] = mapped_column(Integer)
+    outcome: Mapped[Optional[MatchOutcome]] = mapped_column(
+        pg_enum(MatchOutcome, "match_outcome")
+    )
+    rating_before: Mapped[Optional[int]] = mapped_column(Integer)
+    rating_after: Mapped[Optional[int]] = mapped_column(Integer)
+    xp_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    coins_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    match: Mapped[Match] = relationship(back_populates="participants")
+
+
+class MatchAnswer(Base):
+    __tablename__ = "match_answers"
+    __table_args__ = (
+        # One answer per player per round, enforced by the database rather than
+        # by a read-then-write in the service — two taps racing on a flaky
+        # connection is the normal case, not the exotic one.
+        UniqueConstraint("participant_id", "round_index", name="uq_match_answer_once"),
+        Index("ix_match_answers_match_round", "match_id", "round_index"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    match_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("matches.id", ondelete="CASCADE"), nullable=False
+    )
+    participant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("match_participants.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    round_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False
+    )
+    #: NULL means the clock ran out with nothing selected.
+    selected_option_index: Mapped[Optional[int]] = mapped_column(Integer)
+    is_correct: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    client_elapsed_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    server_elapsed_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    base_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    speed_bonus: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    streak_multiplier: Mapped[Decimal] = mapped_column(Numeric(4, 2), default=1, nullable=False)
+    points_awarded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    answered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PlayerRating(Base, TimestampMixin):
+    """Elo-style ranked rating, one row per player per season.
+
+    Seasons are a key rather than a table (`YYYY-MM`): rollover is then simply
+    the first ranked match of a new month creating a fresh row seeded from the
+    old one, with no scheduled job that can fail to run and no window where the
+    ladder is missing.
+    """
+
+    __tablename__ = "player_ratings"
+    __table_args__ = (
+        UniqueConstraint("user_id", "season_key", name="uq_player_rating_season"),
+        # The ranked ladder page, and the matchmaker's band query.
+        Index("ix_player_ratings_season_rating", "season_key", "rating"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    season_key: Mapped[str] = mapped_column(String(16), nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
+    peak_rating: Mapped[int] = mapped_column(Integer, default=1000, nullable=False)
+    #: Placement matches move rating harder and hide the tier until done.
+    placements_remaining: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    matches_played: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    draws: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    win_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    best_win_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_match_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class DeviceToken(Base, TimestampMixin):
+    """An FCM registration token for one install of the app.
+
+    Tokens are owned by an install, not by an account: signing out of a shared
+    phone must not keep pushing the previous player's challenges to it, so the
+    service reassigns a token to whoever registers it last rather than letting
+    two users hold the same one.
+    """
+
+    __tablename__ = "device_tokens"
+    __table_args__ = (
+        Index("ix_device_tokens_user_active", "user_id", "is_active"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    #: FCM tokens have no documented maximum and run well past 255 characters.
+    token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    platform: Mapped[DevicePlatform] = mapped_column(
+        pg_enum(DevicePlatform, "device_platform"),
+        default=DevicePlatform.ANDROID,
+        nullable=False,
+    )
+    app_version: Mapped[Optional[str]] = mapped_column(String(32))
+    #: App language at registration time, so a push can be written in it
+    #: without a join back to the profile on the send path.
+    language: Mapped[str] = language_column()
+    #: Device's offset from UTC in minutes, reported by the client. This is the
+    #: only way the server can know that 22:00 "local" means something
+    #: different in Mumbai and in London, and quiet hours are worse than
+    #: useless if they silence the wrong six hours.
+    utc_offset_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Consecutive send failures. FCM's UNREGISTERED retires a token outright;
+    #: this catches the slower rot of tokens that merely stop working.
+    failure_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class Notification(Base):
+    """In-app inbox row. Also the audit trail for what push was attempted.
+
+    Stores a `type` plus a data `payload` rather than rendered text, so the
+    client draws it from its own compile-checked string table and the row does
+    not go stale when the player switches language. Push notifications, which
+    have to carry real words, are rendered separately at send time.
+    """
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("ix_notifications_user_created", "user_id", "created_at"),
+        # Powers the unread badge without scanning the whole inbox.
+        Index(
+            "ix_notifications_user_unread",
+            "user_id",
+            postgresql_where=text("read_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    type: Mapped[NotificationType] = mapped_column(
+        pg_enum(NotificationType, "notification_type"), nullable=False
+    )
+    #: Who caused this — the challenger, the friend who accepted.
+    actor_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    match_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("matches.id", ondelete="CASCADE")
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: In-app route this opens, e.g. `/battle/match/<id>`.
+    deep_link: Mapped[Optional[str]] = mapped_column(String(255))
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    pushed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class AnalyticsEvent(Base):

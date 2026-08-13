@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
+import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
@@ -28,11 +31,20 @@ class SpeedQuizApp extends ConsumerWidget {
     // `AppLanguageNotifier.adoptFromProfile` for why signing in must not
     // override a deliberate local choice.
     ref.listen(currentUserProvider, (previous, next) {
-      if (next == null || previous?.id == next.id) return;
+      if (next == null) {
+        // Signed out. Release the push token so the next player on this phone
+        // does not receive the previous one's challenges.
+        unawaited(ref.read(pushServiceProvider).unregister());
+        return;
+      }
+      if (previous?.id == next.id) return;
       ref.read(appLanguageProvider.notifier).adoptFromProfile(next.appLanguage);
       ref
           .read(quizLanguageProvider.notifier)
           .adoptFromProfile(next.quizLanguage);
+      // Registered per account, not per launch: the token identifies the
+      // install and has to be attached to whoever is signed in on it now.
+      unawaited(ref.read(pushServiceProvider).registerForCurrentUser());
     });
     // Instantiate for the app's lifetime so the static Sound facade is wired
     // before the first tap and the ambient loop can follow the setting.
@@ -40,6 +52,7 @@ class SpeedQuizApp extends ConsumerWidget {
 
     return DeepLinkListener(
       router: router,
+      pushLinks: ref.watch(pushServiceProvider).deepLinks,
       child: MaterialApp.router(
         title: 'SpeedQuiz',
         debugShowCheckedModeBanner: false,

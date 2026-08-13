@@ -44,14 +44,47 @@ case "$TARGET" in
   *) echo "error: target must be 'apk' or 'appbundle' (got '$TARGET')" >&2; exit 1 ;;
 esac
 
+# --- Firebase (push notifications) -------------------------------------------
+# Optional, unlike the two above: without these the app builds and runs exactly
+# as before, and multiplayer notifications land in the in-app inbox only. They
+# are passed as dart-defines rather than a bundled google-services.json so a
+# missing Firebase project is a quieter app, not a broken build.
+#
+# Values from Firebase console -> Project settings -> Your apps (Android).
+FIREBASE_DEFINES=()
+for key in FIREBASE_API_KEY FIREBASE_APP_ID FIREBASE_PROJECT_ID FIREBASE_SENDER_ID; do
+  value="${!key:-}"
+  if [[ -z "$value" && -f "$REPO_ROOT/.env" ]]; then
+    value="$(grep -E "^${key}=" "$REPO_ROOT/.env" | cut -d= -f2- | tr -d '\r' || true)"
+  fi
+  if [[ -n "$value" ]]; then
+    FIREBASE_DEFINES+=("--dart-define=${key}=${value}")
+  fi
+done
+
+if [[ ${#FIREBASE_DEFINES[@]} -eq 4 ]]; then
+  PUSH_STATUS="enabled"
+elif [[ ${#FIREBASE_DEFINES[@]} -eq 0 ]]; then
+  PUSH_STATUS="disabled (no FIREBASE_* values)"
+else
+  # A partial set is always a mistake: FirebaseOptions needs all four, so this
+  # would build an app that silently never registers for push.
+  echo "error: found ${#FIREBASE_DEFINES[@]}/4 FIREBASE_* values." >&2
+  echo "       Set all of FIREBASE_API_KEY, FIREBASE_APP_ID," >&2
+  echo "       FIREBASE_PROJECT_ID and FIREBASE_SENDER_ID, or none." >&2
+  exit 1
+fi
+
 echo "Building $TARGET"
 echo "  API_BASE_URL           $API_BASE_URL"
 echo "  GOOGLE_SERVER_CLIENT_ID <${#GOOGLE_SERVER_CLIENT_ID} chars>"
+echo "  push notifications     $PUSH_STATUS"
 
 cd "$REPO_ROOT/mobile"
 flutter build "$TARGET" --release \
   --dart-define=API_BASE_URL="$API_BASE_URL" \
-  --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID"
+  --dart-define=GOOGLE_SERVER_CLIENT_ID="$GOOGLE_SERVER_CLIENT_ID" \
+  "${FIREBASE_DEFINES[@]}"
 
 if [[ "$TARGET" == "apk" ]]; then
   ARTIFACT="build/app/outputs/flutter-apk/app-release.apk"

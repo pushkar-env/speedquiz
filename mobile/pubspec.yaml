@@ -30,6 +30,14 @@ dependencies:
   in_app_purchase_storekit: ^0.4.11
   google_sign_in: ^7.2.0
   audioplayers: ^6.8.1
+  # Live match channel. The socket carries match events only; answers still go
+  # over HTTP, so a dropped connection can never lose a submitted answer.
+  web_socket_channel: ^3.0.3
+  # Push for challenges. Initialized from --dart-define values rather than a
+  # bundled google-services.json, so a build without a Firebase project still
+  # compiles and runs — it just cannot receive push. See `PushService`.
+  firebase_core: ^4.1.1
+  firebase_messaging: ^16.0.1
   # Opens the store-managed subscription screen — the only place a user can
   # cancel or fix a failed payment method.
   url_launcher: ^6.3.2

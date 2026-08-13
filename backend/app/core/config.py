@@ -140,6 +140,75 @@ class Settings(BaseSettings):
     apple_root_ca_pem: str = ""
     apple_root_ca_path: str = "certs/AppleRootCA-G3.cer"
 
+    # --- Usernames --------------------------------------------------------
+    # Extra blocked substrings, comma separated, matched against the folded
+    # skeleton. Deployment-specific additions go here rather than in code.
+    username_blocked_terms: str = ""
+
+    # --- Multiplayer ------------------------------------------------------
+    multiplayer_enabled: bool = True
+    match_default_question_count: int = 7
+    match_min_question_count: int = 3
+    match_max_question_count: int = 20
+    match_question_time_limit_ms: int = 15000
+    #: Pause between rounds, so the verdict is readable before the next prompt.
+    match_round_reveal_ms: int = 3000
+    match_max_players: int = 8
+    #: How long a live lobby waits for everyone before the host can start
+    #: anyway. Also how long an unanswered ranked pairing survives.
+    match_lobby_timeout_seconds: int = 120
+    #: A challenged friend who never connects turns the match async after this,
+    #: rather than leaving the challenger staring at a spinner.
+    match_live_join_grace_seconds: int = 45
+    #: How long an async challenge waits for its opponent before expiring.
+    match_async_expiry_hours: int = 48
+    #: Slack added to the round deadline before an answer is refused, covering
+    #: the round trip on a slow mobile connection. Mirrors the single-player
+    #: grace in quiz_service.
+    match_answer_grace_ms: int = 2500
+
+    # --- Realtime channel -------------------------------------------------
+    #: Events retained per match. A client resuming after a drop replays from
+    #: its last id; anything older than this is recovered by refetching state.
+    realtime_stream_maxlen: int = 500
+    realtime_stream_ttl_seconds: int = 7200
+    #: Single-use ticket exchanged for a WebSocket. Short because it travels in
+    #: a query string, which proxies and access logs routinely record.
+    realtime_ticket_ttl_seconds: int = 60
+    realtime_heartbeat_seconds: int = 20
+    #: Connections one player may hold at once, across devices.
+    realtime_max_connections_per_user: int = 3
+
+    # --- Ranked ladder ----------------------------------------------------
+    ranked_starting_rating: int = 1000
+    ranked_k_factor: int = 24
+    #: Placement matches move rating faster so a new player reaches their real
+    #: bracket in five games rather than fifty.
+    ranked_placement_k_factor: int = 48
+    ranked_placement_matches: int = 5
+    #: Carry-over into a new season: pull toward the mean, keep the ordering.
+    ranked_season_carryover: float = 0.6
+    matchmaking_initial_band: int = 100
+    matchmaking_band_growth_per_second: int = 25
+    matchmaking_max_band: int = 800
+    #: After this, the queue offers a bot-free fallback: play solo on the same
+    #: question set and bank the result as an async challenge.
+    matchmaking_timeout_seconds: int = 60
+
+    # --- Push notifications (FCM HTTP v1) ---------------------------------
+    # Empty service account = push disabled; the notification service falls
+    # back to the in-app inbox alone and logs nothing as an error.
+    fcm_service_account_json: str = ""
+    #: Overrides the project id inside the service account when they differ.
+    fcm_project_id: str = ""
+    push_enabled: bool = True
+    #: Local-time window where only the player's own turn may interrupt them.
+    #: Applied per device using the UTC offset the client reports, because a
+    #: server-side "22:00" is the wrong 22:00 for most of the world.
+    push_quiet_hours_enabled: bool = True
+    push_quiet_hours_start: int = 22
+    push_quiet_hours_end: int = 8
+
     # Public share landing (empty = omit web_url from share text)
     share_public_base_url: str = ""
 
@@ -172,6 +241,20 @@ class Settings(BaseSettings):
     @property
     def google_play_configured(self) -> bool:
         return bool(self.google_play_service_account_json.strip())
+
+    @property
+    def fcm_configured(self) -> bool:
+        return bool(self.fcm_service_account_json.strip())
+
+    @property
+    def push_delivery_enabled(self) -> bool:
+        """Can a notification actually leave the server?
+
+        False is a supported state, not a misconfiguration: the in-app inbox
+        works without FCM, so a deployment with no Firebase project still has a
+        functioning multiplayer feature — just a quieter one.
+        """
+        return self.push_enabled and self.fcm_configured
 
     @property
     def store_verification_enabled(self) -> bool:

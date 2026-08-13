@@ -540,4 +540,177 @@ abstract class SqStrings {
   String get settingsPremiumEnabledDev;
   String get settingsBackToFreeDev;
   String settingsVersion(String version);
+
+  // --- Battle: hub -------------------------------------------------------
+  String get battleTitle;
+  String get battleTab;
+  String get battleQuickMatch;
+  String get battleQuickMatchSubtitle;
+  String get battleChallengeFriend;
+  String get battleChallengeFriendSubtitle;
+  String get battlePrivateRoom;
+  String get battlePrivateRoomSubtitle;
+  String get battleJoinRoom;
+  String get battleCopy;
+  String get battleYourTurn;
+  String get battleWaitingOnThem;
+  String get battleActiveMatches;
+  String get battleRecentMatches;
+  String get battleNoMatches;
+  String get battleNoMatchesBody;
+  String get battleContinue;
+  String get battlePlay;
+  String get battleView;
+
+  // --- Battle: lobby -----------------------------------------------------
+  String get lobbyTitle;
+  String get lobbyWaitingForOpponent;
+  String get lobbyReady;
+  String get lobbyNotReady;
+  String get lobbyStartNow;
+  String get lobbyRoomCode;
+  String get lobbyShareCode;
+  String get lobbyCodeCopied;
+  String get lobbyEnterCode;
+  String get lobbyJoin;
+  String get lobbyInviteAccepted;
+  String get lobbyChallengedYou;
+  String get lobbyAccept;
+  String get lobbyDecline;
+  String get lobbyDeclined;
+  String lobbyPlayersReady(int ready, int total);
+  String lobbySeats(int filled, int total);
+
+  // --- Battle: play ------------------------------------------------------
+  String battleRoundOf(int current, int total);
+  String get battleYou;
+  String get battleOpponent;
+  String get battleWaitingForOthers;
+  String get battleOpponentAnswered;
+  String get battleOpponentThinking;
+  String get battleTimeUp;
+  String get battleCorrect;
+  String get battleWrong;
+  String get battleReconnecting;
+  String get battleOffline;
+  String get battleLeaveTitle;
+  String get battleLeaveBody;
+  String get battleLeaveConfirm;
+  String get battleAsyncNotice;
+
+  // --- Battle: result ----------------------------------------------------
+  String get resultWin;
+  String get resultLoss;
+  String get resultDraw;
+  String get resultWinBody;
+  String get resultLossBody;
+  String get resultDrawBody;
+  String get resultAwaitingOpponent;
+  String get resultAwaitingOpponentBody;
+  String get resultRematch;
+  String get resultBackToBattle;
+  String get resultStandings;
+  String resultRatingGained(int points);
+  String resultRatingLost(int points);
+  String resultPlacement(int place);
+
+  // --- Ranked ------------------------------------------------------------
+  String get rankedTitle;
+  String get rankedSearching;
+  String get rankedSearchingBody;
+  String get rankedCancelSearch;
+  String get rankedNoOpponent;
+  String get rankedNoOpponentBody;
+  String get rankedTryAgain;
+  String get rankedPlacements;
+  String get rankedUnranked;
+  String get rankedSeason;
+  String get rankedLadder;
+  String get rankedYourRank;
+  String get rankedNoRankYet;
+  String rankedPlacementsRemaining(int count);
+  String rankedNextTier(String tier, int points);
+  String rankedSearchingFor(int seconds);
+  String rankedPlayersSearching(int count);
+  String rankedRecord(int wins, int losses, int draws);
+
+  // --- Friends -----------------------------------------------------------
+  String get friendsTitle;
+  String get friendsTab;
+  String get friendsRequestsTab;
+  String get friendsAdd;
+  String get friendsSearchHint;
+  String get friendsSearchEmpty;
+  String get friendsNoFriends;
+  String get friendsNoFriendsBody;
+  String get friendsNoRequests;
+  String get friendsIncoming;
+  String get friendsOutgoing;
+  String get friendsAccept;
+  String get friendsDecline;
+  String get friendsCancelRequest;
+  String get friendsRequestSent;
+  String get friendsRequestPending;
+  String get friendsAlreadyFriends;
+  String get friendsChallenge;
+  String get friendsRemove;
+  String get friendsRemoveTitle;
+  String get friendsRemoveConfirm;
+  String get friendsBlock;
+  String get friendsBlockTitle;
+  String get friendsBlockBody;
+  String get friendsBlocked;
+  String get friendsUnblock;
+  String get friendsBlockedList;
+  String get friendsOnline;
+  String get friendsYourCode;
+  String get friendsShareCode;
+  String get friendsCodeCopied;
+  String get friendsCodeHint;
+  String friendsRemoveBody(String name);
+  String friendsHeadToHead(int wins, int losses);
+  String friendsCount(int count);
+
+  // --- Username ----------------------------------------------------------
+  String get usernameTitle;
+  String get usernameLabel;
+  String get usernameHint;
+  String get usernameAvailable;
+  String get usernameChecking;
+  String get usernameSave;
+  String get usernameSaved;
+  String get usernameSuggestions;
+  String get usernameRules;
+  String usernameLockedUntil(String date);
+
+  /// Localized reason a username was refused, keyed by the server's
+  /// `detail.code`. A method rather than a getter per code so an unknown code
+  /// from a newer server degrades to generic advice instead of crashing.
+  String usernameError(String code);
+
+  // --- Notifications -----------------------------------------------------
+  String get notificationsTitle;
+  String get notificationsEmpty;
+  String get notificationsEmptyBody;
+  String get notificationsMarkRead;
+  String get notificationsSettings;
+  String get notificationsPushDisabled;
+  String notificationFriendRequest(String name);
+  String notificationFriendAccepted(String name);
+  String notificationMatchInvite(String name, String topic);
+  String notificationYourTurn(String name);
+  String notificationMatchResult(String name);
+
+  // --- Shared errors -----------------------------------------------------
+  String get errorNotFriends;
+  String get errorMatchFull;
+  String get errorMatchClosed;
+  String get errorBankTooThin;
+  String get errorAlreadyAnswered;
+  String get errorRoundClosed;
+  String get errorMultiplayerDisabled;
+  String get errorNetwork;
+
+  /// Maps a server `detail.code` to a sentence in the player's language.
+  String matchError(String code);
 }

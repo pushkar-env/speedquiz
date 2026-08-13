@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
@@ -10,11 +11,12 @@ import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/multiplayer/presentation/multiplayer_providers.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
 /// Bottom-tab shell. The bar floats over the content with a frosted blur so
 /// screens can scroll underneath it.
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key, required this.child});
 
   final Widget child;
@@ -34,6 +36,9 @@ class MainShell extends StatefulWidget {
   /// Index of the tab back always falls through to.
   static const _homeIndex = 0;
 
+  /// The one tab that shows a count.
+  static const _battleIndex = 2;
+
   /// Labels are resolved per build rather than stored, so switching language
   /// relabels the bar in place.
   static List<_ShellTab> _tabsFor(SqStrings l10n) => <_ShellTab>[
@@ -48,6 +53,12 @@ class MainShell extends StatefulWidget {
           label: l10n.tabExplore,
           icon: Icons.explore_outlined,
           selectedIcon: Icons.explore_rounded,
+        ),
+        _ShellTab(
+          location: Routes.battle,
+          label: l10n.battleTab,
+          icon: Icons.sports_esports_outlined,
+          selectedIcon: Icons.sports_esports_rounded,
         ),
         _ShellTab(
           location: Routes.leaderboard,
@@ -67,6 +78,7 @@ class MainShell extends StatefulWidget {
   static const _tabLocations = <String>[
     Routes.home,
     Routes.explore,
+    Routes.battle,
     Routes.leaderboard,
     Routes.profile,
   ];
@@ -79,10 +91,10 @@ class MainShell extends StatefulWidget {
   }
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends ConsumerState<MainShell> {
   /// Tabs visited before the current one, oldest first. Android back unwinds
   /// this the way every other tabbed app on the store does — it must not drop
   /// the player straight out to the launcher.
@@ -98,6 +110,28 @@ class _MainShellState extends State<MainShell> {
   bool _unwinding = false;
 
   DateTime? _exitArmedAt;
+
+  /// Refreshes the battle badge when the app comes back to the foreground.
+  ///
+  /// This, plus the refresh on mount, is what replaces a background poller:
+  /// the count only has to be right at the moment someone can see it, and
+  /// coming back from the launcher is exactly that moment — it is also when a
+  /// push they just tapped, or ignored, has changed it.
+  late final AppLifecycleListener _lifecycle = AppLifecycleListener(
+    onResume: () => ref.invalidate(socialSummaryProvider),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle;
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
 
   void _goTab(int i) {
     context.go(MainShell._tabLocations[i]);
@@ -173,6 +207,12 @@ class _MainShellState extends State<MainShell> {
           tabs: MainShell._tabsFor(context.l10n),
           index: index,
           onSelect: _select,
+          // Only the Battle tab carries a count. It is what tells someone a
+          // friend is waiting on their turn without them opening the app.
+          badges: {
+            MainShell._battleIndex:
+                ref.watch(socialSummaryProvider).valueOrNull?.badgeCount ?? 0,
+          },
         ),
       ),
     );
@@ -198,11 +238,15 @@ class _FloatingNavBar extends StatelessWidget {
     required this.tabs,
     required this.index,
     required this.onSelect,
+    this.badges = const {},
   });
 
   final List<_ShellTab> tabs;
   final int index;
   final ValueChanged<int> onSelect;
+
+  /// Tab index -> unread count. Zero or missing draws nothing.
+  final Map<int, int> badges;
 
   @override
   Widget build(BuildContext context) {
@@ -242,6 +286,7 @@ class _FloatingNavBar extends StatelessWidget {
                         child: _NavItem(
                           tab: tabs[i],
                           selected: i == index,
+                          badge: badges[i] ?? 0,
                           onTap: () => onSelect(i),
                         ),
                       ),
@@ -419,11 +464,13 @@ class _NavItem extends StatelessWidget {
     required this.tab,
     required this.selected,
     required this.onTap,
+    this.badge = 0,
   });
 
   final _ShellTab tab;
   final bool selected;
   final VoidCallback onTap;
+  final int badge;
 
   @override
   Widget build(BuildContext context) {
@@ -464,11 +511,22 @@ class _NavItem extends StatelessWidget {
                           Tween<double>(begin: 0.6, end: 1).animate(animation),
                       child: FadeTransition(opacity: animation, child: child),
                     ),
-                    child: Icon(
-                      selected ? tab.selectedIcon : tab.icon,
+                    child: Stack(
                       key: ValueKey(selected),
-                      size: 22,
-                      color: color,
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(
+                          selected ? tab.selectedIcon : tab.icon,
+                          size: 22,
+                          color: color,
+                        ),
+                        if (badge > 0)
+                          Positioned(
+                            right: -6,
+                            top: -4,
+                            child: _CountDot(count: badge),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -485,6 +543,41 @@ class _NavItem extends StatelessWidget {
               child: Text(tab.label),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// The unread count on a tab.
+///
+/// Capped at "9+" so a neglected inbox cannot widen the icon and push the
+/// whole bar out of alignment.
+class _CountDot extends StatelessWidget {
+  const _CountDot({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      constraints: const BoxConstraints(minWidth: 15),
+      decoration: BoxDecoration(
+        color: AppColors.danger,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(color: theme.sq.surface, width: 1.4),
+      ),
+      child: Text(
+        count > 9 ? '9+' : '$count',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: Colors.white,
+          fontSize: 9,
+          height: 1.2,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );

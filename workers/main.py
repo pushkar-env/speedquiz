@@ -15,10 +15,12 @@ elif str(_here.parent) not in sys.path:
     sys.path.insert(0, str(_here.parent))
 
 from app.core.config import get_settings
+from app.core.database import session_scope
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import close_redis, init_redis, redis_ping
 from app.payments.maintenance import expire_lapsed_subscriptions
 from app.services.generation_jobs import process_inventory_maintenance, process_queued_jobs
+from app.services.matches import expire_stale
 
 logger = get_logger(__name__)
 _running = True
@@ -27,6 +29,11 @@ _running = True
 #: a backstop for dropped store notifications, not the primary path, so it does
 #: not need to be prompt — it needs to be certain.
 _SUBSCRIPTION_SWEEP_TICKS = 360
+
+#: ~2 minutes. Abandoned matches need closing promptly, not urgently: an async
+#: challenge has a 48-hour fuse, but a live lobby nobody joined should turn
+#: into a playable async challenge while the challenger is still in the app.
+_MATCH_SWEEP_TICKS = 12
 
 
 def _handle_signal(*_: object) -> None:
@@ -71,12 +78,21 @@ async def run() -> None:
             except Exception as exc:  # noqa: BLE001 — never kill the loop
                 logger.exception("subscription_sweep_failed", error=str(exc))
 
+        matches_closed = 0
+        if ticks % _MATCH_SWEEP_TICKS == 0:
+            try:
+                async with session_scope() as db:
+                    matches_closed = await expire_stale(db)
+            except Exception as exc:  # noqa: BLE001 — never kill the loop
+                logger.exception("match_sweep_failed", error=str(exc))
+
         logger.info(
             "worker_heartbeat",
             redis=ok,
             jobs_processed=processed,
             topups_enqueued=enqueued,
             subscriptions_expired=expired,
+            matches_closed=matches_closed,
         )
         await asyncio.sleep(5 if (processed or enqueued) else 10)
 

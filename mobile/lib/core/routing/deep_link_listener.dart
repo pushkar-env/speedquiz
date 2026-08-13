@@ -11,10 +11,15 @@ class DeepLinkListener extends StatefulWidget {
     super.key,
     required this.router,
     required this.child,
+    this.pushLinks,
   });
 
   final GoRouter router;
   final Widget child;
+
+  /// In-app paths emitted when a push notification is tapped. Optional so the
+  /// listener still works on a build with no Firebase project configured.
+  final Stream<String>? pushLinks;
 
   @override
   State<DeepLinkListener> createState() => _DeepLinkListenerState();
@@ -23,6 +28,7 @@ class DeepLinkListener extends StatefulWidget {
 class _DeepLinkListenerState extends State<DeepLinkListener> {
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _sub;
+  StreamSubscription<String>? _pushSub;
 
   @override
   void initState() {
@@ -57,11 +63,32 @@ class _DeepLinkListenerState extends State<DeepLinkListener> {
       (uri) => _navigate(uri),
       onError: (Object e) => debugPrint('deep_link_stream_failed: $e'),
     );
+
+    _startPushLinks();
+  }
+
+  /// Routes taps on push notifications.
+  ///
+  /// Kept separate from the URI stream because a push carries an in-app path
+  /// (`/battle/match/<id>`) rather than a web URL — there is nothing for
+  /// `locationFromDeepLink` to parse, and passing it through that would only
+  /// invite a scheme mismatch. The same auth-settle delay applies: a cold
+  /// start's splash redirect would otherwise swallow the navigation.
+  void _startPushLinks() {
+    _pushSub = widget.pushLinks?.listen((location) {
+      if (!location.startsWith('/')) return;
+      Future<void>(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        widget.router.push(location);
+      });
+    });
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _pushSub?.cancel();
     super.dispose();
   }
 

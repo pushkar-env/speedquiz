@@ -1067,4 +1067,360 @@ class SqStringsHi extends SqStrings {
   String get settingsBackToFreeDev => 'वापस फ्री (डेव)';
   @override
   String settingsVersion(String version) => 'SpeedQuiz · v$version';
+
+  // --- Battle: hub -------------------------------------------------------
+  @override
+  String get battleTitle => 'बैटल';
+  @override
+  String get battleTab => 'बैटल';
+  @override
+  String get battleQuickMatch => 'क्विक मैच';
+  @override
+  String get battleQuickMatchSubtitle => 'अपने स्तर के खिलाड़ी से रैंक्ड 1v1';
+  @override
+  String get battleChallengeFriend => 'दोस्त को चुनौती दें';
+  @override
+  String get battleChallengeFriendSubtitle => 'अनरैंक्ड — बस शान के लिए';
+  @override
+  String get battlePrivateRoom => 'प्राइवेट रूम';
+  @override
+  String get battlePrivateRoomSubtitle => '8 खिलाड़ी तक, कोड से जुड़ें';
+  @override
+  String get battleJoinRoom => 'कोड से जुड़ें';
+  @override
+  String get battleCopy => 'कॉपी करें';
+  @override
+  String get battleYourTurn => 'आपकी बारी';
+  @override
+  String get battleWaitingOnThem => 'उनका इंतज़ार';
+  @override
+  String get battleActiveMatches => 'चल रहे मैच';
+  @override
+  String get battleRecentMatches => 'हाल के मैच';
+  @override
+  String get battleNoMatches => 'अभी कोई बैटल नहीं';
+  @override
+  String get battleNoMatchesBody =>
+      'किसी दोस्त को चुनौती दें या क्विक मैच खेलें — पहली जीत बस एक गेम दूर है।';
+  @override
+  String get battleContinue => 'जारी रखें';
+  @override
+  String get battlePlay => 'खेलें';
+  @override
+  String get battleView => 'देखें';
+
+  // --- Battle: lobby -----------------------------------------------------
+  @override
+  String get lobbyTitle => 'तैयार हो जाइए';
+  @override
+  String get lobbyWaitingForOpponent => 'प्रतिद्वंद्वी का इंतज़ार…';
+  @override
+  String get lobbyReady => 'मैं तैयार हूँ';
+  @override
+  String get lobbyNotReady => 'तैयार नहीं';
+  @override
+  String get lobbyStartNow => 'अभी शुरू करें';
+  @override
+  String get lobbyRoomCode => 'रूम कोड';
+  @override
+  String get lobbyShareCode => 'कोड भेजें';
+  @override
+  String get lobbyCodeCopied => 'कोड कॉपी हो गया';
+  @override
+  String get lobbyEnterCode => 'रूम कोड डालें';
+  @override
+  String get lobbyJoin => 'जुड़ें';
+  @override
+  String get lobbyInviteAccepted => 'चुनौती स्वीकार की गई';
+  @override
+  String get lobbyChallengedYou => 'ने आपको चुनौती दी';
+  @override
+  String get lobbyAccept => 'स्वीकार करें';
+  @override
+  String get lobbyDecline => 'मना करें';
+  @override
+  String get lobbyDeclined => 'चुनौती अस्वीकार';
+  @override
+  String lobbyPlayersReady(int ready, int total) => '$total में से $ready तैयार';
+  @override
+  String lobbySeats(int filled, int total) => '$filled/$total खिलाड़ी';
+
+  // --- Battle: play ------------------------------------------------------
+  @override
+  String battleRoundOf(int current, int total) => 'राउंड $current / $total';
+  @override
+  String get battleYou => 'आप';
+  @override
+  String get battleOpponent => 'प्रतिद्वंद्वी';
+  @override
+  String get battleWaitingForOthers => 'बाकी खिलाड़ियों का इंतज़ार…';
+  @override
+  String get battleOpponentAnswered => 'जवाब दे दिया';
+  @override
+  String get battleOpponentThinking => 'सोच रहे हैं…';
+  @override
+  String get battleTimeUp => 'समय समाप्त';
+  @override
+  String get battleCorrect => 'सही';
+  @override
+  String get battleWrong => 'गलत';
+  @override
+  String get battleReconnecting => 'दोबारा जुड़ रहे हैं…';
+  @override
+  String get battleOffline => 'ऑफ़लाइन — आपके जवाब फिर भी गिने जाएंगे';
+  @override
+  String get battleLeaveTitle => 'मैच छोड़ें?';
+  @override
+  String get battleLeaveBody =>
+      'अब तक का स्कोर बना रहेगा और जीत प्रतिद्वंद्वी को मिलेगी। इसे बदला नहीं जा सकता।';
+  @override
+  String get battleLeaveConfirm => 'छोड़ें';
+  @override
+  String get battleAsyncNotice =>
+      'अपनी गति से खेलें — प्रतिद्वंद्वी को यही सवाल मिलेंगे।';
+
+  // --- Battle: result ----------------------------------------------------
+  @override
+  String get resultWin => 'आप जीत गए!';
+  @override
+  String get resultLoss => 'आप हार गए';
+  @override
+  String get resultDraw => 'बराबरी';
+  @override
+  String get resultWinBody => 'तेज़ और सटीक। अंक आपके।';
+  @override
+  String get resultLossBody => 'बहुत करीबी। फिर से खेलें?';
+  @override
+  String get resultDrawBody => 'वही स्कोर, वही समय। कोई नहीं झुका।';
+  @override
+  String get resultAwaitingOpponent => 'आपका स्कोर दर्ज हो गया';
+  @override
+  String get resultAwaitingOpponentBody =>
+      'जैसे ही वे अपनी बारी पूरी करेंगे, हम आपको बता देंगे।';
+  @override
+  String get resultRematch => 'दोबारा खेलें';
+  @override
+  String get resultBackToBattle => 'बैटल पर वापस';
+  @override
+  String get resultStandings => 'अंतिम नतीजा';
+  @override
+  String resultRatingGained(int points) => '+$points रेटिंग';
+  @override
+  String resultRatingLost(int points) => '$points रेटिंग';
+  @override
+  String resultPlacement(int place) => '$placeवाँ';
+
+  // --- Ranked ------------------------------------------------------------
+  @override
+  String get rankedTitle => 'रैंक्ड';
+  @override
+  String get rankedSearching => 'प्रतिद्वंद्वी खोज रहे हैं';
+  @override
+  String get rankedSearchingBody => 'आपके स्तर का खिलाड़ी ढूँढ रहे हैं…';
+  @override
+  String get rankedCancelSearch => 'रद्द करें';
+  @override
+  String get rankedNoOpponent => 'अभी कोई नहीं मिला';
+  @override
+  String get rankedNoOpponentBody =>
+      'कतार खाली है। थोड़ी देर बाद कोशिश करें, या किसी दोस्त को चुनौती दें।';
+  @override
+  String get rankedTryAgain => 'फिर कोशिश करें';
+  @override
+  String get rankedPlacements => 'प्लेसमेंट मैच';
+  @override
+  String get rankedUnranked => 'अनरैंक्ड';
+  @override
+  String get rankedSeason => 'सीज़न';
+  @override
+  String get rankedLadder => 'लैडर';
+  @override
+  String get rankedYourRank => 'आपकी रैंक';
+  @override
+  String get rankedNoRankYet => 'लैडर में आने के लिए एक रैंक्ड मैच खेलें।';
+  @override
+  String rankedPlacementsRemaining(int count) => '$count प्लेसमेंट मैच बाकी';
+  @override
+  String rankedNextTier(String tier, int points) => '$tier तक $points';
+  @override
+  String rankedSearchingFor(int seconds) => '$seconds सेकंड';
+  @override
+  String rankedPlayersSearching(int count) => '$count खिलाड़ी खोज रहे हैं';
+  @override
+  String rankedRecord(int wins, int losses, int draws) =>
+      '$wins जीत · $losses हार · $draws बराबरी';
+
+  // --- Friends -----------------------------------------------------------
+  @override
+  String get friendsTitle => 'दोस्त';
+  @override
+  String get friendsTab => 'दोस्त';
+  @override
+  String get friendsRequestsTab => 'रिक्वेस्ट';
+  @override
+  String get friendsAdd => 'दोस्त जोड़ें';
+  @override
+  String get friendsSearchHint => 'यूज़रनेम या फ़्रेंड कोड';
+  @override
+  String get friendsSearchEmpty => 'कोई खिलाड़ी नहीं मिला';
+  @override
+  String get friendsNoFriends => 'अभी कोई दोस्त नहीं';
+  @override
+  String get friendsNoFriendsBody =>
+      'अपना फ़्रेंड कोड भेजें, या यूज़रनेम से किसी को खोजें।';
+  @override
+  String get friendsNoRequests => 'कुछ बाकी नहीं';
+  @override
+  String get friendsIncoming => 'आपका जवाब बाकी';
+  @override
+  String get friendsOutgoing => 'भेजी गई';
+  @override
+  String get friendsAccept => 'स्वीकार करें';
+  @override
+  String get friendsDecline => 'मना करें';
+  @override
+  String get friendsCancelRequest => 'रद्द करें';
+  @override
+  String get friendsRequestSent => 'रिक्वेस्ट भेज दी';
+  @override
+  String get friendsRequestPending => 'लंबित';
+  @override
+  String get friendsAlreadyFriends => 'दोस्त हैं';
+  @override
+  String get friendsChallenge => 'चुनौती दें';
+  @override
+  String get friendsRemove => 'दोस्ती हटाएँ';
+  @override
+  String get friendsRemoveTitle => 'दोस्ती हटाएँ?';
+  @override
+  String get friendsRemoveConfirm => 'हटाएँ';
+  @override
+  String get friendsBlock => 'ब्लॉक करें';
+  @override
+  String get friendsBlockTitle => 'इस खिलाड़ी को ब्लॉक करें?';
+  @override
+  String get friendsBlockBody =>
+      'वे आपको न ढूँढ पाएंगे, न चुनौती दे पाएंगे, न सर्च में देख पाएंगे। सेटिंग्स से वापस कर सकते हैं।';
+  @override
+  String get friendsBlocked => 'ब्लॉक किया गया';
+  @override
+  String get friendsUnblock => 'अनब्लॉक करें';
+  @override
+  String get friendsBlockedList => 'ब्लॉक किए खिलाड़ी';
+  @override
+  String get friendsOnline => 'ऑनलाइन';
+  @override
+  String get friendsYourCode => 'आपका फ़्रेंड कोड';
+  @override
+  String get friendsShareCode => 'भेजें';
+  @override
+  String get friendsCodeCopied => 'फ़्रेंड कोड कॉपी हो गया';
+  @override
+  String get friendsCodeHint => 'इसे भेजें ताकि दोस्त आपको तुरंत जोड़ सकें।';
+  @override
+  String friendsRemoveBody(String name) =>
+      '$name को दोस्तों से हटाएँ? आप उन्हें दोबारा जोड़ सकते हैं।';
+  @override
+  String friendsHeadToHead(int wins, int losses) => '$wins–$losses';
+  @override
+  String friendsCount(int count) => '$count दोस्त';
+
+  // --- Username ----------------------------------------------------------
+  @override
+  String get usernameTitle => 'यूज़रनेम';
+  @override
+  String get usernameLabel => 'यूज़रनेम चुनें';
+  @override
+  String get usernameHint => 'जैसे quizwhiz';
+  @override
+  String get usernameAvailable => 'उपलब्ध है';
+  @override
+  String get usernameChecking => 'जाँच रहे हैं…';
+  @override
+  String get usernameSave => 'सेव करें';
+  @override
+  String get usernameSaved => 'यूज़रनेम बदल गया';
+  @override
+  String get usernameSuggestions => 'इनमें से चुनें';
+  @override
+  String get usernameRules =>
+      '3–20 अक्षर। अक्षर, अंक और अंडरस्कोर, शुरुआत अक्षर से।';
+  @override
+  String usernameLockedUntil(String date) => 'आप इसे $date को दोबारा बदल सकते हैं।';
+  @override
+  String usernameError(String code) => switch (code) {
+        'username_length' => '3 से 20 अक्षरों का उपयोग करें।',
+        'username_charset' => 'सिर्फ़ अक्षर, अंक और अंडरस्कोर, शुरुआत अक्षर से।',
+        'username_reserved' => 'यह नाम सुरक्षित है।',
+        'username_blocked' => 'कृपया दूसरा नाम चुनें।',
+        'username_taken' => 'यह नाम पहले से लिया जा चुका है।',
+        'username_cooldown' => 'आपने हाल ही में यूज़रनेम बदला है।',
+        _ => 'यह नाम इस्तेमाल नहीं हो सकता।',
+      };
+
+  // --- Notifications -----------------------------------------------------
+  @override
+  String get notificationsTitle => 'सूचनाएँ';
+  @override
+  String get notificationsEmpty => 'अभी कुछ नहीं';
+  @override
+  String get notificationsEmptyBody =>
+      'फ़्रेंड रिक्वेस्ट, चुनौतियाँ और नतीजे यहाँ दिखेंगे।';
+  @override
+  String get notificationsMarkRead => 'सभी पढ़ा हुआ करें';
+  @override
+  String get notificationsSettings => 'सूचना सेटिंग्स';
+  @override
+  String get notificationsPushDisabled =>
+      'इस बिल्ड में पुश बंद है — सब कुछ यहीं दिखेगा।';
+  @override
+  String notificationFriendRequest(String name) => '$name आपसे दोस्ती करना चाहते हैं';
+  @override
+  String notificationFriendAccepted(String name) =>
+      '$name ने आपकी रिक्वेस्ट स्वीकार की';
+  @override
+  String notificationMatchInvite(String name, String topic) =>
+      '$name ने आपको $topic में चुनौती दी';
+  @override
+  String notificationYourTurn(String name) => '$name आपके खेलने का इंतज़ार कर रहे हैं';
+  @override
+  String notificationMatchResult(String name) => '$name के साथ आपका मैच खत्म हुआ';
+
+  // --- Shared errors -----------------------------------------------------
+  @override
+  String get errorNotFriends => 'आप सीधे सिर्फ़ दोस्तों को चुनौती दे सकते हैं।';
+  @override
+  String get errorMatchFull => 'यह रूम भर चुका है।';
+  @override
+  String get errorMatchClosed => 'यह मैच शुरू हो चुका है।';
+  @override
+  String get errorBankTooThin => 'इस विषय में अभी पर्याप्त सवाल नहीं हैं।';
+  @override
+  String get errorAlreadyAnswered => 'आप इस राउंड का जवाब दे चुके हैं।';
+  @override
+  String get errorRoundClosed => 'यह राउंड बंद हो चुका है।';
+  @override
+  String get errorMultiplayerDisabled => 'बैटल अभी उपलब्ध नहीं है।';
+  @override
+  String get errorNetwork => 'कनेक्शन जाँचें और फिर कोशिश करें।';
+  @override
+  String matchError(String code) => switch (code) {
+        'not_friends' => errorNotFriends,
+        'match_full' => errorMatchFull,
+        'match_closed' || 'match_started' => errorMatchClosed,
+        'bank_too_thin' => errorBankTooThin,
+        'already_answered' => errorAlreadyAnswered,
+        'round_closed' => errorRoundClosed,
+        'multiplayer_disabled' => errorMultiplayerDisabled,
+        'match_not_found' => 'यह मैच अब मौजूद नहीं है।',
+        'user_not_found' => 'खिलाड़ी नहीं मिला।',
+        'already_friends' => friendsAlreadyFriends,
+        'request_pending' => friendsRequestPending,
+        'friends_full' => 'आपकी दोस्तों की सूची भर चुकी है।',
+        'too_many_requests' => 'बहुत ज़्यादा रिक्वेस्ट। बाद में कोशिश करें।',
+        'not_enough_players' => 'कम से कम एक प्रतिद्वंद्वी चाहिए।',
+        'not_host' => 'सिर्फ़ होस्ट ही शुरू कर सकता है।',
+        'rate_limited' => 'ज़रा धीरे।',
+        _ => errorNetwork,
+      };
 }

@@ -21,6 +21,12 @@ from app.core.security import (
 )
 from app.models import AuthProvider, PlayerStatistics, RefreshToken, User, UserProfile, UserRole
 from app.schemas.auth import GuestAuthResponse, TokenResponse, UserMeResponse
+from app.services.usernames import (
+    GENERATED_USERNAME_PREFIX,
+    profile_username_fields,
+    set_username,
+    username_skeleton,
+)
 
 settings = get_settings()
 
@@ -29,14 +35,24 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 def _username_from_seed(seed: str) -> str:
     suffix = sha256(seed.encode()).hexdigest()[:8]
-    return f"player_{suffix}"
+    return f"{GENERATED_USERNAME_PREFIX}{suffix}"
 
 
 async def _ensure_unique_username(db: AsyncSession, base: str) -> str:
+    """A free username near `base`.
+
+    Collision is tested on the *skeleton*, not the literal string, because that
+    is the column carrying the unique index — probing on `username` would hand
+    back a name that then fails to insert (see `app.services.usernames`).
+    """
     candidate = base[:32]
     counter = 1
     while True:
-        exists = await db.scalar(select(UserProfile.id).where(UserProfile.username == candidate))
+        exists = await db.scalar(
+            select(UserProfile.id).where(
+                UserProfile.username_skeleton == username_skeleton(candidate)
+            )
+        )
         if not exists:
             return candidate
         candidate = f"{base[:24]}_{counter}"
@@ -54,7 +70,9 @@ async def create_guest_user(db: AsyncSession, device_info: Optional[str] = None)
     await db.flush()
 
     username = await _ensure_unique_username(db, _username_from_seed(str(user.id)))
-    profile = UserProfile(user_id=user.id, username=username, display_name=username)
+    profile = UserProfile(
+        user_id=user.id, **profile_username_fields(username), display_name=username
+    )
     stats = PlayerStatistics(user_id=user.id)
     db.add(profile)
     db.add(stats)
@@ -122,7 +140,9 @@ async def register_email_user(
     uname = await _ensure_unique_username(
         db, username or _username_from_seed(email.lower())
     )
-    profile = UserProfile(user_id=user.id, username=uname, display_name=uname)
+    profile = UserProfile(
+        user_id=user.id, **profile_username_fields(uname), display_name=uname
+    )
     stats = PlayerStatistics(user_id=user.id)
     db.add(profile)
     db.add(stats)
@@ -198,7 +218,7 @@ async def upgrade_guest_to_email(
     guest_user.last_login_at = datetime.now(timezone.utc)
 
     if username and guest_user.profile:
-        guest_user.profile.username = await _ensure_unique_username(db, username)
+        set_username(guest_user.profile, await _ensure_unique_username(db, username))
         guest_user.profile.display_name = guest_user.profile.username
 
     access = create_access_token(guest_user.id, is_guest=False)
@@ -363,7 +383,7 @@ async def login_or_link_google(
     uname = await _ensure_unique_username(db, safe.lower())
     profile = UserProfile(
         user_id=user.id,
-        username=uname,
+        **profile_username_fields(uname),
         display_name=identity.name[:64] if identity.name else uname,
     )
     stats = PlayerStatistics(user_id=user.id)

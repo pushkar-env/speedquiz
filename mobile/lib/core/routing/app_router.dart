@@ -9,6 +9,12 @@ import 'package:speedquiz/features/entitlements/presentation/premium_paywall_she
 import 'package:speedquiz/features/explore/presentation/explore_screen.dart';
 import 'package:speedquiz/features/home/presentation/home_screen.dart';
 import 'package:speedquiz/features/leaderboard/presentation/leaderboard_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/battle_hub_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/battle_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/friends_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/notifications_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/ranked_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/username_edit_screen.dart';
 import 'package:speedquiz/features/onboarding/domain/onboarding_state.dart';
 import 'package:speedquiz/features/onboarding/presentation/landing_screen.dart';
 import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
@@ -32,8 +38,17 @@ abstract final class Routes {
   static const landing = '/landing';
   static const home = '/home';
   static const explore = '/explore';
+  static const battle = '/battle';
   static const leaderboard = '/leaderboard';
   static const profile = '/profile';
+  static const friends = '/battle/friends';
+  static const ranked = '/battle/ranked';
+  static const username = '/profile/username';
+  static const notifications = '/battle/notifications';
+
+  /// Deep-link target for a match. Push notifications carry exactly this path,
+  /// so the shape lives here rather than being spelled out at each call site.
+  static String matchPath(String matchId) => '/battle/match/$matchId';
   static const profileEdit = '/profile/edit';
   static const achievements = '/profile/achievements';
   static const stats = '/profile/stats';
@@ -111,6 +126,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: Routes.explore,
             pageBuilder: (context, state) =>
                 sqFadeThroughPage(state: state, child: const ExploreScreen()),
+          ),
+          GoRoute(
+            path: Routes.battle,
+            pageBuilder: (context, state) =>
+                sqFadeThroughPage(state: state, child: const BattleHubScreen()),
           ),
           GoRoute(
             path: Routes.leaderboard,
@@ -258,6 +278,65 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ),
           );
         },
+      ),
+      // Battle destinations sit on the root navigator: they cover the bottom
+      // bar because they are places you go, not tabs you switch between. The
+      // match route in particular must not be interruptible by a tab tap
+      // while a round clock is running.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.friends,
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: const SqBackGuard(
+            fallback: Routes.battle,
+            child: FriendsScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.notifications,
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: const SqBackGuard(
+            fallback: Routes.battle,
+            child: NotificationsScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.ranked,
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: const SqBackGuard(
+            fallback: Routes.battle,
+            child: RankedScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/battle/match/:matchId',
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: SqBackGuard(
+            fallback: Routes.battle,
+            child: BattleScreen(matchId: state.pathParameters['matchId']!),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.username,
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: const SqBackGuard(
+            fallback: Routes.profile,
+            child: UsernameEditScreen(),
+          ),
+        ),
       ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/network/api_errors.dart';
@@ -156,10 +157,27 @@ class _ProfileEditScreenState extends ConsumerState<ProfileEditScreen> {
                             ),
                             if (user?.username != null) ...[
                               const SizedBox(height: 2),
-                              Text(
-                                '@${user!.username}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: p.textFaint,
+                              // Tappable, because the username is now the
+                              // handle other players search and challenge by —
+                              // it needs its own editor, not a caption.
+                              SqPressable(
+                                onTap: () => context.push(Routes.username),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '@${user!.username}',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: p.accent,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.edit_rounded,
+                                      size: 12,
+                                      color: p.accent,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],

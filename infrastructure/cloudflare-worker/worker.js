@@ -43,6 +43,15 @@ export default {
     try {
       const response = await fetch(proxied);
 
+      // A WebSocket upgrade must be returned *as-is*. Rewrapping it in
+      // `new Response(body, init)` silently discards the `webSocket` handle,
+      // and the client sees a 101 with no socket behind it — which is how a
+      // live match would fail through this proxy while working perfectly
+      // against the origin. Nothing below is worth breaking that for.
+      if (response.status === 101 && response.webSocket) {
+        return response;
+      }
+
       // Make the hop visible in curl -I, so a future debugging session can
       // tell "the proxy is down" from "the origin is down".
       const out = new Response(response.body, response);

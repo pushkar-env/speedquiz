@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:speedquiz/app.dart';
 import 'package:speedquiz/core/i18n/language_providers.dart';
+import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/settings/app_settings.dart';
 import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
@@ -56,6 +57,12 @@ Future<void> main() async {
       // first run's answers to the account, and the router asks it which
       // screen a signed-out player gets on its very first redirect.
       await container.read(onboardingControllerProvider.notifier).hydrate();
+
+      // Push, if this build was given a Firebase project. Awaited because a
+      // notification that launched the app is delivered exactly once, and
+      // starting after the first frame would drop it. It is a no-op — and
+      // never throws — when the FIREBASE_* defines are absent.
+      await container.read(pushServiceProvider).initialize();
 
       runApp(
         UncontrolledProviderScope(

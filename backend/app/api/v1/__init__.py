@@ -10,9 +10,11 @@ from app.api.v1 import (
     entitlements,
     health,
     leaderboards,
+    multiplayer,
     questions,
     quiz,
     share,
+    social,
 )
 
 api_router = APIRouter()
@@ -28,3 +30,5 @@ api_router.include_router(leaderboards.router)
 api_router.include_router(entitlements.router)
 api_router.include_router(billing_webhooks.router)
 api_router.include_router(share.router)
+api_router.include_router(social.router)
+api_router.include_router(multiplayer.router)

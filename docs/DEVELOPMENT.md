@@ -36,6 +36,11 @@ limited.
 | Area | Location |
 |---|---|
 | Quiz engine — session state machine, server-authoritative scoring, adaptive difficulty | `backend/app/services/quiz_service.py`, `scoring.py`, `adaptive.py` |
+| Multiplayer — matches, rounds, settlement ([below](#7-multiplayer)) | `backend/app/services/matches.py` |
+| Realtime — Redis Streams fan-out, WebSocket, presence | `backend/app/services/realtime.py`, `backend/app/api/v1/multiplayer.py` |
+| Social graph — friends, blocks, usernames, friend codes | `backend/app/services/friends.py`, `usernames.py` |
+| Ranked — Elo, tiers, seasons, matchmaking queue | `backend/app/services/ranking.py`, `matchmaking.py` |
+| Push — FCM v1 sender, device registry, quiet hours | `backend/app/push/fcm.py`, `backend/app/services/notifications.py` |
 | Leaderboards — Redis ZSET with a Postgres fallback | `backend/app/services/leaderboards.py` |
 | Entitlements & IAP verification | `backend/app/payments/` |
 | AI pipeline — generate → validate → quality score → dedupe → store | `backend/app/ai/`, `workers/` |
@@ -253,7 +258,102 @@ otherwise only shows up on a device.
 
 ---
 
-## 7. Client design system
+## 7. Multiplayer
+
+Three ideas carry the whole feature. Everything else follows from them.
+
+### The board is frozen at creation
+
+A match draws its questions **once**, and stores the ids plus a per-question
+option permutation on the `matches` row. Every participant therefore sees the
+same prompts, in the same order, with the same answers in the same button
+positions. That is what makes two scores comparable — and it is also what lets
+an opponent who was offline play the identical board six hours later.
+
+Questions already seen by *any* known participant are excluded first, so nobody
+arrives with a head start. If the bank is too thin to fill a match that way,
+the fairness filter is dropped rather than refusing to start: both sides being
+equally disadvantaged by a repeat beats no game at all.
+
+### Live and async are the same match
+
+`matches.delivery` is `live` or `async`. A live match runs one shared clock off
+`matches.round_started_at`; an async one has no shared clock, so each player's
+window opens when *they* are served (`match_participants.round_served_at`,
+cleared after every answer). Nothing else differs — same board, same scoring,
+same settlement.
+
+A live match degrades to async when the opponent never connects. That is the
+single most important behaviour in the feature: on Indian mobile networks, a
+challenge that requires both players online at the same instant is a challenge
+that mostly does not happen.
+
+### Nobody owns a match
+
+Railway runs several API containers and the two players are routinely on
+different ones, so no process can hold a timer for a game. Round advancement is
+*opportunistic*: any request that touches a match — an answer landing, a state
+poll, a realtime tick — asks whether the round is over, and a short Redis lock
+plus a compare-and-set on `current_round_index` makes exactly one of them act.
+No leader election, and if Redis is down it degrades to "the next request
+advances it", which is late but never wrong.
+
+### Realtime
+
+The transport is a **Redis Stream per match**, not pub/sub. Pub/sub delivers to
+whoever is listening at that instant; a player crossing from wifi to cellular
+is gone for two seconds and must not lose the round that started meanwhile. A
+stream is a log with ids, so a reconnecting client resumes from its last id.
+
+Critically, there is **one reader per process, not per socket**
+(`RealtimeHub`). A `XREAD BLOCK` per WebSocket would burn a Redis connection
+per connected player, and against a 50-connection pool that ceiling is 50
+concurrent players.
+
+Answers go over HTTP even during a live match. The socket is a notification
+channel; putting the one write that must not be lost on the one transport that
+drops would be a poor trade.
+
+> **The Cloudflare Worker must be redeployed** for any of this to work in
+> production. It previously rewrapped every response, which discards the
+> `webSocket` handle — see `infrastructure/cloudflare-worker/worker.js`.
+
+### Usernames became identities
+
+A username used to be a label nobody typed. Now strangers search and challenge
+by it, so `user_profiles.username_skeleton` stores a folded form — lowercased,
+separators dropped, digits mapped to the letters they imitate — and carries the
+unique index. `Ravi`, `r_a_v_i` and `R4vi` are therefore one identity, which is
+the impersonation vector closed. Migration `0006` backfills it with a Postgres
+`translate()` that must stay identical to `usernames.username_skeleton`; a test
+asserts they agree.
+
+### Ranked
+
+Only rated 1v1 duels move Elo — friend challenges are unrated on purpose, since
+a ladder attached to them suppresses the exact behaviour the social features
+exist to create. Placements use a larger K so a new player reaches their real
+bracket in five games. Seasons are a key (`YYYY-MM`), not a table: rollover is
+the first ranked match of a month creating a row seeded from the last one, so
+there is no scheduled job that can fail to run.
+
+### Push
+
+Optional. With no `FCM_SERVICE_ACCOUNT_JSON` the sender is a no-op and the
+in-app inbox carries everything — a deployment without a Firebase project has a
+working multiplayer feature, just a quieter one. The client side is the same
+deal: the four `FIREBASE_*` dart-defines are read by
+`scripts/build_android.sh`, and their absence disables push rather than
+breaking the build.
+
+Quiet hours are applied **per device** using the UTC offset the client reports,
+because a server-side 22:00 is the wrong 22:00 for most of the world. Only
+`match_your_turn` is exempt — the round clock is running and silence costs the
+player the game.
+
+---
+
+## 8. Client design system
 
 Screens should reach for these rather than hand-rolling colours or timings.
 
@@ -296,7 +396,7 @@ Conventions:
 
 ---
 
-## 8. Local gotchas worth knowing
+## 9. Local gotchas worth knowing
 
 | Symptom | Cause |
 |---|---|

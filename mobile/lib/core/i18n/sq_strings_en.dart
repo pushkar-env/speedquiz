@@ -1060,4 +1060,366 @@ class SqStringsEn extends SqStrings {
   String get settingsBackToFreeDev => 'Back to Free (dev)';
   @override
   String settingsVersion(String version) => 'SpeedQuiz · v$version';
+
+  // --- Battle: hub -------------------------------------------------------
+  @override
+  String get battleTitle => 'Battle';
+  @override
+  String get battleTab => 'Battle';
+  @override
+  String get battleQuickMatch => 'Quick match';
+  @override
+  String get battleQuickMatchSubtitle => 'Ranked 1v1 against someone your level';
+  @override
+  String get battleChallengeFriend => 'Challenge a friend';
+  @override
+  String get battleChallengeFriendSubtitle => 'Unranked — just for bragging rights';
+  @override
+  String get battlePrivateRoom => 'Private room';
+  @override
+  String get battlePrivateRoomSubtitle => 'Up to 8 players, join by code';
+  @override
+  String get battleJoinRoom => 'Join with code';
+  @override
+  String get battleCopy => 'COPY';
+  @override
+  String get battleYourTurn => 'Your turn';
+  @override
+  String get battleWaitingOnThem => 'Waiting on them';
+  @override
+  String get battleActiveMatches => 'In play';
+  @override
+  String get battleRecentMatches => 'Recent';
+  @override
+  String get battleNoMatches => 'No battles yet';
+  @override
+  String get battleNoMatchesBody =>
+      'Challenge a friend or find a quick match — your first win is one game away.';
+  @override
+  String get battleContinue => 'CONTINUE';
+  @override
+  String get battlePlay => 'PLAY';
+  @override
+  String get battleView => 'VIEW';
+
+  // --- Battle: lobby -----------------------------------------------------
+  @override
+  String get lobbyTitle => 'Get ready';
+  @override
+  String get lobbyWaitingForOpponent => 'Waiting for your opponent…';
+  @override
+  String get lobbyReady => "I'M READY";
+  @override
+  String get lobbyNotReady => 'NOT READY';
+  @override
+  String get lobbyStartNow => 'START NOW';
+  @override
+  String get lobbyRoomCode => 'Room code';
+  @override
+  String get lobbyShareCode => 'SHARE CODE';
+  @override
+  String get lobbyCodeCopied => 'Code copied';
+  @override
+  String get lobbyEnterCode => 'Enter room code';
+  @override
+  String get lobbyJoin => 'JOIN';
+  @override
+  String get lobbyInviteAccepted => 'Challenge accepted';
+  @override
+  String get lobbyChallengedYou => 'challenged you';
+  @override
+  String get lobbyAccept => 'ACCEPT';
+  @override
+  String get lobbyDecline => 'DECLINE';
+  @override
+  String get lobbyDeclined => 'Challenge declined';
+  @override
+  String lobbyPlayersReady(int ready, int total) => '$ready of $total ready';
+  @override
+  String lobbySeats(int filled, int total) => '$filled/$total players';
+
+  // --- Battle: play ------------------------------------------------------
+  @override
+  String battleRoundOf(int current, int total) => 'Round $current of $total';
+  @override
+  String get battleYou => 'You';
+  @override
+  String get battleOpponent => 'Opponent';
+  @override
+  String get battleWaitingForOthers => 'Waiting for the others…';
+  @override
+  String get battleOpponentAnswered => 'Answered';
+  @override
+  String get battleOpponentThinking => 'Thinking…';
+  @override
+  String get battleTimeUp => "Time's up";
+  @override
+  String get battleCorrect => 'Correct';
+  @override
+  String get battleWrong => 'Wrong';
+  @override
+  String get battleReconnecting => 'Reconnecting…';
+  @override
+  String get battleOffline => 'Offline — your answers still count';
+  @override
+  String get battleLeaveTitle => 'Leave the match?';
+  @override
+  String get battleLeaveBody =>
+      'Your score so far stands and your opponent gets the win. This cannot be undone.';
+  @override
+  String get battleLeaveConfirm => 'LEAVE';
+  @override
+  String get battleAsyncNotice =>
+      'Playing at your own pace — your opponent plays the same questions.';
+
+  // --- Battle: result ----------------------------------------------------
+  @override
+  String get resultWin => 'You won!';
+  @override
+  String get resultLoss => 'You lost';
+  @override
+  String get resultDraw => 'Dead heat';
+  @override
+  String get resultWinBody => 'Faster and sharper. Take the points.';
+  @override
+  String get resultLossBody => 'Close one. Run it back?';
+  @override
+  String get resultDrawBody => 'Same score, same clock. Nobody blinked.';
+  @override
+  String get resultAwaitingOpponent => 'Your score is in';
+  @override
+  String get resultAwaitingOpponentBody =>
+      "We'll let you know the moment they finish their turn.";
+  @override
+  String get resultRematch => 'REMATCH';
+  @override
+  String get resultBackToBattle => 'BACK TO BATTLE';
+  @override
+  String get resultStandings => 'Final standings';
+  @override
+  String resultRatingGained(int points) => '+$points rating';
+  @override
+  String resultRatingLost(int points) => '$points rating';
+  @override
+  String resultPlacement(int place) => switch (place) {
+        1 => '1st',
+        2 => '2nd',
+        3 => '3rd',
+        _ => '${place}th',
+      };
+
+  // --- Ranked ------------------------------------------------------------
+  @override
+  String get rankedTitle => 'Ranked';
+  @override
+  String get rankedSearching => 'Finding an opponent';
+  @override
+  String get rankedSearchingBody => 'Looking for someone at your level…';
+  @override
+  String get rankedCancelSearch => 'CANCEL';
+  @override
+  String get rankedNoOpponent => 'Nobody around right now';
+  @override
+  String get rankedNoOpponentBody =>
+      'The queue is quiet. Try again in a moment, or challenge a friend instead.';
+  @override
+  String get rankedTryAgain => 'TRY AGAIN';
+  @override
+  String get rankedPlacements => 'Placement matches';
+  @override
+  String get rankedUnranked => 'Unranked';
+  @override
+  String get rankedSeason => 'Season';
+  @override
+  String get rankedLadder => 'Ladder';
+  @override
+  String get rankedYourRank => 'Your rank';
+  @override
+  String get rankedNoRankYet => 'Play a ranked match to join the ladder.';
+  @override
+  String rankedPlacementsRemaining(int count) =>
+      count == 1 ? '1 placement match left' : '$count placement matches left';
+  @override
+  String rankedNextTier(String tier, int points) => '$points to $tier';
+  @override
+  String rankedSearchingFor(int seconds) => '${seconds}s';
+  @override
+  String rankedPlayersSearching(int count) =>
+      count == 1 ? '1 player searching' : '$count players searching';
+  @override
+  String rankedRecord(int wins, int losses, int draws) => '$wins W · $losses L · $draws D';
+
+  // --- Friends -----------------------------------------------------------
+  @override
+  String get friendsTitle => 'Friends';
+  @override
+  String get friendsTab => 'Friends';
+  @override
+  String get friendsRequestsTab => 'Requests';
+  @override
+  String get friendsAdd => 'Add friend';
+  @override
+  String get friendsSearchHint => 'Username or friend code';
+  @override
+  String get friendsSearchEmpty => 'No players found';
+  @override
+  String get friendsNoFriends => 'No friends yet';
+  @override
+  String get friendsNoFriendsBody =>
+      'Share your friend code, or search for someone by their username.';
+  @override
+  String get friendsNoRequests => 'Nothing waiting';
+  @override
+  String get friendsIncoming => 'Waiting on you';
+  @override
+  String get friendsOutgoing => 'Sent';
+  @override
+  String get friendsAccept => 'ACCEPT';
+  @override
+  String get friendsDecline => 'DECLINE';
+  @override
+  String get friendsCancelRequest => 'CANCEL';
+  @override
+  String get friendsRequestSent => 'Request sent';
+  @override
+  String get friendsRequestPending => 'Pending';
+  @override
+  String get friendsAlreadyFriends => 'Friends';
+  @override
+  String get friendsChallenge => 'CHALLENGE';
+  @override
+  String get friendsRemove => 'Remove friend';
+  @override
+  String get friendsRemoveTitle => 'Remove friend?';
+  @override
+  String get friendsRemoveConfirm => 'REMOVE';
+  @override
+  String get friendsBlock => 'Block';
+  @override
+  String get friendsBlockTitle => 'Block this player?';
+  @override
+  String get friendsBlockBody =>
+      "They won't be able to find you, challenge you, or see you in search. You can undo this in Settings.";
+  @override
+  String get friendsBlocked => 'Blocked';
+  @override
+  String get friendsUnblock => 'UNBLOCK';
+  @override
+  String get friendsBlockedList => 'Blocked players';
+  @override
+  String get friendsOnline => 'Online';
+  @override
+  String get friendsYourCode => 'Your friend code';
+  @override
+  String get friendsShareCode => 'SHARE';
+  @override
+  String get friendsCodeCopied => 'Friend code copied';
+  @override
+  String get friendsCodeHint => 'Share this so friends can add you instantly.';
+  @override
+  String friendsRemoveBody(String name) =>
+      'Remove $name from your friends? You can always add them again.';
+  @override
+  String friendsHeadToHead(int wins, int losses) => '$wins–$losses';
+  @override
+  String friendsCount(int count) => count == 1 ? '1 friend' : '$count friends';
+
+  // --- Username ----------------------------------------------------------
+  @override
+  String get usernameTitle => 'Username';
+  @override
+  String get usernameLabel => 'Choose a username';
+  @override
+  String get usernameHint => 'e.g. quizwhiz';
+  @override
+  String get usernameAvailable => 'Available';
+  @override
+  String get usernameChecking => 'Checking…';
+  @override
+  String get usernameSave => 'SAVE';
+  @override
+  String get usernameSaved => 'Username updated';
+  @override
+  String get usernameSuggestions => 'Try one of these';
+  @override
+  String get usernameRules =>
+      '3–20 characters. Letters, numbers and underscores, starting with a letter.';
+  @override
+  String usernameLockedUntil(String date) => 'You can change this again on $date.';
+  @override
+  String usernameError(String code) => switch (code) {
+        'username_length' => 'Use between 3 and 20 characters.',
+        'username_charset' =>
+          'Letters, numbers and underscores only, starting with a letter.',
+        'username_reserved' => 'That name is reserved.',
+        'username_blocked' => 'Please choose a different name.',
+        'username_taken' => 'That name is taken.',
+        'username_cooldown' => 'You changed your username recently.',
+        _ => 'That name cannot be used.',
+      };
+
+  // --- Notifications -----------------------------------------------------
+  @override
+  String get notificationsTitle => 'Notifications';
+  @override
+  String get notificationsEmpty => 'Nothing here yet';
+  @override
+  String get notificationsEmptyBody =>
+      'Friend requests, challenges and results will show up here.';
+  @override
+  String get notificationsMarkRead => 'Mark all read';
+  @override
+  String get notificationsSettings => 'Notification settings';
+  @override
+  String get notificationsPushDisabled =>
+      'Push is off for this build — you will see everything here instead.';
+  @override
+  String notificationFriendRequest(String name) => '$name wants to be friends';
+  @override
+  String notificationFriendAccepted(String name) => '$name accepted your request';
+  @override
+  String notificationMatchInvite(String name, String topic) =>
+      '$name challenged you to $topic';
+  @override
+  String notificationYourTurn(String name) => '$name is waiting for you to play';
+  @override
+  String notificationMatchResult(String name) => 'Your match with $name is done';
+
+  // --- Shared errors -----------------------------------------------------
+  @override
+  String get errorNotFriends => 'You can only challenge friends directly.';
+  @override
+  String get errorMatchFull => 'That room is full.';
+  @override
+  String get errorMatchClosed => 'That match has already started.';
+  @override
+  String get errorBankTooThin => 'Not enough questions in this topic yet.';
+  @override
+  String get errorAlreadyAnswered => 'You already answered this round.';
+  @override
+  String get errorRoundClosed => 'That round has closed.';
+  @override
+  String get errorMultiplayerDisabled => 'Battles are unavailable right now.';
+  @override
+  String get errorNetwork => 'Check your connection and try again.';
+  @override
+  String matchError(String code) => switch (code) {
+        'not_friends' => errorNotFriends,
+        'match_full' => errorMatchFull,
+        'match_closed' || 'match_started' => errorMatchClosed,
+        'bank_too_thin' => errorBankTooThin,
+        'already_answered' => errorAlreadyAnswered,
+        'round_closed' => errorRoundClosed,
+        'multiplayer_disabled' => errorMultiplayerDisabled,
+        'match_not_found' => 'That match no longer exists.',
+        'user_not_found' => 'Player not found.',
+        'already_friends' => friendsAlreadyFriends,
+        'request_pending' => friendsRequestPending,
+        'friends_full' => 'Your friend list is full.',
+        'too_many_requests' => 'Too many requests. Try again later.',
+        'not_enough_players' => 'You need at least one opponent.',
+        'not_host' => 'Only the host can start.',
+        'rate_limited' => 'Slow down a moment.',
+        _ => errorNetwork,
+      };
 }
