@@ -13,6 +13,19 @@
 *.jks
 *.keystore
 secrets/
+# Google / Firebase service-account keys. These arrive from the console with a
+# generated filename (`<project>-firebase-adminsdk-<hash>.json`) and land in
+# whatever directory the browser downloads to — frequently the repo root, where
+# nothing else here would catch them. The private key inside can send push and
+# call Play APIs as this project, so the pattern is deliberately broad.
+*-firebase-adminsdk-*.json
+*service-account*.json
+*serviceaccount*.json
+# The Firebase *client* config. Not secret in the same way, but this project
+# configures Firebase from dart-defines instead, so a stray copy here would
+# only be a second source of truth to drift.
+google-services.json
+GoogleService-Info.plist
 
 # Python
 __pycache__/

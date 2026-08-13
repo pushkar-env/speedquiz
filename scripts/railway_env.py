@@ -26,6 +26,18 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # database is Neon, reached through DATABASE_URL, so these are dead weight.
 LOCAL_ONLY = {"POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"}
 
+# Compiled into the Flutter binary by scripts/build_android.sh, not read by the
+# server at all. They live in the same .env for convenience; putting them on
+# Railway would imply the backend reads them, which is the kind of thing
+# somebody later tries to "fix" by changing the wrong one.
+CLIENT_BUILD_ONLY = {
+    "FIREBASE_API_KEY",
+    "FIREBASE_APP_ID",
+    "FIREBASE_PROJECT_ID",
+    "FIREBASE_SENDER_ID",
+    "GOOGLE_CLIENT_ID",
+}
+
 # Development values the production validator rejects.
 PRODUCTION_OVERRIDES = {
     "APP_ENV": "production",
@@ -45,7 +57,19 @@ PRODUCTION_ADDITIONS = {
 
 # Needed by both services: the API generates custom topics and "Teach me"
 # explanations on demand; the worker tops up the question bank.
-BOTH_SERVICES = {"LLM_API_KEY", "DATABASE_URL", "DATABASE_URL_SYNC", "REDIS_URL"}
+#
+# FCM_SERVICE_ACCOUNT_JSON is on this list because push is sent from both — the
+# API on a challenge or friend request, and the **worker** when its sweep
+# settles an expired async match and has to tell both players. Setting it only
+# on the API loses exactly the notifications that matter most, and loses them
+# silently, since a missing credential is a supported "push disabled" state.
+BOTH_SERVICES = {
+    "LLM_API_KEY",
+    "DATABASE_URL",
+    "DATABASE_URL_SYNC",
+    "REDIS_URL",
+    "FCM_SERVICE_ACCOUNT_JSON",
+}
 
 
 def read_env(path: pathlib.Path) -> dict[str, str]:
@@ -63,7 +87,11 @@ def read_env(path: pathlib.Path) -> dict[str, str]:
 
 def build(env: dict[str, str], public_url: str | None) -> tuple[dict[str, str], list[str]]:
     warnings: list[str] = []
-    out = {k: v for k, v in env.items() if k not in LOCAL_ONLY}
+    out = {
+        k: v
+        for k, v in env.items()
+        if k not in LOCAL_ONLY and k not in CLIENT_BUILD_ONLY
+    }
 
     for key, value in PRODUCTION_OVERRIDES.items():
         if out.get(key) not in (None, value):

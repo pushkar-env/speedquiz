@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Hindi channel labels, so a player whose *phone* is in Hindi sees Hindi in
+    Android's notification settings. This follows the device locale, not the
+    app's language setting — the system picks the resource folder, and it has
+    no idea what the app was last opened in.
+-->
+<resources>
+    <string name="multiplayer_channel_name">बैटल</string>
+    <string name="multiplayer_channel_description">दोस्तों की चुनौतियाँ, आपकी बारी, और मैच के नतीजे।</string>
+</resources>

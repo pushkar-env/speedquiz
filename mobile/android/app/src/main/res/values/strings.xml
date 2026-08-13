@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android-side strings. Almost every string in this app lives in
+    `lib/core/i18n/sq_strings.dart` instead; these are the exceptions, because
+    the system renders them outside the Flutter engine — the notification
+    channel is shown in Android's own Settings screen, where our string table
+    cannot reach.
+-->
+<resources>
+    <string name="multiplayer_channel_name">Battles</string>
+    <string name="multiplayer_channel_description">Challenges from friends, your turn to play, and match results.</string>
+</resources>

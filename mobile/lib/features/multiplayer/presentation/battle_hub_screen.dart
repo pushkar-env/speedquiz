@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
+import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/multiplayer/data/multiplayer_repository.dart';
@@ -17,11 +18,27 @@ import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 /// "In play" comes first and is sorted so anything waiting on *you* is at the
 /// top. An async challenge is worthless if the person who owes a turn has to
 /// go looking for it.
-class BattleHubScreen extends ConsumerWidget {
+class BattleHubScreen extends ConsumerStatefulWidget {
   const BattleHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BattleHubScreen> createState() => _BattleHubScreenState();
+}
+
+class _BattleHubScreenState extends ConsumerState<BattleHubScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Ask for notification permission here rather than at startup: opening
+    // Battle is the moment "let us tell you when a friend challenges you"
+    // actually means something. No-op when push is not configured.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(pushServiceProvider).ensurePermission();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final matches = ref.watch(matchListProvider);
     final rank = ref.watch(rankedProfileProvider);
@@ -65,7 +82,7 @@ class BattleHubScreen extends ConsumerWidget {
                   glyph: '🎟️',
                   title: l10n.battleJoinRoom,
                   subtitle: l10n.battlePrivateRoomSubtitle,
-                  onTap: () => _promptForCode(context, ref),
+                  onTap: () => _promptForCode(context),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 matches.when(
@@ -87,7 +104,7 @@ class BattleHubScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _promptForCode(BuildContext context, WidgetRef ref) async {
+  Future<void> _promptForCode(BuildContext context) async {
     final code = await showDialog<String>(
       context: context,
       builder: (_) => const _JoinCodeDialog(),

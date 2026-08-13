@@ -66,10 +66,10 @@ class PushService {
       _messaging = messaging;
       FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
 
-      // Android 13+ and iOS both gate notifications behind a runtime prompt.
-      // Asked here rather than at first launch: a permission dialog makes far
-      // more sense once the player has a friend who might challenge them.
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
+      // Note: permission is deliberately NOT requested here — see
+      // [ensurePermission]. This runs before the first frame, and a
+      // notification prompt on a cold first launch is the one most likely to
+      // be denied.
 
       _opened = FirebaseMessaging.onMessageOpenedApp.listen(_onOpened);
 
@@ -90,6 +90,32 @@ class PushService {
     final link = message.data['deep_link'];
     if (link is String && link.isNotEmpty) _deepLinks.add(link);
   }
+
+  /// Ask for notification permission, in context.
+  ///
+  /// Called when the player opens Battle rather than at startup, because the
+  /// prompt is far more likely to be accepted when it follows an action that
+  /// explains it — and on Android 13+ a denial is close to final, since the
+  /// system will not show the dialog again and the only route back is a trip
+  /// into Settings that nobody makes.
+  ///
+  /// Safe to call repeatedly: the platform returns the existing decision
+  /// without showing anything once one has been made, and the flag below keeps
+  /// it to one call per launch regardless.
+  Future<void> ensurePermission() async {
+    final messaging = _messaging;
+    if (messaging == null || _permissionAsked) return;
+    _permissionAsked = true;
+    try {
+      await messaging.requestPermission(alert: true, badge: true, sound: true);
+      // The token is only worth registering once notifications are allowed.
+      await registerForCurrentUser();
+    } catch (error) {
+      debugPrint('Push permission request failed: $error');
+    }
+  }
+
+  bool _permissionAsked = false;
 
   /// Register this device against the signed-in account.
   Future<void> registerForCurrentUser() async {

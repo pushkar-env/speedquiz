@@ -351,6 +351,75 @@ because a server-side 22:00 is the wrong 22:00 for most of the world. Only
 `match_your_turn` is exempt — the round clock is running and silence costs the
 player the game.
 
+#### Setting it up
+
+There is deliberately **no `google-services.json` in the repo**, and the
+google-services Gradle plugin is deliberately not applied. Firebase is
+configured from `FirebaseOptions` built out of dart-defines instead, so a
+checkout without a Firebase project still builds. That is the whole reason the
+setup below is four values rather than a file drop.
+
+1. **Create the project** — <https://console.firebase.google.com> → *Add
+   project*. Google Analytics is not needed.
+
+2. **Register the Android app** — *Project settings → Your apps → Add app →
+   Android*.
+   - Package name: `com.speedquiz.app` (must match exactly, or tokens are
+     rejected as `SENDER_ID_MISMATCH`)
+   - Debug signing SHA-1: optional here — it is required for Google Sign-In,
+     not for FCM
+   - **Download `google-services.json` but do not add it to the project.** It
+     is only a convenient place to read the four values from.
+
+3. **Read the four values** out of that file (or off the *Your apps* panel):
+
+   | dart-define | Where it is in `google-services.json` |
+   |---|---|
+   | `FIREBASE_API_KEY` | `client[0].api_key[0].current_key` |
+   | `FIREBASE_APP_ID` | `client[0].client_info.mobilesdk_app_id` |
+   | `FIREBASE_PROJECT_ID` | `project_info.project_id` |
+   | `FIREBASE_SENDER_ID` | `project_info.project_number` |
+
+   Put them in the root `.env`. `scripts/build_android.sh` picks them up and
+   refuses a partial set — four or none, because a partial set builds an app
+   that looks fine and never registers.
+
+4. **Create the server credential** — *Project settings → Service accounts →
+   Generate new private key*. This downloads a JSON file.
+   - Paste it into `FCM_SERVICE_ACCOUNT_JSON` as **one line**, keeping the
+     private key's newlines as literal `
+` escapes.
+   - This is a secret with send-as-your-project authority. It belongs in the
+     gitignored `.env` and in Railway's variables — never in the repo.
+
+5. **Verify before believing it:**
+
+   ```bash
+   python scripts/verify_push.py
+   ```
+
+   It checks the JSON parses, exchanges it for a real OAuth token, and confirms
+   the app and server agree on the project id. Add `--token <device token>` to
+   send an actual notification.
+
+6. **iOS additionally** needs an APNs key (*Project settings → Cloud Messaging
+   → APNs Authentication Key*) uploaded to Firebase, plus the Push
+   Notifications capability in Xcode. Android does not.
+
+#### The Android notification channel
+
+`MainActivity.kt` registers a `speedquiz_multiplayer` channel at launch, and
+`backend/app/push/fcm.py` targets that id. **These two strings must stay in
+step.** On Android 8+ a notification naming a channel that does not exist is
+dropped with no error, no crash and nothing in the app's logs — the failure
+looks exactly like nobody having sent it.
+
+The channel is created in Kotlin rather than by adding
+`flutter_local_notifications`, which would be a whole plugin for fifteen lines
+of platform code. Its label lives in `android/app/src/main/res/values/strings.xml`
+(and `values-hi/`) because Android renders it in system Settings, where the
+Dart string table cannot reach.
+
 ---
 
 ## 8. Client design system
