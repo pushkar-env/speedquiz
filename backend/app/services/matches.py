@@ -669,6 +669,7 @@ async def _begin(db: AsyncSession, match: Match) -> None:
     match.round_started_at = now
     match.expires_at = now + timedelta(hours=settings.match_async_expiry_hours)
     await db.flush()
+    await realtime.clear_abandoned(match.id)
 
     await realtime.publish(
         match.id,
@@ -676,8 +677,10 @@ async def _begin(db: AsyncSession, match: Match) -> None:
         {
             "round_index": 0,
             "total_rounds": match.question_count,
+            "starts_at": now.isoformat(),
             "deadline_at": (now + timedelta(milliseconds=match.question_time_limit_ms)).isoformat(),
             "server_time": now.isoformat(),
+            "question": await _round_payload(db, match, 0),
         },
     )
 
@@ -787,6 +790,46 @@ async def get_round(db: AsyncSession, user: User, match_id: UUID) -> MatchRoundO
         server_time=now,
         already_answered=bool(already),
     )
+
+
+async def _round_payload(
+    db: AsyncSession, match: Match, round_index: int
+) -> Optional[dict]:
+    """The prompt and buttons for a round, for embedding in a `round.start`.
+
+    Carrying the question on the event is what removes the visible gap at the
+    top of every round: the client used to learn a round had started and *then*
+    spend a round trip asking what the question was, so on a slow connection the
+    clock was already running against a blank screen.
+
+    Contains no answer key — same shape [get_round] serves, minus the per-player
+    clock. Correctness still only exists in a submit response and a round-end
+    event, both of which are produced after the round closes for the recipient.
+    """
+    if round_index >= match.question_count:
+        return None
+    try:
+        question = await _question_for_round(db, match, round_index)
+    except HTTPException:
+        # A question pulled from under a live match. The client falls back to
+        # fetching the round over HTTP, which produces a real error if it is
+        # genuinely gone.
+        return None
+
+    order = _normalize_option_order(
+        match.option_orders[round_index] if round_index < len(match.option_orders) else None
+    )
+    by_position = {opt.position: opt.text for opt in question.options}
+    return {
+        "question_id": str(question.id),
+        "prompt": question.prompt,
+        "options": [
+            {"index": i, "text": by_position[original]}
+            for i, original in enumerate(order)
+            if original in by_position
+        ],
+        "time_limit_ms": match.question_time_limit_ms,
+    }
 
 
 async def _question_for_round(db: AsyncSession, match: Match, round_index: int) -> Question:
@@ -905,6 +948,9 @@ async def submit_answer(
         participant.round_served_at = None
     await db.flush()
 
+    # Somebody is here. Whatever the presence hash believes, a scored answer is
+    # proof the match is not abandoned.
+    await realtime.clear_abandoned(match.id)
     await realtime.publish(
         match.id,
         realtime.EVENT_ROUND_PROGRESS,
@@ -913,6 +959,7 @@ async def submit_answer(
             "user_id": str(user.id),
             "answered": True,
             "rounds_answered": participant.rounds_answered,
+            "scores": {str(p.user_id): p.score for p in match.participants},
         },
     )
 
@@ -1122,6 +1169,10 @@ async def _close_round(db: AsyncSession, match: Match, round_index: int) -> None
                     next_start + timedelta(milliseconds=match.question_time_limit_ms)
                 ).isoformat(),
                 "server_time": now.isoformat(),
+                # Sent with the reveal, a whole reveal-pause before the clock
+                # starts, so the next prompt is already on the device when it
+                # does.
+                "question": await _round_payload(db, match, match.current_round_index),
             },
         )
     else:
@@ -1430,6 +1481,81 @@ async def leave_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
         if len(remaining) <= 1:
             await finalize(db, match)
     return match
+
+
+async def sweep_live_matches(db: AsyncSession, *, limit: int = 200) -> int:
+    """Run the clock for live matches nobody is currently driving.
+
+    Round advancement is opportunistic — it rides on whatever request happens
+    to touch a match. That covers every case except the one that matters here:
+    *both* players gone. Nothing then arrives to notice the deadline, so the
+    match sat LIVE until the 48-hour async expiry, which is what left a
+    finished-looking game listed as still in play long after someone walked out.
+
+    Two things happen per sweep, in order:
+
+    1. **The clock advances.** A round whose deadline has passed closes,
+       recording zeros for whoever did not answer. Left alone this plays an
+       abandoned match out to its last question and settles it honestly.
+    2. **A dead room is settled early.** When a round closes with nobody
+       connected and nobody having answered it, that counts once against
+       `match_abandon_rounds`; on reaching the limit the match is finalized on
+       the scores it has, so the player who did turn up gets their result in
+       under a minute instead of waiting out the whole board.
+
+    Returns how many matches were touched.
+    """
+    settings = get_settings()
+    now = _now()
+    # A coarse pre-filter only. The real deadline is per-match — every match
+    # carries its own `question_time_limit_ms` — and comparing against it in SQL
+    # would mean an interval expression over a column for no benefit, since
+    # [advance_if_due] re-checks the exact deadline anyway and returns without
+    # doing anything when the round is still open. Erring early costs a cheap
+    # read; erring late would cost a stalled match.
+    cutoff = now - timedelta(milliseconds=settings.match_answer_grace_ms)
+
+    stale = (
+        await db.execute(
+            select(Match)
+            .options(selectinload(Match.participants))
+            .where(
+                Match.status == MatchStatus.LIVE,
+                Match.delivery == MatchDelivery.LIVE,
+                Match.round_started_at.is_not(None),
+                Match.round_started_at < cutoff,
+            )
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    touched = 0
+    for match in stale:
+        round_index = match.current_round_index
+        answered = await _participants_answered(db, match.id, round_index)
+        connected = await realtime.connected_user_ids(match.id)
+
+        closed, finished = await advance_if_due(db, match)
+        if not closed:
+            continue
+        touched += 1
+
+        if finished:
+            await realtime.clear_abandoned(match.id)
+            continue
+
+        if connected or answered:
+            # Someone is still playing, even if only over HTTP.
+            await realtime.clear_abandoned(match.id)
+            continue
+
+        if await realtime.note_abandoned_round(match.id) >= settings.match_abandon_rounds:
+            logger.info("match_abandoned", match_id=str(match.id), round_index=round_index)
+            await finalize(db, match)
+            await realtime.clear_abandoned(match.id)
+
+    await db.flush()
+    return touched
 
 
 async def expire_stale(db: AsyncSession, *, limit: int = 100) -> int:

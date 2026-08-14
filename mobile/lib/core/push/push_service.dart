@@ -32,6 +32,25 @@ Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
   // delivery to be wired up at all.
 }
 
+/// A push that arrived with the app open, reduced to what the UI needs.
+///
+/// Deliberately not the Firebase `RemoteMessage`: the shell renders this, and
+/// nothing outside this file should have to depend on firebase_messaging to
+/// show a banner.
+@immutable
+class PushAlert {
+  const PushAlert({this.title, this.body, this.type, this.deepLink});
+
+  final String? title;
+
+  /// Server-rendered prose, in the language recorded on the device token.
+  final String? body;
+
+  /// Notification type — `friend_request`, `match_invite`, …
+  final String? type;
+  final String? deepLink;
+}
+
 class PushService {
   PushService(this._ref);
 
@@ -40,11 +59,23 @@ class PushService {
   FirebaseMessaging? _messaging;
   StreamSubscription<String>? _tokenRefresh;
   StreamSubscription<RemoteMessage>? _opened;
+  StreamSubscription<RemoteMessage>? _foreground;
   String? _registeredToken;
 
   /// Deep links from a tapped notification, for the router to consume.
   final _deepLinks = StreamController<String>.broadcast();
   Stream<String> get deepLinks => _deepLinks.stream;
+
+  /// Pushes that arrived while the app was open.
+  ///
+  /// Android does not raise a tray notification for a foregrounded app, so
+  /// without a listener here a challenge that arrived while the player was
+  /// looking at the app was simply dropped — no tray entry, no in-app signal,
+  /// nothing. The realtime inbox channel is the primary path for an open app;
+  /// this is the backstop for when its socket is down, which on a hostile
+  /// network is exactly when a push is the only thing getting through.
+  final _foregroundMessages = StreamController<PushAlert>.broadcast();
+  Stream<PushAlert> get foregroundMessages => _foregroundMessages.stream;
 
   bool get isConfigured => AppConfig.hasPushConfig;
 
@@ -72,6 +103,17 @@ class PushService {
       // be denied.
 
       _opened = FirebaseMessaging.onMessageOpenedApp.listen(_onOpened);
+      _foreground = FirebaseMessaging.onMessage.listen((message) {
+        if (_foregroundMessages.isClosed) return;
+        _foregroundMessages.add(
+          PushAlert(
+            title: message.notification?.title,
+            body: message.notification?.body,
+            type: message.data['type'] as String?,
+            deepLink: message.data['deep_link'] as String?,
+          ),
+        );
+      });
 
       // A notification tapped while the app was dead is delivered here, once.
       final initial = await messaging.getInitialMessage();
@@ -172,7 +214,9 @@ class PushService {
   Future<void> dispose() async {
     await _tokenRefresh?.cancel();
     await _opened?.cancel();
+    await _foreground?.cancel();
     if (!_deepLinks.isClosed) await _deepLinks.close();
+    if (!_foregroundMessages.isClosed) await _foregroundMessages.close();
   }
 }
 

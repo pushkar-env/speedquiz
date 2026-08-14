@@ -39,15 +39,20 @@ from app.models import (
     UserProfile,
 )
 from app.push import fcm
+from app.services import realtime
 
 logger = get_logger(__name__)
 
 #: Notification types that ignore quiet hours.
 #:
 #: A live match is the one thing where silence is worse than noise: the round
-#: clock is running, and a player who misses the ping loses the game. Everything
-#: else — a friend request, a result summary — can wait until morning.
-_QUIET_HOURS_EXEMPT = frozenset({NotificationType.MATCH_YOUR_TURN})
+#: clock is running, and a player who misses the ping loses the game. A
+#: challenge belongs here for the same reason and was missing — an invite that
+#: waits until morning is an invite the challenger sat staring at a lobby for.
+#: Everything else — a friend request, a result summary — can wait.
+_QUIET_HOURS_EXEMPT = frozenset(
+    {NotificationType.MATCH_YOUR_TURN, NotificationType.MATCH_INVITE}
+)
 
 
 def _now() -> datetime:
@@ -169,6 +174,24 @@ async def notify(
     )
     db.add(row)
     await db.flush()
+
+    # Straight down the recipient's own channel, before push is even attempted.
+    # This is what makes a friend request or a challenge appear on the other
+    # device while you watch, rather than whenever that player next happens to
+    # open the screen it lives on. Push remains the path for a closed app; this
+    # is the path for an open one, and it is both faster and free.
+    await realtime.publish_to_user(
+        user_id,
+        realtime.EVENT_NOTIFICATION,
+        {
+            "notification_id": str(row.id),
+            "type": notification_type.value,
+            "actor_user_id": str(actor_user_id) if actor_user_id else None,
+            "match_id": str(match_id) if match_id else None,
+            "payload": payload or {},
+            "deep_link": deep_link,
+        },
+    )
 
     if wants(profile, notification_type):
         delivered = await _push(

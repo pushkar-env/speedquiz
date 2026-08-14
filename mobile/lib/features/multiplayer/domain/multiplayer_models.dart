@@ -214,6 +214,33 @@ class MatchParticipant extends Equatable {
   final int xpEarned;
   final int coinsEarned;
 
+  MatchParticipant copyWith({
+    int? score,
+    int? correctCount,
+    int? roundsAnswered,
+    bool? answeredCurrentRound,
+    bool? isConnected,
+  }) {
+    return MatchParticipant(
+      userId: userId,
+      player: player,
+      status: status,
+      isHost: isHost,
+      isMe: isMe,
+      isConnected: isConnected ?? this.isConnected,
+      score: score ?? this.score,
+      correctCount: correctCount ?? this.correctCount,
+      roundsAnswered: roundsAnswered ?? this.roundsAnswered,
+      bestStreak: bestStreak,
+      answeredCurrentRound: answeredCurrentRound ?? this.answeredCurrentRound,
+      placement: placement,
+      outcome: outcome,
+      ratingDelta: ratingDelta,
+      xpEarned: xpEarned,
+      coinsEarned: coinsEarned,
+    );
+  }
+
   factory MatchParticipant.fromJson(Map<String, dynamic> json) => MatchParticipant(
         userId: json['user_id'] as String,
         player: PlayerBrief.fromJson(json['player'] as Map<String, dynamic>),
@@ -338,6 +365,65 @@ class MatchState extends Equatable {
 
   bool amHost(String userId) => hostUserId == userId;
 
+  /// This state with the participant rows replaced.
+  ///
+  /// The round events already carry scores and who has answered, so the screen
+  /// can move the moment one arrives. Refetching the whole match to learn a
+  /// number the event just told us is a round trip per event, on the one screen
+  /// where a round trip is visible.
+  MatchState withParticipants(List<MatchParticipant> rows) {
+    return MatchState(
+      id: id,
+      format: format,
+      kind: kind,
+      delivery: delivery,
+      status: status,
+      topicId: topicId,
+      topicName: topicName,
+      difficulty: difficulty,
+      language: language,
+      questionCount: questionCount,
+      questionTimeLimitMs: questionTimeLimitMs,
+      maxPlayers: maxPlayers,
+      currentRoundIndex: currentRoundIndex,
+      hostUserId: hostUserId,
+      participants: rows,
+      createdAt: createdAt,
+      serverTime: serverTime,
+      code: code,
+      startedAt: startedAt,
+      finishedAt: finishedAt,
+      expiresAt: expiresAt,
+      roundDeadlineAt: roundDeadlineAt,
+      myRoundsAnswered: myRoundsAnswered,
+      myOutcome: myOutcome,
+    );
+  }
+
+  /// Apply the score map carried by a `round.progress` or `round.end` event.
+  MatchState withScores(Map<String, int> scores) {
+    if (scores.isEmpty) return this;
+    return withParticipants([
+      for (final p in participants)
+        scores.containsKey(p.userId) ? p.copyWith(score: scores[p.userId]) : p,
+    ]);
+  }
+
+  /// Light up one player's "answered" pip without waiting for a refetch.
+  MatchState withAnswered(String userId) {
+    return withParticipants([
+      for (final p in participants)
+        p.userId == userId ? p.copyWith(answeredCurrentRound: true) : p,
+    ]);
+  }
+
+  /// Clear every answered pip, for the start of a new round.
+  MatchState withRoundReset() {
+    return withParticipants([
+      for (final p in participants) p.copyWith(answeredCurrentRound: false),
+    ]);
+  }
+
   factory MatchState.fromJson(Map<String, dynamic> json) => MatchState(
         id: json['id'] as String,
         code: json['code'] as String?,
@@ -372,8 +458,18 @@ class MatchState extends Equatable {
       );
 
   @override
-  List<Object?> get props =>
-      [id, status, delivery, currentRoundIndex, participants, roundDeadlineAt];
+  List<Object?> get props => [
+        id,
+        status,
+        delivery,
+        currentRoundIndex,
+        participants,
+        roundDeadlineAt,
+        // Drives which view the battle screen shows — without it, finishing the
+        // last round is a state change the screen does not rebuild for.
+        myRoundsAnswered,
+        myOutcome,
+      ];
 }
 
 class MatchOption extends Equatable {
@@ -435,6 +531,37 @@ class MatchRound extends Equatable {
         serverTime: _requireUtc(json['server_time']),
         alreadyAnswered: json['already_answered'] as bool? ?? false,
       );
+
+  /// Build a playable round straight from a `round.start` event.
+  ///
+  /// The event carries the prompt and buttons, so the question is already on
+  /// the device when the clock starts instead of costing a round trip the
+  /// player watches. Returns null for an event without a question payload —
+  /// an older server, or a question that went missing — and the caller falls
+  /// back to fetching the round over HTTP.
+  static MatchRound? fromEvent(Map<String, dynamic> data) {
+    final question = data['question'];
+    if (question is! Map<String, dynamic>) return null;
+    final prompt = question['prompt'];
+    final questionId = question['question_id'];
+    if (prompt is! String || questionId is! String) return null;
+
+    // `starts_at` is absent on the very first round, which opens immediately.
+    final serverTime = _requireUtc(data['server_time']);
+    return MatchRound(
+      roundIndex: data['round_index'] as int? ?? 0,
+      totalRounds: data['total_rounds'] as int? ?? 0,
+      questionId: questionId,
+      prompt: prompt,
+      options: (question['options'] as List<dynamic>? ?? const [])
+          .map((e) => MatchOption.fromJson(e as Map<String, dynamic>))
+          .toList(growable: false),
+      timeLimitMs: question['time_limit_ms'] as int? ?? 15000,
+      deadlineAt: _requireUtc(data['deadline_at']),
+      servedAt: _parseUtc(data['starts_at']) ?? serverTime,
+      serverTime: serverTime,
+    );
+  }
 
   @override
   List<Object?> get props => [roundIndex, questionId, deadlineAt, alreadyAnswered];
@@ -742,6 +869,12 @@ enum AppNotificationType {
   matchResult,
   matchExpiring,
 }
+
+/// Parse a server notification type. Shared with the realtime inbox channel,
+/// which receives the same vocabulary over the socket rather than in a list
+/// response.
+AppNotificationType appNotificationTypeFromWire(String? wire) =>
+    _enumFromWire(AppNotificationType.values, wire, AppNotificationType.matchResult);
 
 class AppNotification extends Equatable {
   const AppNotification({

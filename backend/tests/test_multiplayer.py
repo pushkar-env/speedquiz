@@ -9,6 +9,7 @@ tiebreak, the Elo floor, and quiet hours across a UTC offset.
 from __future__ import annotations
 
 import ast
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,9 +21,12 @@ from fastapi import HTTPException
 from app.models import (
     DevicePlatform,
     DeviceToken,
+    Match,
     MatchOutcome,
     MatchParticipant,
     NotificationType,
+    Question,
+    QuestionOption,
     UserProfile,
 )
 from app.services import matches, matchmaking, notifications, ranking, realtime, usernames
@@ -283,6 +287,79 @@ def test_accuracy_breaks_a_tied_score_and_clock():
 # --- Option ordering --------------------------------------------------------
 
 
+class _StubQuestionDb:
+    """Returns one question for any select. Enough for [_round_payload]."""
+
+    def __init__(self, question) -> None:
+        self._question = question
+
+    async def scalar(self, _statement):
+        return self._question
+
+
+def _question_with_options() -> Question:
+    question = Question(
+        id=uuid4(),
+        prompt="Which planet is closest to the sun?",
+        explanation="Mercury, at 58 million km.",
+        correct_option_index=2,
+    )
+    question.options = [
+        QuestionOption(id=uuid4(), position=i, text=text)
+        for i, text in enumerate(["Venus", "Earth", "Mercury", "Mars"])
+    ]
+    return question
+
+
+async def test_round_start_payload_carries_the_question_but_never_the_answer():
+    """The prompt rides on the event so a round opens without a round trip.
+    That is only safe while the payload stays free of anything that identifies
+    the right button — this is the test that keeps it that way."""
+    question = _question_with_options()
+    match = Match(
+        id=uuid4(),
+        question_count=3,
+        question_time_limit_ms=15000,
+        question_ids=[str(question.id), str(uuid4()), str(uuid4())],
+        option_orders=[[2, 0, 3, 1], [0, 1, 2, 3], [0, 1, 2, 3]],
+    )
+
+    payload = await matches._round_payload(_StubQuestionDb(question), match, 0)
+
+    assert payload["prompt"] == question.prompt
+    assert [o["text"] for o in payload["options"]] == [
+        "Mercury",
+        "Venus",
+        "Mars",
+        "Earth",
+    ]
+    # Nothing that reveals the key, directly or by omission.
+    assert set(payload) == {"question_id", "prompt", "options", "time_limit_ms"}
+    assert all(set(o) == {"index", "text"} for o in payload["options"])
+    serialized = json.dumps(payload)
+    assert "correct" not in serialized
+    assert question.explanation not in serialized
+
+
+async def test_round_start_payload_stops_at_the_end_of_the_board():
+    """The last round's reveal has no next question to attach."""
+    match = Match(id=uuid4(), question_count=1, question_ids=[str(uuid4())], option_orders=[[0, 1, 2, 3]])
+    assert await matches._round_payload(_StubQuestionDb(None), match, 1) is None
+
+
+async def test_round_start_payload_degrades_instead_of_breaking_a_live_match():
+    """A question pulled from under a running match returns nothing, and the
+    client falls back to fetching the round. Raising here would kill the round
+    advance for both players."""
+    match = Match(
+        id=uuid4(),
+        question_count=2,
+        question_ids=[str(uuid4()), str(uuid4())],
+        option_orders=[[0, 1, 2, 3], [0, 1, 2, 3]],
+    )
+    assert await matches._round_payload(_StubQuestionDb(None), match, 0) is None
+
+
 def test_option_order_normalizer_rejects_anything_but_a_permutation():
     assert matches._normalize_option_order([3, 1, 0, 2]) == [3, 1, 0, 2]
     for bad in ([0, 1, 2], [0, 1, 2, 2], "3102", None, [0, 1, 2, 9], {"a": 1}):
@@ -334,6 +411,53 @@ def test_malformed_stream_ids_sort_first_rather_than_raising():
     assert realtime._id_tuple("nonsense") == (0, 0)
 
 
+def test_match_and_user_channels_cannot_collide():
+    """The hub keys subscribers by stream name, so a match id that happened to
+    read as a user id must not land both feeds on one channel."""
+    shared = uuid4()
+    assert realtime.stream_key(shared) != realtime.user_stream_key(shared)
+
+
+class _FakePresenceRedis:
+    """Just enough Redis for the presence hash."""
+
+    def __init__(self, rows: dict[str, str]) -> None:
+        self._rows = rows
+
+    async def hgetall(self, _key: str) -> dict[str, str]:
+        return dict(self._rows)
+
+
+@pytest.mark.asyncio
+async def test_presence_ignores_a_heartbeat_that_stopped(monkeypatch):
+    """A phone swiped away never runs the clean-disconnect path, so its entry
+    lingers until the hash's two-hour TTL. Reading the hash without checking
+    the age reported that player as connected for the rest of the session —
+    which lit the opponent's dot and hid an abandoned match from the sweep."""
+    now = int(datetime.now(timezone.utc).timestamp())
+    here, gone = str(uuid4()), str(uuid4())
+    fake = _FakePresenceRedis(
+        {
+            here: str(now - 5),
+            gone: str(now - realtime.ONLINE_TTL_SECONDS - 60),
+        }
+    )
+    monkeypatch.setattr(realtime, "get_redis", lambda: _immediately(fake))
+
+    assert await realtime.connected_user_ids(uuid4()) == {here}
+
+
+@pytest.mark.asyncio
+async def test_presence_survives_a_corrupt_entry(monkeypatch):
+    fake = _FakePresenceRedis({str(uuid4()): "not-a-timestamp"})
+    monkeypatch.setattr(realtime, "get_redis", lambda: _immediately(fake))
+    assert await realtime.connected_user_ids(uuid4()) == set()
+
+
+async def _immediately(value):
+    return value
+
+
 # --- Notifications ----------------------------------------------------------
 
 
@@ -369,6 +493,17 @@ def test_your_turn_is_exempt_from_quiet_hours():
     """The round clock is running; silence costs the player the game."""
     assert NotificationType.MATCH_YOUR_TURN in notifications._QUIET_HOURS_EXEMPT
     assert NotificationType.MATCH_RESULT not in notifications._QUIET_HOURS_EXEMPT
+
+
+def test_a_challenge_is_exempt_from_quiet_hours():
+    """Someone is sitting in a lobby waiting for the answer. Holding the invite
+    until morning is holding them there."""
+    assert NotificationType.MATCH_INVITE in notifications._QUIET_HOURS_EXEMPT
+
+
+def test_a_friend_request_still_waits_for_morning():
+    """Nothing is blocked on it, so it is not worth a 3am buzz."""
+    assert NotificationType.FRIEND_REQUEST not in notifications._QUIET_HOURS_EXEMPT
 
 
 def test_absent_preference_means_opted_in():

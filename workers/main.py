@@ -22,7 +22,7 @@ from app.payments.maintenance import expire_lapsed_subscriptions
 from app.services import news_banks, news_corpus
 from app.services.bank_inventory import retire_expired_questions
 from app.services.generation_jobs import process_inventory_maintenance, process_queued_jobs
-from app.services.matches import expire_stale
+from app.services.matches import expire_stale, sweep_live_matches
 
 logger = get_logger(__name__)
 _running = True
@@ -94,6 +94,17 @@ async def run() -> None:
             except Exception as exc:  # noqa: BLE001 — never kill the loop
                 logger.exception("subscription_sweep_failed", error=str(exc))
 
+        # Every tick, not on an interval: this is the round clock for matches
+        # nobody is connected to. Advancement normally rides on a request, and
+        # a match both players walked away from has none — so without this it
+        # sits LIVE until the 48-hour async expiry.
+        live_advanced = 0
+        try:
+            async with session_scope() as db:
+                live_advanced = await sweep_live_matches(db)
+        except Exception as exc:  # noqa: BLE001 — never kill the loop
+            logger.exception("live_match_sweep_failed", error=str(exc))
+
         matches_closed = 0
         if ticks % _MATCH_SWEEP_TICKS == 0:
             try:
@@ -155,6 +166,7 @@ async def run() -> None:
             jobs_processed=processed,
             topups_enqueued=enqueued,
             subscriptions_expired=expired,
+            live_rounds_advanced=live_advanced,
             matches_closed=matches_closed,
             questions_retired=retired,
             documents_harvested=harvested,

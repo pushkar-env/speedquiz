@@ -26,6 +26,13 @@ secrets/
 # only be a second source of truth to drift.
 google-services.json
 GoogleService-Info.plist
+# Exported deployment variable dumps. These are a full .env by another name —
+# database password, LLM key and JWT secret — and they arrive with ad-hoc
+# filenames because they are pasted out of a hosting dashboard.
+railwayenv.json
+railway*.json
+*env-dump*.json
+*.env.json
 
 # Python
 __pycache__/

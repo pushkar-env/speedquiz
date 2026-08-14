@@ -212,6 +212,12 @@ class Settings(BaseSettings):
     #: the round trip on a slow mobile connection. Mirrors the single-player
     #: grace in quiz_service.
     match_answer_grace_ms: int = 2500
+    #: Consecutive rounds that pass with nobody connected *and* nobody
+    #: answering before a live match is settled on the scores it has. Two rather
+    #: than one because a player whose network blocks WebSockets is invisible to
+    #: presence yet still playing over HTTP — they answer, which resets this, so
+    #: only a genuinely empty match reaches the limit.
+    match_abandon_rounds: int = 2
 
     # --- Realtime channel -------------------------------------------------
     #: Events retained per match. A client resuming after a drop replays from

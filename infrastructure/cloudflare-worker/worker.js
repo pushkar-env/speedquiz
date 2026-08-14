@@ -40,6 +40,23 @@ export default {
     );
     proxied.headers.set('X-Forwarded-Proto', 'https');
 
+    // Re-assert the upgrade headers on the outbound request. Reconstructing a
+    // Request is documented to preserve headers, but the runtime treats
+    // `Upgrade` as a connection-level header and has been observed to drop it
+    // across the copy — and when it does, the origin answers the handshake with
+    // an ordinary 200 and every live match silently falls back to polling. It
+    // costs nothing to set it explicitly, and the failure it prevents is
+    // invisible from this side.
+    const upgrade = request.headers.get('Upgrade');
+    const isWebSocket = (upgrade || '').toLowerCase() === 'websocket';
+    if (isWebSocket) {
+      proxied.headers.set('Upgrade', upgrade);
+      proxied.headers.set(
+        'Connection',
+        request.headers.get('Connection') || 'Upgrade',
+      );
+    }
+
     try {
       const response = await fetch(proxied);
 
@@ -48,7 +65,12 @@ export default {
       // and the client sees a 101 with no socket behind it — which is how a
       // live match would fail through this proxy while working perfectly
       // against the origin. Nothing below is worth breaking that for.
-      if (response.status === 101 && response.webSocket) {
+      //
+      // Keyed on the status alone, not on `response.webSocket` being present:
+      // a 101 that fell through to the rewrap below throws on a body that
+      // cannot be read, turning a proxy quirk into a 502 that looks like the
+      // origin is down.
+      if (response.status === 101) {
         return response;
       }
 

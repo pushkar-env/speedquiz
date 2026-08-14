@@ -27,6 +27,7 @@ is then O(processes), not O(players).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import secrets
 import time
@@ -42,6 +43,12 @@ logger = get_logger(__name__)
 
 #: Stream holding one match's event log.
 STREAM_PREFIX = "mp:events:"
+#: Stream holding one *player's* event log — friend requests, challenges,
+#: results. Separate from the match streams because it outlives any single
+#: match: the shell holds this connection for as long as the app is open, which
+#: is what makes a friend request land on the other device immediately rather
+#: than whenever that player next opens the friends screen.
+USER_STREAM_PREFIX = "mp:user:"
 #: Hash of participant -> last heartbeat, for the live presence dots.
 PRESENCE_PREFIX = "mp:presence:"
 #: Guards round advancement so two replicas cannot advance the same round.
@@ -59,10 +66,16 @@ EVENT_ROUND_END = "round.end"
 EVENT_FINISHED = "match.finished"
 EVENT_CANCELLED = "match.cancelled"
 EVENT_CHAT = "match.reaction"
+#: Published on a player's own stream whenever an inbox row is written.
+EVENT_NOTIFICATION = "notification.new"
 
 
 def stream_key(match_id: UUID | str) -> str:
     return f"{STREAM_PREFIX}{match_id}"
+
+
+def user_stream_key(user_id: UUID | str) -> str:
+    return f"{USER_STREAM_PREFIX}{user_id}"
 
 
 def presence_key(match_id: UUID | str) -> str:
@@ -96,8 +109,10 @@ class RealtimeEvent:
 
 @dataclass
 class Subscriber:
-    match_id: str
-    queue: "asyncio.Queue[RealtimeEvent]" = field(
+    #: Full Redis stream key this subscriber is reading — a match channel or a
+    #: player channel. The hub does not care which.
+    channel: str
+    queue: "asyncio.Queue[Optional[RealtimeEvent]]" = field(
         # Bounded: a client whose socket has stalled must not be able to grow
         # the server's memory without limit. Overflow drops the subscriber,
         # which reconnects and resumes from its cursor.
@@ -107,12 +122,12 @@ class Subscriber:
     dropped: bool = False
 
 
-async def publish(
-    match_id: UUID | str,
+async def publish_to(
+    channel: str,
     event_type: str,
     data: dict[str, Any],
 ) -> Optional[str]:
-    """Append an event to a match's log. Returns the stream id, or None.
+    """Append an event to a stream. Returns the stream id, or None.
 
     Never raises. A realtime event is an optimisation over refetching state —
     if Redis is unavailable the match must still be playable over plain HTTP,
@@ -122,22 +137,39 @@ async def publish(
     settings = get_settings()
     try:
         redis = await get_redis()
-        key = stream_key(match_id)
         event_id = await redis.xadd(
-            key,
+            channel,
             {"type": event_type, "data": json.dumps(data, default=str)},
             maxlen=settings.realtime_stream_maxlen,
             approximate=True,
         )
-        await redis.expire(key, settings.realtime_stream_ttl_seconds)
+        await redis.expire(channel, settings.realtime_stream_ttl_seconds)
         return event_id
     except Exception as exc:  # noqa: BLE001 — realtime is best-effort by design
         logger.warning("realtime_publish_failed", error=str(exc), event=event_type)
         return None
 
 
-async def history(
+async def publish(
     match_id: UUID | str,
+    event_type: str,
+    data: dict[str, Any],
+) -> Optional[str]:
+    """Append an event to a match's log."""
+    return await publish_to(stream_key(match_id), event_type, data)
+
+
+async def publish_to_user(
+    user_id: UUID | str,
+    event_type: str,
+    data: dict[str, Any],
+) -> Optional[str]:
+    """Append an event to one player's own log."""
+    return await publish_to(user_stream_key(user_id), event_type, data)
+
+
+async def history(
+    channel: str,
     *,
     after_id: str = "0-0",
     limit: int = 200,
@@ -146,7 +178,7 @@ async def history(
     try:
         redis = await get_redis()
         exclusive = f"({after_id}" if after_id and after_id != "0-0" else "-"
-        rows = await redis.xrange(stream_key(match_id), min=exclusive, max="+", count=limit)
+        rows = await redis.xrange(channel, min=exclusive, max="+", count=limit)
         return [_decode(event_id, fields) for event_id, fields in rows]
     except Exception as exc:  # noqa: BLE001
         logger.warning("realtime_history_failed", error=str(exc))
@@ -177,23 +209,26 @@ class RealtimeHub:
         self._wake = asyncio.Event()
         self._lock = asyncio.Lock()
 
-    async def subscribe(self, match_id: UUID | str, *, last_id: str = "$") -> Subscriber:
-        """Join a match's event feed.
+    async def subscribe(self, channel: str, *, last_id: str = "$") -> Subscriber:
+        """Join a stream's event feed.
 
         ``last_id="$"`` means "only what happens from now"; a real id resumes.
         The caller is expected to have fetched a state snapshot over HTTP, so
         the default deliberately does not replay the whole match.
         """
-        key = str(match_id)
-        subscriber = Subscriber(match_id=key, last_id="0-0" if last_id == "$" else last_id)
+        subscriber = Subscriber(
+            channel=channel, last_id="0-0" if last_id == "$" else last_id
+        )
 
         async with self._lock:
-            fresh = key not in self._subscribers
-            self._subscribers.setdefault(key, set()).add(subscriber)
+            fresh = channel not in self._subscribers
+            self._subscribers.setdefault(channel, set()).add(subscriber)
             if fresh:
                 # New stream for this process: start reading from the newest
                 # entry, since anything older is the subscriber's to replay.
-                self._cursors[key] = await self._latest_id(key) if last_id == "$" else last_id
+                self._cursors[channel] = (
+                    await self._latest_id(channel) if last_id == "$" else last_id
+                )
             self._ensure_running()
 
         self._wake.set()
@@ -201,13 +236,13 @@ class RealtimeHub:
 
     async def unsubscribe(self, subscriber: Subscriber) -> None:
         async with self._lock:
-            peers = self._subscribers.get(subscriber.match_id)
+            peers = self._subscribers.get(subscriber.channel)
             if peers is None:
                 return
             peers.discard(subscriber)
             if not peers:
-                self._subscribers.pop(subscriber.match_id, None)
-                self._cursors.pop(subscriber.match_id, None)
+                self._subscribers.pop(subscriber.channel, None)
+                self._cursors.pop(subscriber.channel, None)
             if not self._subscribers and self._task is not None:
                 self._task.cancel()
                 self._task = None
@@ -218,10 +253,10 @@ class RealtimeHub:
             self._task = asyncio.create_task(self._run(), name="realtime-hub")
 
     @staticmethod
-    async def _latest_id(match_id: str) -> str:
+    async def _latest_id(channel: str) -> str:
         try:
             redis = await get_redis()
-            rows = await redis.xrevrange(stream_key(match_id), count=1)
+            rows = await redis.xrevrange(channel, count=1)
             return rows[0][0] if rows else "0-0"
         except Exception:  # noqa: BLE001
             return "0-0"
@@ -231,7 +266,7 @@ class RealtimeHub:
         while True:
             try:
                 async with self._lock:
-                    streams = {stream_key(m): c for m, c in self._cursors.items()}
+                    streams = dict(self._cursors)
                 if not streams:
                     self._wake.clear()
                     # Nothing to read. Wake on the next subscribe rather than
@@ -244,18 +279,22 @@ class RealtimeHub:
 
                 redis = await get_redis()
                 # A short block, so a subscribe or unsubscribe is picked up
-                # within a second rather than waiting out a long read.
+                # promptly rather than waiting out a long read. The read itself
+                # is what makes this feel instant: an event published on any
+                # replica is in a client's socket within a round trip of Redis.
                 response = await redis.xread(streams, count=100, block=1000)
                 for raw_key, entries in response or []:
-                    match_id = raw_key.removeprefix(STREAM_PREFIX)
+                    channel = (
+                        raw_key.decode() if isinstance(raw_key, bytes) else raw_key
+                    )
                     for event_id, fields in entries:
                         # The last subscriber may have left while this read was
                         # in flight; do not resurrect a cursor for a stream
                         # nobody is listening to any more.
-                        if match_id not in self._cursors:
+                        if channel not in self._cursors:
                             continue
-                        self._cursors[match_id] = event_id
-                        await self._dispatch(match_id, _decode(event_id, fields))
+                        self._cursors[channel] = event_id
+                        await self._dispatch(channel, _decode(event_id, fields))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -263,19 +302,28 @@ class RealtimeHub:
                 # Back off rather than hammering a Redis that is refusing us.
                 await asyncio.sleep(1.0)
 
-    async def _dispatch(self, match_id: str, event: RealtimeEvent) -> None:
-        for subscriber in list(self._subscribers.get(match_id, ())):
+    async def _dispatch(self, channel: str, event: RealtimeEvent) -> None:
+        for subscriber in list(self._subscribers.get(channel, ())):
             # Replay protection: a resuming client sets its cursor behind the
             # hub's, and catches up over HTTP. Anything it has already seen is
             # dropped here rather than being rendered twice.
             if _id_tuple(event.id) <= _id_tuple(subscriber.last_id):
                 continue
+            if subscriber.dropped:
+                continue
             try:
                 subscriber.queue.put_nowait(event)
                 subscriber.last_id = event.id
             except asyncio.QueueFull:
+                # The socket has stalled far enough behind that catching up is
+                # hopeless. Mark it and wake its pump with a None sentinel so
+                # the connection closes and the client reconnects with a
+                # cursor — silently dropping events would leave a player
+                # looking at a connected socket that never updates again.
                 subscriber.dropped = True
-                logger.info("realtime_subscriber_dropped", match_id=match_id)
+                with contextlib.suppress(asyncio.QueueFull):
+                    subscriber.queue.put_nowait(None)
+                logger.info("realtime_subscriber_dropped", channel=channel)
 
 
 #: Process-wide hub. Created on import; its reader task only starts once
@@ -310,11 +358,29 @@ async def clear_presence(match_id: UUID | str, user_id: UUID | str) -> None:
 
 
 async def connected_user_ids(match_id: UUID | str) -> set[str]:
+    """Who is holding a live connection to this match *right now*.
+
+    Filtered on the heartbeat's age, not merely on the key existing. A phone
+    that loses signal or is swiped away never runs the clean-disconnect path,
+    so its entry lingers until the hash's two-hour TTL — long enough that the
+    opponent's "connected" dot lies for the rest of the session, and long
+    enough that the abandoned-match sweep would never see an empty room.
+    """
     try:
         redis = await get_redis()
-        return set(await redis.hkeys(presence_key(match_id)))
+        rows = await redis.hgetall(presence_key(match_id))
     except Exception:  # noqa: BLE001
         return set()
+
+    cutoff = int(time.time()) - ONLINE_TTL_SECONDS
+    fresh: set[str] = set()
+    for user_id, seen_at in (rows or {}).items():
+        try:
+            if int(seen_at) >= cutoff:
+                fresh.add(user_id)
+        except (TypeError, ValueError):
+            continue
+    return fresh
 
 
 #: Global "app is open" presence, refreshed by the WebSocket heartbeat. Keyed
@@ -387,6 +453,41 @@ async def release_round_lock(match_id: UUID | str) -> None:
     try:
         redis = await get_redis()
         await redis.delete(f"{ROUND_LOCK_PREFIX}{match_id}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# --- Abandonment ------------------------------------------------------------
+
+#: Counts consecutive rounds that closed with nobody connected and nobody
+#: answering. Reset by any sign of life.
+ABANDON_PREFIX = "mp:abandon:"
+
+
+async def note_abandoned_round(match_id: UUID | str) -> int:
+    """Record a round that nobody was there for. Returns the running count.
+
+    Kept in Redis rather than on the match row because it is a liveness signal,
+    not match history: it should evaporate on its own if the sweep stops
+    running, and it must never end up in a result anyone reads.
+    """
+    try:
+        redis = await get_redis()
+        key = f"{ABANDON_PREFIX}{match_id}"
+        count = int(await redis.incr(key))
+        await redis.expire(key, 3600)
+        return count
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("realtime_abandon_note_failed", error=str(exc))
+        # Fail closed: without a count nobody gets settled early, and the round
+        # clock still plays the match out to its last question.
+        return 0
+
+
+async def clear_abandoned(match_id: UUID | str) -> None:
+    try:
+        redis = await get_redis()
+        await redis.delete(f"{ABANDON_PREFIX}{match_id}")
     except Exception:  # noqa: BLE001
         pass
 

@@ -11,6 +11,7 @@ import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/deep_link_listener.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
+import 'package:speedquiz/features/multiplayer/presentation/inbox_channel.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/core/theme/theme_mode_provider.dart';
 
@@ -33,11 +34,16 @@ class SpeedQuizApp extends ConsumerWidget {
     ref.listen(currentUserProvider, (previous, next) {
       if (next == null) {
         // Signed out. Release the push token so the next player on this phone
-        // does not receive the previous one's challenges.
+        // does not receive the previous one's challenges, and close the inbox
+        // socket — it is authenticated as the account that just left.
         unawaited(ref.read(pushServiceProvider).unregister());
+        ref.invalidate(inboxChannelProvider);
         return;
       }
       if (previous?.id == next.id) return;
+      // A different account on the same install: the old channel is holding
+      // the previous player's stream.
+      if (previous != null) ref.invalidate(inboxChannelProvider);
       ref.read(appLanguageProvider.notifier).adoptFromProfile(next.appLanguage);
       ref
           .read(quizLanguageProvider.notifier)

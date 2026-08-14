@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/features/multiplayer/data/match_socket.dart';
 import 'package:speedquiz/features/multiplayer/data/multiplayer_repository.dart';
@@ -80,31 +80,53 @@ class BattleState {
 /// share of these players are on.
 class BattleController extends StateNotifier<BattleState> {
   BattleController(this._repository, this.matchId) : super(const BattleState()) {
+    // A socket almost never survives being backgrounded, and the player is
+    // looking at the screen the instant they come back — so that is the moment
+    // to reconnect and resync rather than waiting out a backoff.
+    _lifecycle = AppLifecycleListener(onResume: _onResume);
     _bootstrap();
   }
 
   final MultiplayerRepository _repository;
   final String matchId;
 
+  late final AppLifecycleListener _lifecycle;
   MatchSocket? _socket;
   StreamSubscription<MatchSocketEvent>? _socketEvents;
   Timer? _poll;
-  Stopwatch? _roundClock;
+
+  /// When the round in play opened, on this device's clock, corrected for skew.
+  ///
+  /// A Stopwatch started at fetch time would measure from whenever the question
+  /// happened to arrive, which on a slow connection is meaningfully later than
+  /// when the server started counting — and the difference is scored as
+  /// thinking time.
+  DateTime? _roundStartedAt;
+
+  /// Poll ticks since the last reconciling refetch while the socket is healthy.
+  int _ticksSinceReconcile = 0;
+
+  /// A round fetch is in flight.
+  bool _loadingRound = false;
 
   Future<void> _bootstrap() async {
     await refresh();
-    await _openSocket();
     _startPolling();
+  }
+
+  void _onResume() {
+    _socket?.reconnectNow();
+    unawaited(_refreshMatchOnly());
   }
 
   Future<void> refresh() async {
     try {
       final match = await _repository.fetchMatch(matchId);
-      state = state.copyWith(match: match, isLoading: false, clearError: true);
+      _applyMatch(match);
 
       if (match.isOver) {
         await _loadResult();
-      } else if (match.isMyTurn) {
+      } else if (_needsRound(match)) {
         await _loadRound();
       }
     } catch (error) {
@@ -112,22 +134,50 @@ class BattleController extends StateNotifier<BattleState> {
     }
   }
 
-  Future<void> _openSocket() async {
-    final match = state.match;
+  void _applyMatch(MatchState match) {
+    state = state.copyWith(match: match, isLoading: false, clearError: true);
+    _ensureSocket(match);
+  }
+
+  /// Whether the board should be on screen but isn't.
+  ///
+  /// This is the question the old code asked against whatever match it happened
+  /// to be holding, which during the lobby-to-live transition was the stale
+  /// lobby — so the player who readied first never fetched a round and sat on a
+  /// spinner for the whole match. It is now only ever asked about a match that
+  /// has just come back from the server.
+  bool _needsRound(MatchState match) {
+    if (!match.isMyTurn) return false;
+    if (state.isAnswered || state.isSubmitting) return false;
+    final round = state.round;
+    if (round == null) return true;
+    // A round left over from a previous index — a reconnect that missed the
+    // reveal, most often.
+    return match.delivery == MatchDelivery.live &&
+        round.roundIndex != match.currentRoundIndex;
+  }
+
+  /// Hold a socket whenever this match could produce events, and rebuild it if
+  /// it was never opened — the first attempt used to be the only attempt, so a
+  /// blip at open left the screen showing "Reconnecting" until it was closed.
+  void _ensureSocket(MatchState match) {
+    if (_socket != null) return;
     // An async match has no shared clock and no opponent watching, so a socket
     // would carry nothing worth the connection.
-    if (match == null || match.delivery != MatchDelivery.live || match.isOver) return;
+    if (match.delivery != MatchDelivery.live || match.isOver) return;
 
     final socket = MatchSocket(_repository, matchId: matchId);
     _socket = socket;
     _socketEvents = socket.events.listen(_onSocketEvent);
-    await socket.connect();
+    unawaited(socket.connect());
   }
 
   void _onSocketEvent(MatchSocketEvent event) {
     switch (event.kind) {
       case MatchSocketEventKind.connected:
         state = state.copyWith(isConnected: true);
+        // Reconnected after a gap. Whatever the replay missed, this catches.
+        unawaited(_refreshMatchOnly());
       case MatchSocketEventKind.disconnected:
         state = state.copyWith(isConnected: false);
       case MatchSocketEventKind.message:
@@ -138,19 +188,17 @@ class BattleController extends StateNotifier<BattleState> {
   void _onServerEvent(String type, Map<String, dynamic> data) {
     switch (type) {
       case MatchEvents.roundStart:
-        // Clear the previous verdict and pull the new question. The event
-        // carries the round index but not the prompt — the question comes over
-        // HTTP so the socket never has to be trusted with game content.
-        state = state.copyWith(
-          clearFeedback: true,
-          clearSelection: true,
-          clearRound: true,
-        );
-        unawaited(_loadRound());
-        unawaited(_refreshMatchOnly());
+        _onRoundStart(data);
       case MatchEvents.roundEnd:
-      case MatchEvents.participant:
+        _applyScores(data['scores']);
       case MatchEvents.roundProgress:
+        _applyScores(data['scores']);
+        final who = data['user_id'];
+        final match = state.match;
+        if (who is String && match != null) {
+          state = state.copyWith(match: match.withAnswered(who));
+        }
+      case MatchEvents.participant:
         unawaited(_refreshMatchOnly());
       case MatchEvents.finished:
       case MatchEvents.cancelled:
@@ -158,29 +206,110 @@ class BattleController extends StateNotifier<BattleState> {
     }
   }
 
+  /// A new round opened.
+  ///
+  /// The event carries the prompt, so the board is rendered from it directly
+  /// and the round starts with nothing on the network. Only an event without a
+  /// question payload falls back to fetching it.
+  void _onRoundStart(Map<String, dynamic> data) {
+    final match = state.match;
+    state = state.copyWith(
+      clearFeedback: true,
+      clearSelection: true,
+      clearRound: true,
+      match: match?.withRoundReset(),
+    );
+
+    final round = MatchRound.fromEvent(data);
+    if (round != null) {
+      _startRoundClock(round);
+      state = state.copyWith(round: round);
+    } else {
+      unawaited(_loadRound());
+    }
+    // Reconciles scores and status behind the already-rendered question.
+    unawaited(_refreshMatchOnly());
+  }
+
+  void _applyScores(Object? raw) {
+    final match = state.match;
+    if (match == null || raw is! Map) return;
+    final scores = <String, int>{
+      for (final entry in raw.entries)
+        if (entry.value is int) entry.key.toString(): entry.value as int,
+    };
+    if (scores.isEmpty) return;
+    state = state.copyWith(match: match.withScores(scores));
+  }
+
+  /// Anchor the answer clock to when the *server* opened the round.
+  void _startRoundClock(MatchRound round) {
+    _roundStartedAt = round.servedAt.add(
+      DateTime.now().toUtc().difference(round.serverTime),
+    );
+  }
+
+  int _elapsedMs(MatchRound round) {
+    final startedAt = _roundStartedAt;
+    if (startedAt == null) return round.timeLimitMs;
+    final elapsed = DateTime.now().difference(startedAt).inMilliseconds;
+    return elapsed.clamp(0, round.timeLimitMs);
+  }
+
   Future<void> _refreshMatchOnly() async {
     try {
       final match = await _repository.fetchMatch(matchId);
-      state = state.copyWith(match: match);
-      if (match.isOver) await _loadResult();
+      _applyMatch(match);
+      _dropStaleRound(match);
+      if (match.isOver) {
+        await _loadResult();
+      } else if (_needsRound(match)) {
+        // The lobby-to-live transition, and every recovery path back into it.
+        await _loadRound();
+      }
     } catch (_) {
       // A failed background refresh is not worth surfacing; the next poll or
       // event will correct it.
     }
   }
 
+  /// Let go of a verdict the match has already moved past.
+  ///
+  /// `round.start` normally does this. Without a socket there is no
+  /// `round.start`, and a player who answered would hold their own reveal on
+  /// screen for the rest of the match — [_needsRound] declines to fetch
+  /// anything while an answer is being shown, which is correct during the
+  /// reveal pause and wrong once the shared clock has moved on.
+  void _dropStaleRound(MatchState match) {
+    if (match.delivery != MatchDelivery.live) return;
+    final round = state.round;
+    if (round == null || match.currentRoundIndex <= round.roundIndex) return;
+
+    state = state.copyWith(
+      clearFeedback: true,
+      clearSelection: true,
+      clearRound: true,
+      match: match.withRoundReset(),
+    );
+  }
+
   Future<void> _loadRound() async {
-    final match = state.match;
-    if (match == null || !match.isMyTurn) return;
+    // The poll and the event path can both decide a round is needed within the
+    // same tick. One request, not two.
+    if (_loadingRound) return;
+    _loadingRound = true;
     try {
       final round = await _repository.fetchRound(matchId);
-      _roundClock = Stopwatch()..start();
+      _startRoundClock(round);
       state = state.copyWith(round: round, clearSelection: true, clearError: true);
     } catch (error) {
-      // 409 here is normal: the round closed between the event and the fetch.
+      // 409 here is normal: the round closed between the event and the fetch,
+      // or this player has already played their whole board.
       if (!_isConflict(error)) {
         state = state.copyWith(error: _message(error));
       }
+    } finally {
+      _loadingRound = false;
     }
   }
 
@@ -196,12 +325,27 @@ class BattleController extends StateNotifier<BattleState> {
 
   void _startPolling() {
     _poll?.cancel();
-    _poll = Timer.periodic(const Duration(seconds: 3), (_) {
+    _poll = Timer.periodic(const Duration(seconds: 2), (_) {
       final match = state.match;
-      if (match == null || match.isOver) return;
-      // While the socket is healthy it is already reporting every transition,
-      // so polling would be pure duplicate load. This is the fallback path.
-      if (state.isConnected && match.delivery == MatchDelivery.live) return;
+      if (match == null) {
+        // The opening fetch failed. Keep trying, or the screen is an error
+        // state that never recovers on its own.
+        unawaited(refresh());
+        return;
+      }
+      if (match.isOver) return;
+      _ensureSocket(match);
+
+      if (state.isConnected && match.delivery == MatchDelivery.live) {
+        // The socket reports every transition, so this is not the mechanism —
+        // but it is not skipped entirely either. A feed that looks alive and
+        // has quietly stopped delivering used to switch polling off and strand
+        // the match; a slow reconcile costs one request per ten seconds and
+        // removes that failure mode altogether.
+        _ticksSinceReconcile++;
+        if (_ticksSinceReconcile < 5) return;
+      }
+      _ticksSinceReconcile = 0;
       unawaited(_refreshMatchOnly());
     });
   }
@@ -210,7 +354,7 @@ class BattleController extends StateNotifier<BattleState> {
     final round = state.round;
     if (round == null || state.isSubmitting || state.isAnswered) return;
 
-    final elapsed = _roundClock?.elapsedMilliseconds ?? round.timeLimitMs;
+    final elapsed = _elapsedMs(round);
     state = state.copyWith(
       isSubmitting: true,
       selectedOptionIndex: optionIndex,
@@ -225,9 +369,9 @@ class BattleController extends StateNotifier<BattleState> {
         clientElapsedMs: elapsed,
       );
       state = state.copyWith(feedback: feedback, isSubmitting: false);
-      await _refreshMatchOnly();
 
       if (feedback.matchFinished) {
+        await _refreshMatchOnly();
         await _loadResult();
       } else if (state.match?.delivery == MatchDelivery.asynchronous) {
         // No shared clock to wait on. Give the verdict a beat to read, then
@@ -240,6 +384,11 @@ class BattleController extends StateNotifier<BattleState> {
           clearRound: true,
         );
         await _loadRound();
+      } else if (!state.isConnected) {
+        // With a socket, `round.progress` and `round.end` carry the standings
+        // and this refetch is dead weight on the one screen where a round trip
+        // shows. Without one, it is how the score moves at all.
+        await _refreshMatchOnly();
       }
     } catch (error) {
       state = state.copyWith(isSubmitting: false, error: _message(error));
@@ -254,8 +403,8 @@ class BattleController extends StateNotifier<BattleState> {
   Future<void> setReady({required bool ready}) async {
     try {
       final match = await _repository.setReady(matchId, ready: ready);
-      state = state.copyWith(match: match, clearError: true);
-      if (match.status == MatchStatus.live) await _loadRound();
+      _applyMatch(match);
+      if (_needsRound(match)) await _loadRound();
     } catch (error) {
       state = state.copyWith(error: _message(error));
     }
@@ -264,8 +413,8 @@ class BattleController extends StateNotifier<BattleState> {
   Future<void> start() async {
     try {
       final match = await _repository.start(matchId);
-      state = state.copyWith(match: match, clearError: true);
-      await _loadRound();
+      _applyMatch(match);
+      if (_needsRound(match)) await _loadRound();
     } catch (error) {
       state = state.copyWith(error: _message(error));
     }
@@ -274,8 +423,8 @@ class BattleController extends StateNotifier<BattleState> {
   Future<void> accept() async {
     try {
       final match = await _repository.respond(matchId, accept: true);
-      state = state.copyWith(match: match, clearError: true);
-      if (match.isMyTurn) await _loadRound();
+      _applyMatch(match);
+      if (_needsRound(match)) await _loadRound();
     } catch (error) {
       state = state.copyWith(error: _message(error));
     }
@@ -284,7 +433,7 @@ class BattleController extends StateNotifier<BattleState> {
   Future<void> decline() async {
     try {
       final match = await _repository.respond(matchId, accept: false);
-      state = state.copyWith(match: match, clearError: true);
+      _applyMatch(match);
     } catch (error) {
       state = state.copyWith(error: _message(error));
     }
@@ -326,6 +475,7 @@ class BattleController extends StateNotifier<BattleState> {
   @override
   void dispose() {
     _poll?.cancel();
+    _lifecycle.dispose();
     _socketEvents?.cancel();
     unawaited(_socket?.dispose());
     super.dispose();

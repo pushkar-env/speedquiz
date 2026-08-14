@@ -259,42 +259,74 @@ async def realtime_ticket(user: CurrentUser) -> RealtimeTicketResponse:
     )
 
 
+class _Writer:
+    """Serializes every send on one socket.
+
+    Two tasks write to a live socket — the event pump and the heartbeat reply —
+    and Starlette's `send` is not safe to call concurrently: interleaved frames
+    surface as an ASGI protocol error that kills the connection mid-round. The
+    lock is what makes "the pump owns the socket" true regardless of who is
+    replying to a ping.
+    """
+
+    def __init__(self, websocket: WebSocket) -> None:
+        self._websocket = websocket
+        self._lock = asyncio.Lock()
+
+    async def send(self, payload: dict) -> None:
+        async with self._lock:
+            await self._websocket.send_json(payload)
+
+
 @router.websocket("/realtime/ws")
 async def realtime_socket(
     websocket: WebSocket,
-    match_id: UUID = Query(...),
     ticket: str = Query(...),
+    match_id: Optional[UUID] = Query(default=None),
     last_event_id: Optional[str] = Query(default=None),
 ) -> None:
-    """Live feed for one match.
+    """Live feed for one match, or for this player's own inbox.
 
     Authenticated by a single-use ticket rather than a bearer token, because a
     WebSocket URL's query string is written into proxy logs and Cloudflare
     analytics and an access token there outlives the connection by an hour.
 
+    Omitting `match_id` subscribes to the player's own channel instead: friend
+    requests, challenges and results, delivered while the app is open. That is
+    one connection held by the shell for the whole session, which is why it is
+    the same endpoint rather than a second one — a client that can hold one
+    socket can hold this one.
+
     The socket is read-only for game state. Answers go over HTTP, so the
     transaction that scores them is the same one every other write uses and a
     dropped socket can never lose a submitted answer.
     """
-    settings = get_settings()
     user_id = await realtime.redeem_ticket(ticket)
     if user_id is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="invalid_ticket")
         return
 
-    async with session_scope() as db:
-        seat = await db.scalar(
-            select(MatchParticipant.id).where(
-                MatchParticipant.match_id == match_id,
-                MatchParticipant.user_id == user_id,
+    if match_id is not None:
+        async with session_scope() as db:
+            seat = await db.scalar(
+                select(MatchParticipant.id).where(
+                    MatchParticipant.match_id == match_id,
+                    MatchParticipant.user_id == user_id,
+                )
             )
-        )
-    if seat is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="not_a_participant")
-        return
+        if seat is None:
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION, reason="not_a_participant"
+            )
+            return
+        channel = realtime.stream_key(match_id)
+    else:
+        channel = realtime.user_stream_key(user_id)
 
     await websocket.accept()
-    await realtime.touch_presence(match_id, user_id)
+    writer = _Writer(websocket)
+    if match_id is not None:
+        await realtime.touch_presence(match_id, user_id)
     await realtime.mark_online(user_id)
 
     # Replay anything missed while disconnected, before joining the live feed.
@@ -302,42 +334,99 @@ async def realtime_socket(
     # mobile network is routinely a whole round.
     cursor = last_event_id or "$"
     if last_event_id:
-        for event in await realtime.history(match_id, after_id=last_event_id):
-            await websocket.send_json(event.to_json())
+        for event in await realtime.history(channel, after_id=last_event_id):
+            await writer.send(event.to_json())
             cursor = event.id
 
-    subscriber = await realtime.hub.subscribe(match_id, last_id=cursor)
-    pump = asyncio.create_task(_pump(websocket, subscriber))
-    ticker = asyncio.create_task(_tick(match_id, user_id))
+    subscriber = await realtime.hub.subscribe(channel, last_id=cursor)
+    pump = asyncio.create_task(_pump(writer, subscriber), name="realtime-pump")
+    reader = asyncio.create_task(
+        _reader(writer, websocket, match_id, user_id), name="realtime-reader"
+    )
+    # Only a match has a clock to drive.
+    ticker = (
+        asyncio.create_task(_tick(match_id, user_id), name="realtime-tick")
+        if match_id is not None
+        else None
+    )
+    tasks = [t for t in (pump, reader, ticker) if t is not None]
 
     try:
-        while True:
-            # The client sends heartbeats and nothing else. Reading is how a
-            # closed socket is noticed promptly rather than at the next publish.
-            message = await websocket.receive_json()
-            if isinstance(message, dict) and message.get("type") == "ping":
-                await realtime.touch_presence(match_id, user_id)
-                await realtime.mark_online(user_id)
-                await websocket.send_json({"type": "pong"})
-    except WebSocketDisconnect:
-        pass
+        # Whichever of the two finishes first ends the connection. Supervising
+        # the pump and not only the read loop is the point: a pump that died
+        # left the old code with a socket the client still believed was healthy,
+        # so it kept its polling fallback switched off and simply stopped
+        # updating. The ticker is deliberately not supervised — it is a clock,
+        # and it retries its own failures.
+        await asyncio.wait({pump, reader}, return_when=asyncio.FIRST_COMPLETED)
     except Exception as exc:  # noqa: BLE001
         logger.info("realtime_socket_closed", error=str(exc))
     finally:
-        for task in (pump, ticker):
+        for task in tasks:
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
         await realtime.hub.unsubscribe(subscriber)
-        await realtime.clear_presence(match_id, user_id)
-        logger.debug("realtime_disconnected", match_id=str(match_id), heartbeat=settings.realtime_heartbeat_seconds)
+        if match_id is not None:
+            await realtime.clear_presence(match_id, user_id)
+        with contextlib.suppress(Exception):
+            await websocket.close()
 
 
-async def _pump(websocket: WebSocket, subscriber: realtime.Subscriber) -> None:
-    """Forward match events to this socket until it dies."""
+async def _pump(writer: _Writer, subscriber: realtime.Subscriber) -> None:
+    """Forward events to this socket until it dies.
+
+    A None on the queue means the hub gave up on this subscriber: returning
+    closes the socket, and the client reconnects with its cursor and replays
+    the gap over `last_event_id`.
+    """
     while True:
         event = await subscriber.queue.get()
-        await websocket.send_json(event.to_json())
+        if event is None:
+            return
+        await writer.send(event.to_json())
+
+
+async def _reader(
+    writer: _Writer,
+    websocket: WebSocket,
+    match_id: Optional[UUID],
+    user_id: UUID,
+) -> None:
+    """Consume client heartbeats, and notice when they stop.
+
+    The read is bounded by a timeout rather than left to block forever. A phone
+    that loses signal or is killed from the task switcher leaves a half-open
+    TCP connection that no amount of waiting resolves, and every one of those
+    holds a presence key saying the player is still here — which is exactly how
+    a match ends up waiting on someone who left.
+    """
+    settings = get_settings()
+    # Two missed heartbeats plus slack: prompt enough that an abandoned match
+    # closes while the opponent is still looking at it, loose enough that a
+    # tunnel or a backgrounded app does not get reaped mid-round.
+    idle_timeout = max(30.0, settings.realtime_heartbeat_seconds * 2.5)
+
+    try:
+        while True:
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive_json(), timeout=idle_timeout
+                )
+            except asyncio.TimeoutError:
+                logger.info("realtime_socket_idle_timeout", user_id=str(user_id))
+                return
+            if isinstance(message, dict) and message.get("type") == "ping":
+                if match_id is not None:
+                    await realtime.touch_presence(match_id, user_id)
+                await realtime.mark_online(user_id)
+                await writer.send({"type": "pong"})
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("realtime_reader_closed", error=str(exc))
+        return
 
 
 async def _tick(match_id: UUID, user_id: UUID) -> None:

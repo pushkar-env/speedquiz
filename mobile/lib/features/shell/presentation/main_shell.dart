@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -8,9 +9,12 @@ import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
+import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
+import 'package:speedquiz/features/multiplayer/presentation/inbox_channel.dart';
 import 'package:speedquiz/features/multiplayer/presentation/multiplayer_providers.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
@@ -113,24 +117,76 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   /// Refreshes the battle badge when the app comes back to the foreground.
   ///
-  /// This, plus the refresh on mount, is what replaces a background poller:
-  /// the count only has to be right at the moment someone can see it, and
-  /// coming back from the launcher is exactly that moment — it is also when a
-  /// push they just tapped, or ignored, has changed it.
+  /// This, plus the refresh on mount and the inbox channel below, is what
+  /// replaces a background poller: the count only has to be right at the moment
+  /// someone can see it, and coming back from the launcher is exactly that
+  /// moment — it is also when a push they just tapped, or ignored, has changed
+  /// it.
   late final AppLifecycleListener _lifecycle = AppLifecycleListener(
-    onResume: () => ref.invalidate(socialSummaryProvider),
+    onResume: () {
+      ref.invalidate(socialSummaryProvider);
+      // A socket almost never survives being backgrounded. Skip the backoff:
+      // the player is looking at the screen right now.
+      ref.read(inboxChannelProvider).reconnectNow();
+    },
   );
+
+  StreamSubscription<PushAlert>? _push;
 
   @override
   void initState() {
     super.initState();
     _lifecycle;
+    _push = ref.read(pushServiceProvider).foregroundMessages.listen(_onPush);
   }
 
   @override
   void dispose() {
+    unawaited(_push?.cancel());
     _lifecycle.dispose();
     super.dispose();
+  }
+
+  /// A push that arrived with the app open.
+  ///
+  /// Only acted on when the inbox socket is down. With it up, the same event
+  /// has already been delivered over the socket and handled below — reacting to
+  /// both would show the player two banners for one thing.
+  void _onPush(PushAlert alert) {
+    if (!mounted) return;
+    if (ref.read(inboxChannelProvider).isConnected) return;
+
+    ref.invalidate(socialSummaryProvider);
+    final body = alert.body;
+    if (body == null || body.isEmpty) return;
+    Haptics.tap();
+    SqToast.show(context, body);
+  }
+
+  /// Raise a banner for something that just arrived.
+  ///
+  /// Only for the types that are about to cost the player something if missed.
+  /// A result they can read whenever; a challenge has a lobby waiting on it.
+  void _onInboxEvent(InboxEvent event) {
+    if (!mounted) return;
+    final l10n = context.l10n;
+    final actor = event.actorName ?? '';
+
+    final message = switch (event.type) {
+      AppNotificationType.friendRequest => l10n.notificationFriendRequest(actor),
+      AppNotificationType.friendAccepted => l10n.notificationFriendAccepted(actor),
+      AppNotificationType.matchInvite => l10n.notificationMatchInvite(
+          actor,
+          (event.payload['topic_name'] as String?) ?? '',
+        ),
+      AppNotificationType.matchYourTurn => l10n.notificationYourTurn(actor),
+      AppNotificationType.matchResult => null,
+      AppNotificationType.matchExpiring => null,
+    };
+    if (message == null) return;
+
+    Haptics.tap();
+    SqToast.show(context, message);
   }
 
   void _goTab(int i) {
@@ -175,6 +231,14 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Listened to here rather than on any one screen because the point is that
+    // a challenge reaches the player wherever they are in the app. This is also
+    // what holds the inbox socket open — it lives exactly as long as the shell.
+    ref.listen(inboxEventsProvider, (_, next) {
+      final event = next.valueOrNull;
+      if (event != null) _onInboxEvent(event);
+    });
+
     final location = GoRouterState.of(context).uri.path;
     final index = MainShell._indexForLocation(location);
 

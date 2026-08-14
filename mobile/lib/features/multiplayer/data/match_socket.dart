@@ -1,23 +1,34 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:speedquiz/core/config/app_config.dart';
 import 'package:speedquiz/features/multiplayer/data/multiplayer_repository.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-/// One match's live event feed, with reconnection.
+/// One live event feed, with reconnection.
+///
+/// Opened against a match (pass [matchId]) for round events, or against the
+/// signed-in player's own channel (leave it null) for friend requests,
+/// challenges and results while the app is open.
 ///
 /// Why this is more than `WebSocketChannel.connect`
 /// ------------------------------------------------
 /// The target audience plays on Indian mobile data, where a two-second dropout
-/// mid-round is ordinary. Three things follow, and all of them live here:
+/// mid-round is ordinary. Four things follow, and all of them live here:
 ///
 /// * **Resume, don't restart.** Every event carries a Redis stream id. The last
 ///   one seen is replayed back to the server on reconnect, which returns the
 ///   backlog — so a round that started during the gap still arrives.
-/// * **Backoff with a ceiling.** Reconnect attempts grow to a few seconds, so a
-///   genuinely offline phone does not spin the radio flat retrying.
+/// * **Backoff that starts fast.** The first retry is a few hundred
+///   milliseconds, because the overwhelmingly common failure is a blip and a
+///   full second of "Reconnecting" is a second of a running clock. It grows to
+///   several seconds so a genuinely offline phone does not spin the radio flat.
+/// * **A liveness watchdog.** A socket can stay open while delivering nothing —
+///   a half-open TCP connection survives a carrier handover, and the OS will
+///   not tell us for minutes. Every heartbeat is checked for its reply, and a
+///   feed that has gone quiet is torn down and rebuilt rather than trusted.
 /// * **A ticket per attempt.** Tickets are single-use, so each reconnect
 ///   fetches a fresh one rather than replaying a spent credential.
 ///
@@ -27,18 +38,30 @@ class MatchSocket {
   // Positional rather than named: Dart forbids a named parameter whose name
   // starts with an underscore, so an initializing formal for a private field
   // has to be positional.
-  MatchSocket(this._repository, {required this.matchId});
+  MatchSocket(this._repository, {this.matchId});
 
   final MultiplayerRepository _repository;
-  final String matchId;
+
+  /// Null subscribes to the player's own channel instead of a match.
+  final String? matchId;
+
+  /// Must match the server's `realtime_heartbeat_seconds`.
+  static const _heartbeat = Duration(seconds: 20);
+
+  /// Silence longer than this means the connection is dead even though the
+  /// socket still looks open. Two missed beats plus slack.
+  static const _silenceLimit = Duration(seconds: 50);
 
   final _events = StreamController<MatchSocketEvent>.broadcast();
+  final _random = math.Random();
+
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
-  Timer? _heartbeat;
+  Timer? _heartbeatTimer;
   Timer? _reconnect;
 
   String? _lastEventId;
+  DateTime? _lastInbound;
   int _attempt = 0;
   bool _closed = false;
   bool _connecting = false;
@@ -62,6 +85,7 @@ class MatchSocket {
 
       _channel = channel;
       _attempt = 0;
+      _lastInbound = DateTime.now();
       _emit(const MatchSocketEvent.connected());
 
       _subscription = channel.stream.listen(
@@ -78,6 +102,20 @@ class MatchSocket {
     }
   }
 
+  /// Reconnect at once, skipping whatever backoff is pending.
+  ///
+  /// For the moments where waiting is pointless because the situation has
+  /// visibly changed — the app returning to the foreground, most of all, since
+  /// a socket almost never survives being backgrounded and the player is
+  /// looking at the screen right now.
+  void reconnectNow() {
+    if (_closed) return;
+    _reconnect?.cancel();
+    _attempt = 0;
+    if (_channel != null) return;
+    unawaited(connect());
+  }
+
   Uri _socketUri(String path, String ticket) {
     // The API base is http(s); the socket shares its host, so swap the scheme
     // rather than making the caller configure a second URL that can drift.
@@ -86,8 +124,8 @@ class MatchSocket {
       scheme: base.scheme == 'https' ? 'wss' : 'ws',
       path: path,
       queryParameters: {
-        'match_id': matchId,
         'ticket': ticket,
+        'match_id': ?matchId,
         'last_event_id': ?_lastEventId,
       },
     );
@@ -95,6 +133,9 @@ class MatchSocket {
 
   void _onMessage(dynamic raw) {
     if (raw is! String) return;
+    // Any frame at all proves the far end is alive, including a pong.
+    _lastInbound = DateTime.now();
+
     Map<String, dynamic> decoded;
     try {
       decoded = jsonDecode(raw) as Map<String, dynamic>;
@@ -116,10 +157,18 @@ class MatchSocket {
   }
 
   void _startHeartbeat() {
-    _heartbeat?.cancel();
+    _heartbeatTimer?.cancel();
     // Also what keeps the server-side presence key alive, so the friends list
     // and the opponent's "connected" dot stay truthful.
-    _heartbeat = Timer.periodic(const Duration(seconds: 20), (_) {
+    _heartbeatTimer = Timer.periodic(_heartbeat, (_) {
+      final since = _lastInbound;
+      if (since != null && DateTime.now().difference(since) > _silenceLimit) {
+        // Pings have been going into a hole. Rebuild rather than sit on a
+        // socket that reports itself connected and delivers nothing — which is
+        // the state that leaves a player watching a round they cannot see.
+        _onDropped();
+        return;
+      }
       try {
         _channel?.sink.add(jsonEncode({'type': 'ping'}));
       } catch (_) {
@@ -138,16 +187,21 @@ class MatchSocket {
   void _scheduleReconnect() {
     if (_closed) return;
     _reconnect?.cancel();
-    // 1s, 2s, 4s, 8s, capped. Long enough to be polite to a struggling
-    // network, short enough that a brief tunnel does not cost a round.
-    final seconds = [1, 2, 4, 8, 8, 10][_attempt.clamp(0, 5)];
+    // Starts at a third of a second: the common case is a blip, and a round
+    // clock is running the whole time. Grows to eight so a phone with no
+    // signal is not retrying every heartbeat for the rest of the match.
+    const schedule = [300, 800, 1500, 3000, 5000, 8000];
+    final base = schedule[_attempt.clamp(0, schedule.length - 1)];
+    // Jitter, so two players dropped by the same tower do not return in
+    // lockstep and land on the same replica at the same instant.
+    final delay = base + _random.nextInt(250);
     _attempt++;
-    _reconnect = Timer(Duration(seconds: seconds), connect);
+    _reconnect = Timer(Duration(milliseconds: delay), connect);
   }
 
   void _teardownConnection() {
-    _heartbeat?.cancel();
-    _heartbeat = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _subscription?.cancel();
     _subscription = null;
     final channel = _channel;
@@ -199,4 +253,7 @@ abstract final class MatchEvents {
   static const roundEnd = 'round.end';
   static const finished = 'match.finished';
   static const cancelled = 'match.cancelled';
+
+  /// Player channel only — a new inbox row was written for you.
+  static const notification = 'notification.new';
 }

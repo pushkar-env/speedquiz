@@ -103,6 +103,56 @@ async def check_credentials() -> bool:
     return True
 
 
+def _devices(env: dict[str, str]) -> list[tuple]:
+    """Registered devices, newest first, straight from the database.
+
+    Reads the database rather than asking anyone to copy a 160-character token
+    off a phone. A token reaches this table on sign-in, so an empty result is
+    itself the diagnosis: the app never got as far as registering.
+    """
+    from sqlalchemy import create_engine, text
+
+    url = env.get("DATABASE_URL_SYNC")
+    if not url:
+        print(f"{BAD} DATABASE_URL_SYNC is not set in .env")
+        return []
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        return list(
+            conn.execute(
+                text(
+                    "SELECT token, platform, is_active, language, app_version,"
+                    "       utc_offset_minutes, created_at "
+                    "FROM device_tokens ORDER BY created_at DESC"
+                )
+            ).all()
+        )
+
+
+def list_devices(env: dict[str, str]) -> int:
+    rows = _devices(env)
+    if not rows:
+        print(f"{WARN} no devices registered yet\n")
+        print("  A token is registered when the app signs in. If you have opened")
+        print("  the app and this is still empty, the likely causes in order:")
+        print("    1. the build has no FIREBASE_* defines (check the build log")
+        print("       said 'push notifications  enabled')")
+        print("    2. Firebase failed to initialise on the device — look for")
+        print("       'Push initialization skipped' in:")
+        print("         adb logcat | grep -iE 'push|firebase|flutter'")
+        print("    3. you are signed out; registration happens on sign-in")
+        return 1
+
+    print(f"{OK} {len(rows)} device(s) registered\n")
+    for token, platform, active, language, version, offset, created in rows:
+        state = "active" if active else "retired"
+        print(f"  {platform.value if hasattr(platform, 'value') else platform}"
+              f"  {state}  {language}  v{version or '?'}  UTC{offset:+d}m"
+              f"  {created:%Y-%m-%d %H:%M}")
+        print(f"    {token[:48]}…")
+    return 0
+
+
 async def check_api_reachable() -> bool:
     """Confirm the Cloud Messaging API is switched on for this project.
 
@@ -263,10 +313,22 @@ async def main() -> int:
         metavar="PATH",
         help="Downloaded service-account JSON; prints the .env lines and exits",
     )
+    parser.add_argument(
+        "--latest-device",
+        action="store_true",
+        help="Look up the newest registered device in the database and push to it",
+    )
+    parser.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="Show registered devices and exit",
+    )
     args = parser.parse_args()
 
     if args.from_file:
         return emit_env_line(args.from_file)
+    if args.list_devices:
+        return list_devices(read_env())
 
     env = read_env()
     print("\n--- app build config (.env) ---")
@@ -296,12 +358,23 @@ async def main() -> int:
     if not await check_api_reachable():
         return 1
 
-    if args.token:
+    target = args.token
+    if args.latest_device and not target:
+        rows = _devices(env)
+        active = [r for r in rows if r[2]]
+        if not active:
+            print("\n--- test delivery ---")
+            list_devices(env)
+            return 1
+        target = active[0][0]
+        print(f"\n{OK} using the newest registered device ({active[0][1]})")
+
+    if target:
         print("\n--- test delivery ---")
-        if not await send_test(args.token):
+        if not await send_test(target):
             return 1
     else:
-        print("\n(pass --token <FCM token> to send a real notification)")
+        print("\n(add --latest-device to push to your phone, or --list-devices)")
 
     print("\nPush is configured correctly.")
     return 0

@@ -16,6 +16,7 @@ import 'package:speedquiz/features/daily/data/daily_repository.dart';
 import 'package:speedquiz/features/daily/domain/daily_models.dart';
 import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
 import 'package:speedquiz/features/entitlements/domain/entitlement_models.dart';
+import 'package:speedquiz/features/multiplayer/presentation/inbox_channel.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 
 const _user = AuthUser(
@@ -91,6 +92,10 @@ void main() {
         dailyChallengeProvider.overrideWith((ref) async => _daily),
         achievementsProvider.overrideWith((ref) async => _achievements),
         entitlementsProvider.overrideWith((ref) async => _entitlements),
+        // The shell holds a realtime socket for challenges and friend
+        // requests. Stubbed for the same reason every other network provider
+        // above is.
+        inboxEventsProvider.overrideWith((ref) => const Stream.empty()),
       ],
     );
     addTearDown(container.dispose);
