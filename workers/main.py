@@ -141,6 +141,11 @@ async def run() -> None:
                     # Opens a session per bank internally — see refresh_all.
                     built = await news_banks.refresh_all()
                     news_banks_built = sum(built.values())
+                    if news_banks_built == 0:
+                        # Claimed the day but built nothing. Hand the day back
+                        # on a short backoff rather than sitting on it for 36
+                        # hours with empty banks.
+                        await news_banks.defer_daily_build()
             except Exception as exc:  # noqa: BLE001 — never kill the loop
                 logger.exception("news_banks_failed", error=str(exc))
 

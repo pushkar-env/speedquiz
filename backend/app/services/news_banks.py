@@ -194,6 +194,10 @@ async def refresh_all() -> dict[str, int]:
     return results
 
 
+def _claim_key(moment: datetime) -> str:
+    return f"news_banks_built:{moment:%Y-%m-%d}"
+
+
 async def claim_daily_build(*, now: Optional[datetime] = None) -> bool:
     """True at most once per UTC day, across every worker process.
 
@@ -209,7 +213,7 @@ async def claim_daily_build(*, now: Optional[datetime] = None) -> bool:
     try:
         redis = await get_redis()
         acquired = await redis.set(
-            f"news_banks_built:{moment:%Y-%m-%d}",
+            _claim_key(moment),
             "1",
             nx=True,
             ex=60 * 60 * 36,
@@ -218,3 +222,29 @@ async def claim_daily_build(*, now: Optional[datetime] = None) -> bool:
     except Exception as exc:  # noqa: BLE001
         logger.warning("news_bank_claim_unavailable", error=str(exc))
         return False
+
+
+async def defer_daily_build(
+    *,
+    minutes: int = 60,
+    now: Optional[datetime] = None,
+) -> None:
+    """Shorten today's claim so a failed build is retried within the hour.
+
+    The claim is taken *before* building, which is what stops two workers
+    building the same day twice. The cost of that ordering is that a build
+    which produced nothing — an OpenAI blip, a harvest that had not landed
+    yet — would otherwise hold the day for 36 hours and leave the news banks
+    empty until tomorrow.
+
+    Shortening the TTL rather than deleting the key is deliberate: deleting it
+    would let the very next tick retry, so a sustained outage would hammer the
+    provider every few minutes. An hour is a backoff, not a reset.
+    """
+    moment = now or datetime.now(timezone.utc)
+    try:
+        redis = await get_redis()
+        await redis.set(_claim_key(moment), "1", ex=max(60, minutes * 60))
+        logger.info("news_bank_build_deferred", minutes=minutes)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("news_bank_defer_failed", error=str(exc))
