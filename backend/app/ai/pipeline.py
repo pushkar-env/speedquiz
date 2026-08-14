@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.freshness import (
     DEFAULT_TEMPORALITY,
     Temporality,
+    clamp_volatility,
     expires_at_for,
     normalize_volatility,
     volatility_for_temporality,
@@ -129,6 +130,50 @@ def citation_reasons(
         # A fabricated citation is a stronger signal than no citation: the
         # model invented a source label to satisfy the format.
         return ["unknown_source"]
+    return []
+
+
+#: Phrasing that makes a question's answer depend on when it is *read* rather
+#: than on a fact. "What did X recently announce?" has no stable answer: it was
+#: true the day it was written and is misleading a month later.
+#:
+#: Deliberately NOT shared with ``freshness._CURRENT_TERMS`` despite the
+#: overlap. That list detects a time-sensitive *request*, where "current
+#: affairs" is a good thing to say and means "go and fetch sources". This one
+#: rejects a rotting *answer*. Same words, opposite verdicts — merging them
+#: would make one of the two behaviours wrong.
+_TIME_RELATIVE = re.compile(
+    r"(?:^|\W)(?:"
+    r"recent(?:ly)?|currently|reportedly|of late|nowadays|"
+    r"just (?:announced?|revealed?|reported?|unveiled?)|"
+    r"this (?:week|month)|these days|"
+    r"हाल ही|हाल में|अभी हाल|इन दिनों"
+    r")(?:\W|$)",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def time_anchor_reasons(
+    draft: GeneratedQuestionDraft,
+    temporality: Temporality,
+) -> list[str]:
+    """Reject a question whose answer depends on when the player reads it.
+
+    Only applied to time-sensitive batches, where it is a real failure: a
+    settled-subject question saying "recently" is loose writing, but a news
+    question saying it is *wrong* within weeks and the expiry machinery cannot
+    save it — the question was never anchored to anything to begin with.
+
+    This exists because asking the model nicely did not work. The generation
+    prompt spells out "not 'who is the current champion' but 'who won the title
+    on 12 August 2026'", and the first production batch still came back 27%
+    time-relative and only 26% date-anchored. An instruction the model follows a
+    quarter of the time is a suggestion; this is the rule.
+    """
+    if temporality is Temporality.STATIC:
+        return []
+    if _TIME_RELATIVE.search(draft.question or ""):
+        return ["time_relative_phrasing"]
     return []
 
 
@@ -251,7 +296,11 @@ async def run_generation_pipeline(
 
         for draft, ai_result in zip(drafts, validations):
             outcome.drafts_seen += 1
-            schema_reasons = schema_validate(draft) + citation_reasons(draft, context)
+            schema_reasons = (
+                schema_validate(draft)
+                + citation_reasons(draft, context)
+                + time_anchor_reasons(draft, temporality)
+            )
             reasons = list(schema_reasons)
             quality = ai_result.quality_score if not schema_reasons else min(ai_result.quality_score, 40)
             approved = (
@@ -290,9 +339,12 @@ async def run_generation_pipeline(
                 continue
 
             difficulty_value = ai_result.difficulty or draft.difficulty
-            volatility = normalize_volatility(
-                draft.volatility,
-                default=volatility_for_temporality(temporality),
+            volatility = clamp_volatility(
+                normalize_volatility(
+                    draft.volatility,
+                    default=volatility_for_temporality(temporality),
+                ),
+                temporality,
             )
             # Prefer the model's own as-of date, then the newest source it was
             # shown. A batch built from a three-week-old article must not get a

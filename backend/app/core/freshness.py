@@ -101,6 +101,25 @@ def normalize_volatility(raw: object, *, default: Volatility = DEFAULT_VOLATILIT
         return default
 
 
+def clamp_volatility(volatility: Volatility, temporality: Temporality) -> Volatility:
+    """Cap how long a question may claim to stay true, given its topic.
+
+    ``SLOW`` means "still right in a year". For a fact lifted out of this
+    week's headlines that is almost never true, and the first production batch
+    labelled 71% of news questions exactly that way — a year of shelf life for
+    "what did the Karnataka Cabinet approve".
+
+    So on a ``CURRENT`` batch, ``SLOW`` is pulled down to ``FAST``. ``STATIC``
+    is left alone on purpose: a news story genuinely can yield a permanent
+    fact ("on 14 August 2026, the toll rose to eight"), and that question is
+    still true in ten years. The dangerous label is not the confident one, it
+    is the vague middle.
+    """
+    if temporality is Temporality.CURRENT and volatility is Volatility.SLOW:
+        return Volatility.FAST
+    return volatility
+
+
 def volatility_for_temporality(temporality: Temporality) -> Volatility:
     """The volatility a question inherits when the model does not label it.
 
