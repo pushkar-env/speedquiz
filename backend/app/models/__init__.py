@@ -23,10 +23,11 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.freshness import DEFAULT_VOLATILITY
 from app.core.languages import DEFAULT_LANGUAGE, LANGUAGE_CODE_MAX_LENGTH
 
 
@@ -429,6 +430,12 @@ class Topic(Base, TimestampMixin):
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_trending: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: A rolling current-affairs bank, rebuilt daily from the news corpus.
+    #: Distinct from ``is_custom`` (which means "a player asked for this"):
+    #: these are curated topics that happen to be perishable. The flag exists
+    #: so the generic watermark top-up leaves them alone — filling a news bank
+    #: with ungrounded questions is exactly the staleness this feature removes.
+    is_news: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     popularity_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     #: Localized display names keyed by language code — see TopicCategory.
@@ -502,6 +509,14 @@ class Question(Base, TimestampMixin):
             "difficulty",
         ),
         Index("ix_questions_quality_status", "quality_score", "status"),
+        # Only the perishable minority. The sweep that retires them scans this
+        # instead of the whole table, and a bank of permanent questions carries
+        # no index-maintenance cost for a feature it never uses.
+        Index(
+            "ix_questions_expiring",
+            "expires_at",
+            postgresql_where=text("expires_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -535,6 +550,22 @@ class Question(Base, TimestampMixin):
     times_correct: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     times_incorrect: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     times_reported: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: When this fact was last known true — the publish date of the source it
+    #: came from, not the row's creation time. A question written today from a
+    #: three-week-old article is three weeks old, and its TTL is measured from
+    #: the article.
+    valid_as_of: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: When to stop dealing this question. NULL means never, which is what
+    #: every row written before freshness existed means — so the sweep leaves
+    #: the entire legacy bank alone.
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: How fast the answer goes stale. See ``app.core.freshness``.
+    volatility: Mapped[str] = mapped_column(
+        String(16),
+        default=DEFAULT_VOLATILITY.value,
+        server_default=DEFAULT_VOLATILITY.value,
+        nullable=False,
+    )
     generation_meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     topic: Mapped[Topic] = relationship(back_populates="questions")
@@ -943,6 +974,79 @@ class GenerationJob(Base, TimestampMixin):
     language: Mapped[str] = language_column()
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     payload: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class NewsDocument(Base, TimestampMixin):
+    """One retrieved fact the generator may build questions from.
+
+    Title, summary, link and publish date only — never article body. Facts are
+    not copyrightable and a question derived from one is our own work, but a
+    stored copy of the prose is the publisher's, so the harvester deliberately
+    keeps what an RSS feed already offers for syndication and nothing more.
+
+    This is the piece that makes current-affairs content affordable. Ten
+    thousand players asking about this week's news share one harvest of these
+    rows, so retrieval cost scales with *topics × days* rather than with users.
+    """
+
+    __tablename__ = "news_documents"
+    __table_args__ = (
+        # Retrieval is always "recent documents in one language", optionally
+        # narrowed to a category. Publish date descends because every query
+        # wants the newest first and an ordered index scan avoids a sort.
+        Index(
+            "ix_news_documents_language_published",
+            "language",
+            "published_at",
+        ),
+        Index("ix_news_documents_category_published", "category", "published_at"),
+        Index(
+            "ix_news_documents_search",
+            "search_vector",
+            postgresql_using="gin",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(120), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    #: Publish date from the feed. Drives both retrieval ordering and the TTL
+    #: of every question generated from this row, so a document with no usable
+    #: date is dropped at harvest rather than stored undated.
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    language: Mapped[str] = language_column()
+    #: Coarse bucket — india, world, sport, tech, business, entertainment.
+    #: Set per feed, not inferred, so it costs nothing and never drifts.
+    category: Mapped[str] = mapped_column(String(40), default="general", nullable=False)
+    #: Dedupe key over (url, title). The same story arrives from several feeds
+    #: and the same feed re-serves it for days.
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    #: Generated by Postgres so it can never disagree with the text it indexes.
+    #:
+    #: The config is chosen per row: English gets stemming, Hindi falls back to
+    #: `simple`, because Postgres ships no Hindi stemmer and `english` applied
+    #: to Devanagari would tokenize but stem nonsense. The two-argument
+    #: `to_tsvector` is required here — the one-argument form reads
+    #: `default_text_search_config` and so is only STABLE, which a generated
+    #: column rejects.
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector("
+            "CASE WHEN language = 'en' THEN 'english'::regconfig "
+            "ELSE 'simple'::regconfig END, "
+            "coalesce(title, '') || ' ' || coalesce(summary, ''))",
+            persisted=True,
+        ),
+        nullable=True,
+    )
 
 
 class Friendship(Base, TimestampMixin):

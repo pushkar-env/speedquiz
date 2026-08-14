@@ -46,6 +46,7 @@ from app.models import (
 )
 from app.schemas.multiplayer import CreateMatchRequest, QueueTicketResponse
 from app.services import matches, ranking
+from app.services.question_filters import not_expired
 
 logger = get_logger(__name__)
 
@@ -100,6 +101,7 @@ async def _pick_topic(db: AsyncSession, language: ContentLanguage) -> Optional[T
         .where(
             Question.language == language.value,
             Question.status == QuestionStatus.ACTIVE,
+            not_expired(),
         )
         .group_by(Question.topic_id)
         .having(func.count() >= minimum)

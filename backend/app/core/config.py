@@ -89,6 +89,52 @@ class Settings(BaseSettings):
     topic_bank_chunk_size: int = 20
     topic_bank_session_batch: int = 20
 
+    # --- Content freshness ------------------------------------------------
+    # How long a question of each volatility keeps being dealt. Static
+    # questions never expire and have no setting. Tunable because the right
+    # answer is editorial, not technical: 30 days is generous for "who won
+    # yesterday" and stingy for "who is the current minister".
+    question_ttl_slow_days: int = 365
+    question_ttl_fast_days: int = 30
+    #: Rows retired per sweep tick. Bounded so the sweep cannot hold a long
+    #: write lock on the same worker loop that runs generation jobs.
+    freshness_sweep_batch: int = 500
+    #: Ask the classifier whether a custom topic needs live facts. Off means
+    #: every topic is treated as settled — exactly the pre-freshness behaviour.
+    temporal_classification_enabled: bool = True
+
+    # --- Grounding corpus (free tier) -------------------------------------
+    news_corpus_enabled: bool = True
+    #: Comma-separated feed URLs. Empty falls back to the built-in list in
+    #: `app.services.news_corpus`; set this to override per deployment without
+    #: a code change when a publisher moves or blocks a feed.
+    news_feed_urls: str = ""
+    news_corpus_retention_days: int = 45
+    news_harvest_max_items_per_feed: int = 40
+    #: Snippets handed to one generation call. Eight is roughly 1.5k input
+    #: tokens — about $0.0002 at gpt-4o-mini rates, and enough distinct facts
+    #: that a batch of ten questions is not all about one story.
+    grounding_snippet_count: int = 8
+    #: Below this many retrieved snippets, treat the corpus as a miss and fall
+    #: through to paid search (if configured) rather than grounding on scraps.
+    grounding_min_snippets: int = 3
+
+    # --- Pre-built daily news banks ---------------------------------------
+    daily_news_banks_enabled: bool = True
+    daily_news_bank_question_count: int = 20
+
+    # --- Paid search fallback (long tail only) ----------------------------
+    # none | exa | tavily. Left off by default: the corpus covers the shared
+    # interest, and a live search costs several times the LLM call it feeds.
+    search_provider: str = "none"
+    search_api_key: str = ""
+    #: Hard ceiling on paid searches per UTC day, across all users. The point
+    #: is that a bug or an abusive client cannot run up an unbounded bill.
+    search_daily_budget: int = 200
+    #: Only these users may trigger a paid search on demand. Premium-only by
+    #: default so the long-tail path is funded by the people using it.
+    search_premium_only: bool = True
+
     # Monetization — keep free unlimited until explicitly enabled
     entitlements_enforce_question_caps: bool = False
     free_unique_questions_per_topic: int = 30

@@ -18,10 +18,11 @@ Future monetization (not enforced yet — free is unlimited today)
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -42,6 +43,7 @@ from app.models import (
     Topic,
     User,
 )
+from app.services.question_filters import not_expired
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -62,7 +64,14 @@ async def count_active_questions(
     stmt = (
         select(func.count())
         .select_from(Question)
-        .where(Question.topic_id == topic_id, Question.status == QuestionStatus.ACTIVE)
+        .where(
+            Question.topic_id == topic_id,
+            Question.status == QuestionStatus.ACTIVE,
+            # Expired rows are not stock. Counting them would leave a topic
+            # whose bank has gone stale looking fully stocked, so it would
+            # never queue a top-up and would deal nothing.
+            not_expired(),
+        )
     )
     if language is not None:
         stmt = stmt.where(Question.language == normalize_language(language).value)
@@ -85,6 +94,7 @@ async def count_active_by_language(
         .where(
             Question.topic_id.in_(topic_ids),
             Question.status == QuestionStatus.ACTIVE,
+            not_expired(),
         )
         .group_by(Question.topic_id, Question.language)
     )
@@ -130,8 +140,10 @@ async def ensure_minimum_bank(
 
     language = normalize_language(language)
 
-    # Custom topics are one-shot generated banks — never grow toward curated target.
-    if topic.is_custom:
+    # Custom topics are one-shot generated banks — never grow toward curated
+    # target. News topics are grown daily by the grounded builder instead; an
+    # ungrounded sync-fill here is precisely the stale content this avoids.
+    if topic.is_custom or topic.is_news:
         return await count_active_questions(db, topic.id, language=language)
 
     minimum = minimum or max(settings.topic_bank_session_batch + 10, 30)
@@ -208,7 +220,7 @@ async def enqueue_bank_topup(
     language: ContentLanguage = DEFAULT_LANGUAGE,
 ) -> Optional[GenerationJob]:
     """Queue a chunk generation job if the topic bank needs refill."""
-    if topic.is_custom:
+    if topic.is_custom or topic.is_news:
         return None
 
     language = normalize_language(language)
@@ -307,6 +319,64 @@ async def maybe_chain_another_topup(
     )
 
 
+async def retire_expired_questions(db: AsyncSession, *, limit: Optional[int] = None) -> int:
+    """Move questions past their ``expires_at`` out of the playable pool.
+
+    Bounded per call rather than one blanket UPDATE: a daily news bank can
+    expire a few thousand rows in the same second, and this runs on the same
+    worker loop that processes generation jobs. A long row-lock here would
+    stall those, so the sweep takes a bite per tick and catches up over a few
+    minutes — the questions are already excluded from selection by
+    ``not_expired``, so lagging behind costs correctness nothing.
+
+    Retiring rather than deleting: ``times_served`` / ``times_correct`` on an
+    expired question are still the only record of how it performed, and the
+    calibration in ``adaptive`` reads them.
+    """
+    now = datetime.now(timezone.utc)
+    batch = limit if limit is not None else settings.freshness_sweep_batch
+    doomed = list(
+        (
+            await db.execute(
+                select(Question.id, Question.topic_id)
+                .where(
+                    Question.status == QuestionStatus.ACTIVE,
+                    Question.expires_at.is_not(None),
+                    Question.expires_at <= now,
+                )
+                .order_by(Question.expires_at.asc())
+                .limit(batch)
+            )
+        ).all()
+    )
+    if not doomed:
+        return 0
+
+    question_ids = [row[0] for row in doomed]
+    topic_ids = {row[1] for row in doomed}
+
+    await db.execute(
+        update(Question)
+        .where(Question.id.in_(question_ids))
+        .values(status=QuestionStatus.RETIRED)
+    )
+
+    # Topic counters drive the thin-topic scan, so they have to follow the
+    # retirement immediately or the topic that just lost its bank is the one
+    # topic the scan will not consider refilling.
+    for topic_id in topic_ids:
+        topic = await db.scalar(select(Topic).where(Topic.id == topic_id))
+        if topic:
+            topic.question_count = await count_active_questions(db, topic_id)
+
+    logger.info(
+        "questions_retired",
+        count=len(question_ids),
+        topics=len(topic_ids),
+    )
+    return len(question_ids)
+
+
 async def scan_and_enqueue_thin_topics(db: AsyncSession, *, limit: int = 5) -> int:
     """Periodic worker helper: top up the thinnest active topic banks.
 
@@ -316,7 +386,11 @@ async def scan_and_enqueue_thin_topics(db: AsyncSession, *, limit: int = 5) -> i
     """
     rows = await db.execute(
         select(Topic)
-        .where(Topic.is_active.is_(True), Topic.is_custom.is_(False))
+        .where(
+            Topic.is_active.is_(True),
+            Topic.is_custom.is_(False),
+            Topic.is_news.is_(False),
+        )
         .order_by(Topic.question_count.asc())
         .limit(limit * 3)
     )

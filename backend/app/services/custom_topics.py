@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.pipeline import run_generation_pipeline, sanitize_topic_prompt, slugify
 from app.ai.providers import get_llm_provider
+from app.ai.retrieval import build_context
 from app.core.config import get_settings
+from app.core.freshness import (
+    DEFAULT_TEMPORALITY,
+    freshness_bucket,
+    resolve_temporality,
+)
 from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.core.redis import get_redis
@@ -31,6 +37,7 @@ from app.models import (
 from app.schemas.custom_topics import CreateCustomTopicRequest, CustomTopicResponse
 from app.schemas.quiz import CreateQuizSessionRequest
 from app.services import quiz_service
+from app.services.question_filters import not_expired
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -41,16 +48,28 @@ def cache_key_for(
     difficulty: DifficultyLabel,
     style: Optional[str],
     language: ContentLanguage = DEFAULT_LANGUAGE,
+    bucket: str = "",
 ) -> str:
     """Reuse key for an already-generated custom bank.
 
     Language is part of the key: "quiz me on the Mughals" in Hindi must not be
     answered with the English bank someone generated an hour earlier.
+
+    ``bucket`` is the freshness component (see ``app.core.freshness``). It is
+    empty for settled subjects, so their keys hash exactly as they did before
+    freshness existed and keep caching forever — the reuse that makes custom
+    topics nearly free stays intact for the great majority of prompts. For a
+    time-sensitive prompt it rolls daily or weekly, which is what stops "this
+    week in news" being answered six months later from cache. That path was
+    especially bad because a cache hit is explicitly quota-exempt, making the
+    stalest possible answer also the cheapest one to serve.
     """
     raw = (
         f"{prompt.strip().lower()}|{difficulty.value}|"
         f"{(style or '').strip().lower()}|{normalize_language(language).value}"
     )
+    if bucket:
+        raw = f"{raw}|{bucket}"
     return sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -107,6 +126,10 @@ async def _find_cached_topic(
             Question.topic_id == topic.id,
             Question.status == QuestionStatus.ACTIVE,
             Question.language == language.value,
+            # A cached bank whose questions have all expired is not a cache
+            # hit — reusing it would hand the player an empty quiz and, worse,
+            # skip the daily quota that a real regeneration would have charged.
+            not_expired(),
         )
     )
     if (active or 0) < 5:
@@ -160,7 +183,25 @@ async def create_custom_topic_quiz(
     llm = get_llm_provider()
     classification = await llm.classify_topic(sanitized, language=language)
     subject = str(classification.get("subject") or sanitized)[:120]
-    key = cache_key_for(sanitized, payload.difficulty, payload.style, language)
+
+    # How time-sensitive is this request? Decided from the same classify call
+    # the path already made, with the regex hint as a floor under it.
+    if settings.temporal_classification_enabled:
+        temporality = resolve_temporality(sanitized, classification.get("temporality"))
+    else:
+        temporality = DEFAULT_TEMPORALITY
+    recency_days = classification.get("recency_window_days")
+    bucket = freshness_bucket(temporality, recency_window_days=recency_days)
+    key = cache_key_for(sanitized, payload.difficulty, payload.style, language, bucket)
+
+    logger.info(
+        "custom_topic_classified",
+        subject=subject[:60],
+        temporality=temporality.value,
+        recency_window_days=recency_days,
+        bucket=bucket or "permanent",
+        language=language.value,
+    )
 
     # Cache reuse first — does not burn the daily free quota.
     cached_topic = await _find_cached_topic(db, key, language)
@@ -220,6 +261,18 @@ async def create_custom_topic_quiz(
     # Fresh generation burns a daily slot for free users.
     await _enforce_daily_quota(db, user)
 
+    # Grounding is fetched only after the cache miss and the quota check, so a
+    # repeat request and a rate-limited one both cost nothing to retrieve.
+    context = await build_context(
+        db,
+        subject=subject,
+        temporality=temporality,
+        queries=classification.get("search_queries"),
+        language=language,
+        recency_window_days=recency_days,
+        user=user,
+    )
+
     custom = CustomTopic(
         id=uuid4(),
         user_id=user.id,
@@ -251,6 +304,11 @@ async def create_custom_topic_quiz(
             "style": payload.style,
             "cache_hit": False,
             "quota_exempt": False,
+            # Carried so a job retried by the worker grounds the same way the
+            # inline attempt would have, without paying to classify again.
+            "temporality": temporality.value,
+            "search_queries": classification.get("search_queries") or [],
+            "recency_window_days": recency_days,
         },
     )
     db.add(job)
@@ -282,6 +340,8 @@ async def create_custom_topic_quiz(
             style=payload.style,
             provider=llm,
             language=language,
+            temporality=temporality,
+            context=context,
         )
         job.approved_count = len(outcome.approved)
         job.rejected_count = len(outcome.rejected)

@@ -15,8 +15,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.ai.providers import GeneratedQuestionDraft, LLMProvider, ValidationResult, get_llm_provider
+from app.ai.providers import (
+    GeneratedQuestionDraft,
+    LLMProvider,
+    RetrievedContext,
+    ValidationResult,
+    get_llm_provider,
+)
 from app.core.config import get_settings
+from app.core.freshness import (
+    DEFAULT_TEMPORALITY,
+    Temporality,
+    expires_at_for,
+    normalize_volatility,
+    volatility_for_temporality,
+)
 from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.models import (
@@ -92,6 +105,33 @@ def fingerprint(prompt: str) -> str:
     return sha256(" ".join(sorted(set(tokens))).encode("utf-8")).hexdigest()[:32]
 
 
+def citation_reasons(
+    draft: GeneratedQuestionDraft,
+    context: Optional[RetrievedContext],
+) -> list[str]:
+    """Reject a grounded draft that does not cite the grounding it was given.
+
+    This is the whole safety story for live content. A stale question is a
+    question a player might already know is old; a *confidently wrong* one
+    invented on top of a news article is worse, because it reads as current and
+    the player can check it in ten seconds.
+
+    Only enforced when grounding was actually supplied — ungrounded generation
+    over settled subjects has nothing to cite and is unaffected.
+    """
+    if not context:
+        return []
+    cited = [str(s).strip() for s in (draft.source_ids or []) if str(s).strip()]
+    if not cited:
+        return ["uncited"]
+    unknown = [s for s in cited if s not in context.valid_ids]
+    if unknown:
+        # A fabricated citation is a stronger signal than no citation: the
+        # model invented a source label to satisfy the format.
+        return ["unknown_source"]
+    return []
+
+
 def schema_validate(draft: GeneratedQuestionDraft) -> list[str]:
     reasons: list[str] = []
     if not draft.question or len(draft.question.strip()) < 8:
@@ -162,8 +202,16 @@ async def run_generation_pipeline(
     provider: Optional[LLMProvider] = None,
     max_attempts: int = 2,
     language: ContentLanguage = DEFAULT_LANGUAGE,
+    temporality: Temporality = DEFAULT_TEMPORALITY,
+    context: Optional[RetrievedContext] = None,
 ) -> PipelineOutcome:
-    """Generate, validate, dedupe, and persist questions for a topic."""
+    """Generate, validate, dedupe, and persist questions for a topic.
+
+    ``temporality`` decides the fallback volatility for any draft the model
+    does not label, and ``context`` carries grounding snippets for topics that
+    need live facts. Both default to the settled case, so every existing caller
+    keeps the exact behaviour it had.
+    """
     llm = provider or get_llm_provider()
     language = normalize_language(language)
     # A topic's display name is stored in English; ask for questions *about*
@@ -185,6 +233,7 @@ async def run_generation_pipeline(
                 style=style,
                 subcategory=subcategory,
                 language=language,
+                context=context,
             )
         except Exception as exc:  # noqa: BLE001 — never crash workers on bad LLM output
             logger.exception("generation_failed", error=str(exc), attempt=attempts)
@@ -202,7 +251,7 @@ async def run_generation_pipeline(
 
         for draft, ai_result in zip(drafts, validations):
             outcome.drafts_seen += 1
-            schema_reasons = schema_validate(draft)
+            schema_reasons = schema_validate(draft) + citation_reasons(draft, context)
             reasons = list(schema_reasons)
             quality = ai_result.quality_score if not schema_reasons else min(ai_result.quality_score, 40)
             approved = (
@@ -241,6 +290,14 @@ async def run_generation_pipeline(
                 continue
 
             difficulty_value = ai_result.difficulty or draft.difficulty
+            volatility = normalize_volatility(
+                draft.volatility,
+                default=volatility_for_temporality(temporality),
+            )
+            # Prefer the model's own as-of date, then the newest source it was
+            # shown. A batch built from a three-week-old article must not get a
+            # fresh 30 days just because generation ran today.
+            valid_as_of = draft.valid_as_of or (context.newest_published_at if context else None)
             question = Question(
                 id=uuid4(),
                 topic_id=topic.id,
@@ -255,12 +312,17 @@ async def run_generation_pipeline(
                 status=QuestionStatus.ACTIVE,
                 content_hash=content_hash(draft.question, draft.options, language),
                 embedding_fingerprint=fingerprint(draft.question),
+                volatility=volatility.value,
+                valid_as_of=valid_as_of,
+                expires_at=expires_at_for(volatility, valid_as_of=valid_as_of),
                 generation_meta={
                     "style": style,
                     "subcategory": subcategory or draft.subcategory,
                     "pipeline": "phase4",
                     "provider": settings.llm_provider,
                     "language": language.value,
+                    "temporality": temporality.value,
+                    "source_ids": draft.source_ids,
                 },
             )
             db.add(question)

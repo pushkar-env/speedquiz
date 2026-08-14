@@ -6,7 +6,9 @@ from sqlalchemy import select
 
 from app.ai.pipeline import run_generation_pipeline, sanitize_topic_prompt, slugify
 from app.ai.providers import get_llm_provider
+from app.ai.retrieval import build_context
 from app.core.database import session_scope
+from app.core.freshness import Temporality, normalize_temporality
 from app.core.languages import ContentLanguage, normalize_language
 from app.core.logging import get_logger
 from app.models import (
@@ -38,6 +40,32 @@ def _language_for(job: GenerationJob) -> ContentLanguage:
     )
 
 
+def _temporality_for(payload: dict) -> Temporality:
+    """Jobs queued before freshness existed have no temporality key, which
+    normalizes to static — the behaviour they were queued expecting."""
+    return normalize_temporality(payload.get("temporality"))
+
+
+async def _context_for(db, job: GenerationJob, payload: dict, language: ContentLanguage):
+    """Grounding for a queued job, if its topic needs any.
+
+    Paid search is refused on this path regardless of configuration: a worker
+    job is not a player waiting on a response, and a retry loop that can spend
+    money per attempt is a bill with a feedback loop in it. Long-tail topics
+    get their one paid search on the inline request path or not at all.
+    """
+    return await build_context(
+        db,
+        subject=str(payload.get("subject") or ""),
+        temporality=_temporality_for(payload),
+        queries=payload.get("search_queries"),
+        language=language,
+        category=payload.get("category"),
+        recency_window_days=payload.get("recency_window_days"),
+        allow_paid_search=False,
+    )
+
+
 async def _process_bank_topup(db, job: GenerationJob, llm) -> None:
     if not job.topic_id:
         job.status = GenerationJobStatus.FAILED
@@ -63,6 +91,8 @@ async def _process_bank_topup(db, job: GenerationJob, llm) -> None:
         style=style,
         provider=llm,
         language=language,
+        temporality=_temporality_for(payload),
+        context=await _context_for(db, job, payload, language),
     )
     job.approved_count = len(outcome.approved)
     job.rejected_count = len(outcome.rejected)
@@ -115,6 +145,8 @@ async def _process_legacy_custom(db, job: GenerationJob, llm) -> None:
         style=style,
         provider=llm,
         language=language,
+        temporality=_temporality_for(payload),
+        context=await _context_for(db, job, payload, language),
     )
     job.approved_count = len(outcome.approved)
     job.rejected_count = len(outcome.rejected)

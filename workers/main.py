@@ -19,6 +19,8 @@ from app.core.database import session_scope
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import close_redis, init_redis, redis_ping
 from app.payments.maintenance import expire_lapsed_subscriptions
+from app.services import news_banks, news_corpus
+from app.services.bank_inventory import retire_expired_questions
 from app.services.generation_jobs import process_inventory_maintenance, process_queued_jobs
 from app.services.matches import expire_stale
 
@@ -34,6 +36,20 @@ _SUBSCRIPTION_SWEEP_TICKS = 360
 #: challenge has a 48-hour fuse, but a live lobby nobody joined should turn
 #: into a playable async challenge while the challenger is still in the app.
 _MATCH_SWEEP_TICKS = 12
+
+#: ~5 minutes. Expired questions are already excluded from every selection
+#: query by `not_expired`, so this sweep only moves their status to keep
+#: inventory counts honest — it is bookkeeping, not a correctness deadline.
+_FRESHNESS_SWEEP_TICKS = 30
+
+#: ~30 minutes. Faster would be pointless — the feeds themselves refresh on the
+#: order of minutes to hours — and it would be rude to publishers serving these
+#: for free. The whole harvest is a dozen concurrent GETs.
+_HARVEST_TICKS = 180
+
+#: ~6 hours. Retention is a 45-day window, so the exact moment a document falls
+#: out of it does not matter.
+_CORPUS_PURGE_TICKS = 2160
 
 
 def _handle_signal(*_: object) -> None:
@@ -86,6 +102,48 @@ async def run() -> None:
             except Exception as exc:  # noqa: BLE001 — never kill the loop
                 logger.exception("match_sweep_failed", error=str(exc))
 
+        retired = 0
+        if ticks % _FRESHNESS_SWEEP_TICKS == 0:
+            try:
+                async with session_scope() as db:
+                    retired = await retire_expired_questions(db)
+            except Exception as exc:  # noqa: BLE001 — never kill the loop
+                logger.exception("freshness_sweep_failed", error=str(exc))
+
+        # Harvest on the first tick as well as on the interval: a worker that
+        # has just been redeployed should not leave the corpus stale for half
+        # an hour, and on a cold database it is the only way the corpus ever
+        # gets a first row.
+        harvested = 0
+        if ticks == 1 or ticks % _HARVEST_TICKS == 0:
+            try:
+                async with session_scope() as db:
+                    harvested = await news_corpus.harvest(db)
+            except Exception as exc:  # noqa: BLE001 — never kill the loop
+                logger.exception("harvest_failed", error=str(exc))
+
+        if ticks % _CORPUS_PURGE_TICKS == 0:
+            try:
+                async with session_scope() as db:
+                    await news_corpus.purge_old(db)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("corpus_purge_failed", error=str(exc))
+
+        # Checked often, claimed once a day. The claim is a Redis day-key, so
+        # the cost of checking is one GET and a redeploy cannot double-build.
+        # Deliberately after the harvest branch: on the very first tick of a
+        # fresh deploy the corpus fills, and this then has something to build
+        # from instead of skipping on a thin corpus.
+        news_banks_built = 0
+        if ticks % _HARVEST_TICKS == 0 or ticks == 1:
+            try:
+                if await news_banks.claim_daily_build():
+                    async with session_scope() as db:
+                        built = await news_banks.refresh_all(db)
+                    news_banks_built = sum(built.values())
+            except Exception as exc:  # noqa: BLE001 — never kill the loop
+                logger.exception("news_banks_failed", error=str(exc))
+
         logger.info(
             "worker_heartbeat",
             redis=ok,
@@ -93,6 +151,9 @@ async def run() -> None:
             topups_enqueued=enqueued,
             subscriptions_expired=expired,
             matches_closed=matches_closed,
+            questions_retired=retired,
+            documents_harvested=harvested,
+            news_bank_questions=news_banks_built,
         )
         await asyncio.sleep(5 if (processed or enqueued) else 10)
 

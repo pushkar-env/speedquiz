@@ -62,6 +62,7 @@ from app.services.anticheat import (
 )
 from app.services.localization import localized_topic_name
 from app.services.progression import apply_xp, update_daily_streak
+from app.services.question_filters import not_expired
 from app.services.scoring import scoring_service
 from app.services.share import build_share_payload
 
@@ -269,6 +270,11 @@ async def _select_questions(
     """
     language_code = normalize_language(language).value
     low, high = DIFFICULTY_RANGES[difficulty]
+    # One timestamp for every phase of the selection. Recomputing per fetch
+    # could let a question expire between the unseen pass and the recycled
+    # pass, which would be a confusing intermittent gap rather than a bug
+    # anyone could reproduce.
+    now = _now()
     seen_by_user: set[UUID] = set()
     if prefer_unseen_for_user:
         seen_by_user = await _user_seen_question_ids(
@@ -286,6 +292,7 @@ async def _select_questions(
                 Question.topic_id == topic_id,
                 Question.status == QuestionStatus.ACTIVE,
                 Question.language == language_code,
+                not_expired(now),
             )
         )
         if difficulty_bound:

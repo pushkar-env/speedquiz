@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -30,6 +30,7 @@ from app.models import (
 from app.schemas.daily import DailyChallengeOut
 from app.schemas.quiz import QuizSessionOut
 from app.services.daily_constants import DAILY_MIN_COUNT, DAILY_TARGET_COUNT, seed_for_date
+from app.services.question_filters import not_expired
 from app.services.quiz_service import (
     MODE_DEFAULTS,
     _now,
@@ -68,7 +69,6 @@ async def ensure_today(db: AsyncSession, *, challenge_date: Optional[date] = Non
         )
 
     rng = random.Random(seed_for_date(day))
-    topic = topics[day.timetuple().tm_yday % len(topics)]
     difficulty = DifficultyLabel.MEDIUM
     low, high = (0.35, 0.65)
 
@@ -78,37 +78,45 @@ async def ensure_today(db: AsyncSession, *, challenge_date: Optional[date] = Non
     # stay a fair comparison.
     daily_language = DEFAULT_LANGUAGE.value
 
-    candidates = list(
-        (
-            await db.execute(
-                select(Question.id)
-                .where(
-                    Question.topic_id == topic.id,
-                    Question.status == QuestionStatus.ACTIVE,
-                    Question.language == daily_language,
-                    Question.difficulty >= low,
-                    Question.difficulty <= high,
-                )
-            )
+    # A daily challenge is one pinned set feeding one shared leaderboard, so a
+    # question must still be true at the *end* of the day, not merely at the
+    # moment the set is built. Picking one that expires at noon would either
+    # shrink the quiz mid-day or start serving a stale fact — both of which
+    # make the day's scores incomparable.
+    day_end = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(days=1)
+
+    async def _candidates(topic_id, *, difficulty_bound: bool) -> list:
+        stmt = select(Question.id).where(
+            Question.topic_id == topic_id,
+            Question.status == QuestionStatus.ACTIVE,
+            Question.language == daily_language,
+            not_expired(day_end),
         )
-        .scalars()
-        .all()
-    )
-    if len(candidates) < DAILY_MIN_COUNT:
-        candidates = list(
-            (
-                await db.execute(
-                    select(Question.id).where(
-                        Question.topic_id == topic.id,
-                        Question.status == QuestionStatus.ACTIVE,
-                        Question.language == daily_language,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-    if len(candidates) < DAILY_MIN_COUNT:
+        if difficulty_bound:
+            stmt = stmt.where(Question.difficulty >= low, Question.difficulty <= high)
+        return list((await db.execute(stmt)).scalars().all())
+
+    # Walk the topic ring from the day's slot and take the first topic that can
+    # actually fill a challenge.
+    #
+    # Previously this committed to `topics[day_of_year % len]` and 409'd if that
+    # one came up short, which was survivable while every topic was a permanent
+    # bank. Rolling news topics are in this rotation now and are legitimately
+    # empty on a day the corpus was thin — without the walk, one quiet Tuesday
+    # in the sport feed would take out the daily challenge for everybody.
+    start = day.timetuple().tm_yday % len(topics)
+    topic = None
+    candidates: list = []
+    for offset in range(len(topics)):
+        contender = topics[(start + offset) % len(topics)]
+        found = await _candidates(contender.id, difficulty_bound=True)
+        if len(found) < DAILY_MIN_COUNT:
+            found = await _candidates(contender.id, difficulty_bound=False)
+        if len(found) >= DAILY_MIN_COUNT:
+            topic, candidates = contender, found
+            break
+
+    if topic is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Not enough questions for today's daily challenge",
@@ -228,6 +236,10 @@ async def start_daily(db: AsyncSession, user: User) -> QuizSessionOut:
             detail="Daily challenge is misconfigured",
         )
 
+    # Deliberately *not* filtered by expiry. `ensure_today` already required
+    # every pinned question to outlive the day; re-checking here would let a
+    # question vanish between two players' runs and quietly make their scores
+    # incomparable. The pinned set is immutable for the day it belongs to.
     questions = list(
         (
             await db.execute(

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional
 
 from app.core.config import get_settings
+from app.core.freshness import (
+    DEFAULT_VOLATILITY,
+    Temporality,
+    Volatility,
+    temporal_hint,
+)
 from app.core.languages import DEFAULT_LANGUAGE, ContentLanguage, normalize_language
 
 
@@ -19,6 +26,17 @@ class GeneratedQuestionDraft:
     subcategory: Optional[str] = None
     difficulty: float = 0.5
     source: Optional[str] = None
+    #: How fast this particular fact goes stale. Per question, not per batch:
+    #: a news-sourced batch legitimately mixes "who was appointed yesterday"
+    #: with "in which year was the office created".
+    volatility: Volatility = DEFAULT_VOLATILITY
+    #: When the fact was last known true — the publish date of the source it
+    #: came from. ``None`` anchors the TTL to generation time instead.
+    valid_as_of: Optional[datetime] = None
+    #: Indices into the grounding context the model was given, as it claimed
+    #: them. Empty for ungrounded generation; validated in the pipeline, where
+    #: an unsupported claim is what separates "cited" from "made up".
+    source_ids: list[str] = field(default_factory=list)
     #: Language the draft was *asked* for. The pipeline stamps it onto the
     #: stored question, so a mislabelled draft would poison a whole bank —
     #: providers must never infer it from the text they got back.
@@ -34,6 +52,54 @@ class ValidationResult:
     difficulty: float = 0.5
 
 
+@dataclass
+class ContextSnippet:
+    """One retrieved fact the model may build a question from."""
+
+    #: Label the model cites — "S1", "S2". Short on purpose: the model repeats
+    #: these back for every question, and a UUID would cost more output tokens
+    #: than the citation is worth.
+    id: str
+    title: str
+    summary: str
+    url: str
+    source: str
+    published_at: Optional[datetime] = None
+
+    def render(self) -> str:
+        stamp = self.published_at.strftime("%Y-%m-%d") if self.published_at else "undated"
+        body = self.summary.strip() or self.title.strip()
+        return f"[{self.id}] ({stamp}, {self.source}) {self.title.strip()} — {body}"
+
+
+@dataclass
+class RetrievedContext:
+    """Grounding handed to a generation call.
+
+    Carries the snippets *and* the newest publish date among them, because the
+    pipeline anchors question TTLs to when the facts were true rather than to
+    when generation happened.
+    """
+
+    snippets: list[ContextSnippet] = field(default_factory=list)
+    query: str = ""
+
+    def __bool__(self) -> bool:
+        return bool(self.snippets)
+
+    @property
+    def valid_ids(self) -> set[str]:
+        return {s.id for s in self.snippets}
+
+    @property
+    def newest_published_at(self) -> Optional[datetime]:
+        stamps = [s.published_at for s in self.snippets if s.published_at]
+        return max(stamps) if stamps else None
+
+    def render(self) -> str:
+        return "\n".join(s.render() for s in self.snippets)
+
+
 class LLMProvider(ABC):
     @abstractmethod
     async def generate_questions(
@@ -45,6 +111,7 @@ class LLMProvider(ABC):
         style: Optional[str] = None,
         subcategory: Optional[str] = None,
         language: ContentLanguage = DEFAULT_LANGUAGE,
+        context: Optional[RetrievedContext] = None,
     ) -> list[GeneratedQuestionDraft]:
         raise NotImplementedError
 
@@ -122,11 +189,16 @@ class MockLLMProvider(LLMProvider):
         style: Optional[str] = None,
         subcategory: Optional[str] = None,
         language: ContentLanguage = DEFAULT_LANGUAGE,
+        context: Optional[RetrievedContext] = None,
     ) -> list[GeneratedQuestionDraft]:
         language = normalize_language(language)
         copy = _MOCK_COPY[language]
         drafts: list[GeneratedQuestionDraft] = []
         style_bit = f" · {style}" if style else ""
+        # Cite the grounding round-robin when there is any, so the pipeline's
+        # citation gate is exercised by the offline provider too — a gate only
+        # ever run against the real API is a gate nobody tests.
+        snippet_ids = [s.id for s in context.snippets] if context else []
         for i in range(count):
             drafts.append(
                 GeneratedQuestionDraft(
@@ -149,6 +221,8 @@ class MockLLMProvider(LLMProvider):
                     ),
                     source="mock",
                     language=language,
+                    source_ids=[snippet_ids[i % len(snippet_ids)]] if snippet_ids else [],
+                    valid_as_of=context.newest_published_at if context else None,
                     meta={"style": style, "batch_salt": self._batch_salt},
                 )
             )
@@ -204,10 +278,19 @@ class MockLLMProvider(LLMProvider):
         # Hindi has no letter case, and `.upper()` on Devanagari is a no-op, so
         # the title-casing below is harmless in both languages.
         subject = (cleaned.strip(" ।.") or prompt.strip())[:80] or "General Knowledge"
+        # The mock has no judgement of its own, so it reuses the deterministic
+        # hint the real path uses as a floor. That keeps dev and test runs on
+        # the same temporality logic production uses, rather than pretending
+        # every offline topic is settled.
+        hinted = temporal_hint(prompt)
+        temporality = hinted or Temporality.STATIC
         return {
             "subject": subject[:1].upper() + subject[1:] if subject else "General Knowledge",
             "category": "custom",
             "confidence": 0.7,
+            "temporality": temporality.value,
+            "recency_window_days": 1 if temporality is Temporality.CURRENT else None,
+            "search_queries": [subject] if temporality is not Temporality.STATIC else [],
         }
 
     async def teach(
