@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.pipeline import run_generation_pipeline
 from app.ai.providers import RetrievedContext, get_llm_provider
 from app.core.config import get_settings
+from app.core.database import session_scope
 from app.core.freshness import Temporality
 from app.core.languages import ContentLanguage, normalize_language, supported_languages
 from app.core.logging import get_logger
@@ -161,8 +162,16 @@ async def refresh_bank(
     return len(outcome.approved)
 
 
-async def refresh_all(db: AsyncSession) -> dict[str, int]:
-    """Rebuild every news bank in every supported language."""
+async def refresh_all() -> dict[str, int]:
+    """Rebuild every news bank in every supported language.
+
+    Opens a session *per bank* rather than wrapping all twelve in one.
+    Building a bank means two LLM round trips, so a single shared transaction
+    would stay open for several minutes across ~24 network calls — long enough
+    for Neon's idle-in-transaction timeout to kill it and discard every bank
+    built so far. Per-bank sessions mean each one commits the moment it is
+    done, and a failure costs that bank only.
+    """
     if not settings.daily_news_banks_enabled:
         return {}
 
@@ -171,7 +180,8 @@ async def refresh_all(db: AsyncSession) -> dict[str, int]:
         for profile in supported_languages():
             key = f"{spec.slug}:{profile.code}"
             try:
-                results[key] = await refresh_bank(db, spec, language=profile.language)
+                async with session_scope() as db:
+                    results[key] = await refresh_bank(db, spec, language=profile.language)
             except Exception as exc:  # noqa: BLE001 — one bad category must not
                 # abandon the other eleven banks.
                 logger.exception(

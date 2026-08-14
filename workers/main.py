@@ -138,8 +138,8 @@ async def run() -> None:
         if ticks % _HARVEST_TICKS == 0 or ticks == 1:
             try:
                 if await news_banks.claim_daily_build():
-                    async with session_scope() as db:
-                        built = await news_banks.refresh_all(db)
+                    # Opens a session per bank internally — see refresh_all.
+                    built = await news_banks.refresh_all()
                     news_banks_built = sum(built.values())
             except Exception as exc:  # noqa: BLE001 — never kill the loop
                 logger.exception("news_banks_failed", error=str(exc))
