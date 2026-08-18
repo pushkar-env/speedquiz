@@ -9,13 +9,14 @@ import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
+import 'package:speedquiz/core/push/local_notifications.dart';
 import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
-import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
 import 'package:speedquiz/features/multiplayer/presentation/inbox_channel.dart';
 import 'package:speedquiz/features/multiplayer/presentation/multiplayer_providers.dart';
+import 'package:speedquiz/features/multiplayer/presentation/widgets/notification_popup.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
 /// Bottom-tab shell. The bar floats over the content with a frosted blur so
@@ -40,7 +41,8 @@ class MainShell extends ConsumerStatefulWidget {
   /// Index of the tab back always falls through to.
   static const _homeIndex = 0;
 
-  /// The one tab that shows a count.
+  /// Home carries the inbox count, because Home is where the bell is. A player
+  /// on any other tab has no way to know something arrived otherwise.
   static const _battleIndex = 2;
 
   /// Labels are resolved per build rather than stored, so switching language
@@ -157,36 +159,69 @@ class _MainShellState extends ConsumerState<MainShell> {
     if (ref.read(inboxChannelProvider).isConnected) return;
 
     ref.invalidate(socialSummaryProvider);
-    final body = alert.body;
-    if (body == null || body.isEmpty) return;
-    Haptics.tap();
-    SqToast.show(context, body);
+    final brief = NotificationBrief.fromPush(
+      type: alert.type,
+      title: alert.title,
+      body: alert.body,
+      deepLink: alert.deepLink,
+      fallbackActor: context.l10n.player,
+    );
+    if (brief == null) return;
+    NotificationPopup.show(context, brief);
   }
 
-  /// Raise a banner for something that just arrived.
+  /// Surface something that just arrived.
   ///
-  /// Only for the types that are about to cost the player something if missed.
-  /// A result they can read whenever; a challenge has a lobby waiting on it.
+  /// Every type gets the same banner now. It used to be a modal for a
+  /// challenge and a one-line toast for everything else, which meant a friend
+  /// request announced itself with prose the player could not act on and a
+  /// result announced itself not at all — while the one kind that did get a
+  /// dialog got it thrown over whatever they were doing.
+  ///
+  /// [NotificationPopup] is top-anchored, non-blocking and closable, so it is
+  /// safe to raise from anywhere in the app including a live round; the two
+  /// kinds someone is waiting on an answer to carry their buttons inline. It
+  /// goes into the *root* overlay, which is why it appears over the match
+  /// screen and the friends list too, not only over a tab.
   void _onInboxEvent(InboxEvent event) {
     if (!mounted) return;
+    final brief =
+        NotificationBrief.fromEvent(event, fallbackActor: context.l10n.player);
+
+    if (_isForeground) {
+      NotificationPopup.show(context, brief);
+      return;
+    }
+    _postToSystemTray(brief);
+  }
+
+  bool get _isForeground =>
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+
+  /// The app is not on screen, so a banner would be shown to nobody.
+  ///
+  /// Only when this build has no Firebase project. With one, the server has
+  /// already sent the same event as a push and Android has already drawn it in
+  /// the tray — posting our own as well is how a player ends up with two
+  /// notifications for one challenge. Without one, the socket is the only
+  /// thing that knows, and staying silent means the event is simply lost until
+  /// they next open the app.
+  ///
+  /// Same channel the push would have used, so silencing it in system settings
+  /// silences both.
+  void _postToSystemTray(NotificationBrief brief) {
+    if (ref.read(pushServiceProvider).isConfigured) return;
     final l10n = context.l10n;
-    final actor = event.actorName ?? '';
-
-    final message = switch (event.type) {
-      AppNotificationType.friendRequest => l10n.notificationFriendRequest(actor),
-      AppNotificationType.friendAccepted => l10n.notificationFriendAccepted(actor),
-      AppNotificationType.matchInvite => l10n.notificationMatchInvite(
-          actor,
-          (event.payload['topic_name'] as String?) ?? '',
-        ),
-      AppNotificationType.matchYourTurn => l10n.notificationYourTurn(actor),
-      AppNotificationType.matchResult => null,
-      AppNotificationType.matchExpiring => null,
-    };
-    if (message == null) return;
-
-    Haptics.tap();
-    SqToast.show(context, message);
+    unawaited(
+      ref.read(localNotificationServiceProvider).showNow(
+            // Keyed to the notification, so the same event arriving twice
+            // replaces its own entry rather than stacking a duplicate.
+            id: brief.notificationId.hashCode,
+            title: brief.title(l10n),
+            body: brief.body(l10n),
+            deepLink: brief.target,
+          ),
+    );
   }
 
   void _goTab(int i) {
@@ -257,6 +292,7 @@ class _MainShellState extends ConsumerState<MainShell> {
     }
 
     final p = context.sq;
+    final summary = ref.watch(socialSummaryProvider).valueOrNull;
 
     return PopScope(
       canPop: false,
@@ -271,11 +307,19 @@ class _MainShellState extends ConsumerState<MainShell> {
           tabs: MainShell._tabsFor(context.l10n),
           index: index,
           onSelect: _select,
-          // Only the Battle tab carries a count. It is what tells someone a
-          // friend is waiting on their turn without them opening the app.
+          // Two counts, deliberately different questions.
+          //
+          // Home answers "is there anything unread in the inbox", because the
+          // bell that opens the inbox lives there — without this, a player on
+          // any other tab has no way to know a notification arrived.
+          //
+          // Battle answers "is anyone waiting on me", which is a friend
+          // request or a turn owed. The two overlap but are not the same: a
+          // read notification about a finished match still counts for nothing
+          // on Battle, and an unopened result still counts on Home.
           badges: {
-            MainShell._battleIndex:
-                ref.watch(socialSummaryProvider).valueOrNull?.badgeCount ?? 0,
+            MainShell._homeIndex: summary?.unreadNotifications ?? 0,
+            MainShell._battleIndex: summary?.badgeCount ?? 0,
           },
         ),
       ),
@@ -588,7 +632,7 @@ class _NavItem extends StatelessWidget {
                           Positioned(
                             right: -6,
                             top: -4,
-                            child: _CountDot(count: badge),
+                            child: SqCountDot(count: badge),
                           ),
                       ],
                     ),
@@ -614,36 +658,3 @@ class _NavItem extends StatelessWidget {
 }
 
 
-/// The unread count on a tab.
-///
-/// Capped at "9+" so a neglected inbox cannot widen the icon and push the
-/// whole bar out of alignment.
-class _CountDot extends StatelessWidget {
-  const _CountDot({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      constraints: const BoxConstraints(minWidth: 15),
-      decoration: BoxDecoration(
-        color: AppColors.danger,
-        borderRadius: BorderRadius.circular(AppRadii.pill),
-        border: Border.all(color: theme.sq.surface, width: 1.4),
-      ),
-      child: Text(
-        count > 9 ? '9+' : '$count',
-        textAlign: TextAlign.center,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: Colors.white,
-          fontSize: 9,
-          height: 1.2,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}

@@ -327,6 +327,10 @@ async def send_friend_request(
             user_id=target_id,
             notification_type=NotificationType.FRIEND_REQUEST,
             actor_user_id=user.id,
+            # The edge id, so the recipient can accept from the banner or the
+            # inbox row without first loading the requests screen to find out
+            # what this request is called.
+            payload={"request_id": str(edge.id)},
             deep_link="/battle/friends",
             push_params={"actor": user.profile.username},
         )
@@ -457,6 +461,18 @@ async def mark_notifications_read(
         db, user.id, notification_ids=[notification_id] if notification_id else None
     )
     return {"updated": updated}
+
+
+@router.delete("/notifications")
+async def clear_notifications(user: CurrentUser, db: DbSession) -> dict:
+    """Empty the inbox.
+
+    Deliberately not `204`: the client shows how many were cleared, and a
+    body is also what lets it tell "nothing to clear" apart from a request
+    that never reached the server.
+    """
+    cleared = await notifications.clear_all(db, user.id)
+    return {"cleared": cleared}
 
 
 @router.put("/notifications/preferences")

@@ -148,6 +148,127 @@ void main() {
     });
   });
 
+  group('clock correction', () {
+    // The bug this covers: `clockSkew` read `DateTime.now()` against a fixed
+    // `serverTime`, so the correction grew by a second every second. The
+    // corrected deadline moved earlier as it was watched — the countdown ran at
+    // roughly double speed, auto-submitted half way through the round, and
+    // jumped back up every time a refetch re-anchored it. That is both the
+    // "UI keeps jittering" report and a match finishing while a player was
+    // still reading the question.
+    MatchRound roundWith({required Duration deviceAhead}) {
+      final serverTime = DateTime.utc(2026, 8, 14, 10, 0, 0);
+      return MatchRound(
+        roundIndex: 0,
+        totalRounds: 7,
+        questionId: 'q',
+        prompt: 'p',
+        options: const [],
+        timeLimitMs: 15000,
+        deadlineAt: serverTime.add(const Duration(seconds: 15)),
+        servedAt: serverTime,
+        serverTime: serverTime,
+        receivedAt: serverTime.add(deviceAhead),
+      );
+    }
+
+    test('a round that just arrived has its whole time limit left', () {
+      final round = roundWith(deviceAhead: Duration.zero);
+      expect(
+        round.localDeadline.difference(round.receivedAt),
+        const Duration(seconds: 15),
+      );
+    });
+
+    test('a device clock running fast still gets a full round', () {
+      // Ten minutes ahead. Subtracting the skew — which is what the screen used
+      // to do — puts the deadline ten minutes in the past and times the player
+      // out before they have read the question.
+      final round = roundWith(deviceAhead: const Duration(minutes: 10));
+
+      expect(round.localDeadline, DateTime.utc(2026, 8, 14, 10, 10, 15));
+      expect(
+        round.localDeadline.difference(round.receivedAt),
+        const Duration(seconds: 15),
+      );
+    });
+
+    test('a device clock running slow still gets a full round', () {
+      final round = roundWith(deviceAhead: const Duration(minutes: -10));
+
+      expect(round.localDeadline, DateTime.utc(2026, 8, 14, 9, 50, 15));
+      expect(
+        round.localDeadline.difference(round.receivedAt),
+        const Duration(seconds: 15),
+      );
+    });
+
+    test('the correction is fixed, not re-read from the clock', () {
+      final round = roundWith(deviceAhead: const Duration(seconds: 3));
+      final first = round.localDeadline;
+      // Reading it again later must give the same instant. A skew sampled on
+      // access would have moved by now.
+      expect(round.localDeadline, first);
+      expect(round.clockSkew, const Duration(seconds: 3));
+    });
+
+    test('a score update does not re-anchor the match clock', () {
+      // withScores rebuilds the MatchState. Resampling `receivedAt` there would
+      // jog every deadline derived from it each time an opponent answered.
+      final before = _match();
+      final after = before.withScores({_them: 999});
+      expect(after.receivedAt, before.receivedAt);
+      expect(after.clockSkew, before.clockSkew);
+    });
+  });
+
+  group('match rules on the wire', () {
+    MatchAnswerFeedback feedback(Map<String, dynamic> extra) {
+      return MatchAnswerFeedback.fromJson({
+        'round_index': 6,
+        'is_correct': true,
+        'correct_option_index': 1,
+        'points_awarded': 420,
+        'speed_bonus': 40,
+        'streak': 4,
+        'score': 900,
+        ...extra,
+      });
+    }
+
+    test('reads the combo, the first bonus and the final round', () {
+      final result = feedback({
+        'combo_multiplier': 2.0,
+        'combo_label': 'unstoppable',
+        'first_bonus': 15,
+        'is_final_round': true,
+        'catchup_applied': true,
+      });
+
+      expect(result.comboTier, ComboTier.unstoppable);
+      expect(result.comboMultiplier, 2.0);
+      expect(result.hasCombo, isTrue);
+      expect(result.firstBonus, 15);
+      expect(result.isFinalRound, isTrue);
+      expect(result.catchupApplied, isTrue);
+    });
+
+    test('an older server with no rule fields degrades to a plain answer', () {
+      final result = feedback(const {});
+
+      expect(result.comboTier, ComboTier.none);
+      expect(result.comboMultiplier, 1.0);
+      expect(result.hasCombo, isFalse);
+      expect(result.firstBonus, 0);
+      expect(result.isFinalRound, isFalse);
+      expect(result.pointsAwarded, 420);
+    });
+
+    test('an unknown combo tier is not a crash', () {
+      expect(feedback({'combo_label': 'godlike'}).comboTier, ComboTier.none);
+    });
+  });
+
   group('rebuild triggers', () {
     test('finishing the last round is a change the screen rebuilds for', () {
       // `my_rounds_answered` decides between the board and the waiting view.

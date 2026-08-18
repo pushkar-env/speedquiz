@@ -1,5 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Android 13+ gates every notification behind a runtime grant. Asked for
+         in context — when Battle is opened, or once the player has played
+         something — never on a cold first launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Reminders are scheduled against the system alarm clock, which a reboot
+         clears. Without this the plugin cannot re-register them and every
+         pending reminder is silently lost the first time the phone restarts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="SpeedQuiz"
         android:name="${applicationName}"

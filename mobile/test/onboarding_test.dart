@@ -20,7 +20,6 @@ import 'package:speedquiz/features/daily/domain/daily_models.dart';
 import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
 import 'package:speedquiz/features/entitlements/domain/entitlement_models.dart';
 import 'package:speedquiz/features/multiplayer/presentation/inbox_channel.dart';
-import 'package:speedquiz/features/onboarding/domain/onboarding_state.dart';
 import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
 import 'package:speedquiz/features/profile/data/profile_repository.dart';
 import 'package:speedquiz/features/profile/domain/profile_models.dart';
@@ -225,66 +224,55 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   group('the gate', () {
-    test('a fresh install is asked', () async {
-      final h = _harness();
+    test('a brand-new account is asked', () {
+      expect(_freshGuest.needsOnboarding, isTrue);
+    });
 
-      await h.container.read(onboardingControllerProvider.notifier).hydrate();
+    test('an account with a life of its own is never asked', () {
+      // The reported bug, as a unit: this account carries
+      // `onboardingCompleted == false` — it predates the flag — but it is on
+      // level 7 with 4200 XP. Nobody with that on the board is a new player,
+      // and asking them to pick a name is asking them to rename themselves.
+      expect(_establishedPlayer.onboardingCompleted, isFalse);
+      expect(_establishedPlayer.needsOnboarding, isFalse);
+    });
 
+    test('an account that has answered is never asked again', () {
       expect(
-        h.container.read(onboardingControllerProvider).status,
-        OnboardingStatus.needed,
+        _freshGuest.copyWith(onboardingCompleted: true).needsOnboarding,
+        isFalse,
       );
     });
 
-    test('an install that already has a session is never asked', () async {
-      // The upgrade case: everyone already playing when this shipped must go
-      // on playing, including after a later sign-out.
-      final h = _harness(me: _freshGuest);
+    test('a signed-out device is asked nothing at all', () async {
+      // The flow lives behind sign-in now, so a device record — however fresh
+      // — is not a reason to interrupt anyone. This is what made every
+      // reinstall, and every failed session restore, look like a first run.
+      final h = _harness();
       await h.container.read(onboardingControllerProvider.notifier).hydrate();
 
       await h.container.read(authControllerProvider.notifier).bootstrap();
 
-      expect(
-        h.container.read(onboardingControllerProvider).status,
-        OnboardingStatus.done,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('onboarding_v1_seen'), isTrue);
-    });
-
-    test('finishing the flow closes it for good', () async {
-      final h = _harness();
-      final onboarding =
-          h.container.read(onboardingControllerProvider.notifier);
-      await onboarding.hydrate();
-
-      await onboarding.complete(name: 'Aanya');
-
-      expect(
-        h.container.read(onboardingControllerProvider).status,
-        OnboardingStatus.done,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('onboarding_v1_name'), 'Aanya');
-      expect(prefs.getBool('onboarding_v1_pending'), isTrue);
+      expect(h.container.read(authControllerProvider), isA<AuthSignedOut>());
+      expect(h.profile.onboardingUpdate, isNull);
     });
   });
 
   group('reaching the profile', () {
-    test('the name and both languages land on the first sign-in', () async {
+    test('the name and both languages land as the flow finishes', () async {
       final h = _harness();
       final onboarding =
           h.container.read(onboardingControllerProvider.notifier);
       await onboarding.hydrate();
+      await h.container.read(authControllerProvider.notifier).continueAsGuest();
       await h.container
           .read(appLanguageProvider.notifier)
           .setLanguage(AppLanguage.hindi);
       await h.container
           .read(quizLanguageProvider.notifier)
           .setLanguage(AppLanguage.hindi);
-      await onboarding.complete(name: 'Aanya');
 
-      await h.container.read(authControllerProvider.notifier).continueAsGuest();
+      await onboarding.complete(name: 'Aanya');
 
       final update = h.profile.onboardingUpdate;
       expect(update, isNotNull);
@@ -295,9 +283,11 @@ void main() {
       // And the app is already showing it, without a second round trip.
       final state = h.container.read(authControllerProvider) as AuthAuthenticated;
       expect(state.user.chosenName, 'Aanya');
+      expect(state.user.needsOnboarding, isFalse, reason: 'the gate has closed');
+      final prefs = await SharedPreferences.getInstance();
       expect(
-        h.container.read(onboardingControllerProvider).pendingName,
-        isNull,
+        prefs.getBool('onboarding_v1_pending'),
+        isFalse,
         reason: 'the device stops carrying an answer the server now has',
       );
     });
@@ -307,9 +297,9 @@ void main() {
       final onboarding =
           h.container.read(onboardingControllerProvider.notifier);
       await onboarding.hydrate();
-      await onboarding.complete(name: null);
-
       await h.container.read(authControllerProvider.notifier).continueAsGuest();
+
+      await onboarding.complete(name: null);
 
       final update = h.profile.onboardingUpdate;
       expect(update, isNotNull);
@@ -317,54 +307,67 @@ void main() {
       expect(update.appLanguage, 'en');
     });
 
-    test('an account that has been played keeps its own name', () async {
-      // Reinstall, type something on the way in, then sign into an account
-      // that already has a real display name. The account wins.
+    test('a failed write still lets the player through', () async {
+      // The router holds a player on this screen until the account says it is
+      // onboarded. Waiting on the network to release them would trap anyone
+      // who finished the flow on a bad connection.
       final h = _harness();
       final onboarding =
           h.container.read(onboardingControllerProvider.notifier);
       await onboarding.hydrate();
-      await onboarding.complete(name: 'Typed On The Way In');
-      h.profile.currentDisplayName = _establishedPlayer.displayName;
-
-      await h.container.read(authControllerProvider.notifier).signInWithGoogle();
-
-      final update = h.profile.onboardingUpdate;
-      expect(update, isNotNull);
-      expect(update!.displayName, isNull);
-      final state = h.container.read(authControllerProvider) as AuthAuthenticated;
-      expect(state.user.chosenName, 'Nova Sharma');
-    });
-
-    test('a failed sync keeps the answer and retries next session', () async {
-      final h = _harness();
-      final onboarding =
-          h.container.read(onboardingControllerProvider.notifier);
-      await onboarding.hydrate();
-      await onboarding.complete(name: 'Aanya');
+      await h.container.read(authControllerProvider.notifier).continueAsGuest();
       h.profile.failWith = DioException(
         requestOptions: RequestOptions(path: '/users/me'),
         type: DioExceptionType.connectionError,
       );
 
-      await h.container.read(authControllerProvider.notifier).continueAsGuest();
+      await onboarding.complete(name: 'Aanya');
 
-      // The sign-in itself stands — onboarding is not allowed to break it.
-      expect(h.container.read(authControllerProvider), isA<AuthAuthenticated>());
+      final state = h.container.read(authControllerProvider) as AuthAuthenticated;
+      expect(state.user.needsOnboarding, isFalse, reason: 'not trapped');
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('onboarding_v1_pending'), isTrue);
+      expect(
+        prefs.getBool('onboarding_v1_pending'),
+        isTrue,
+        reason: 'the answer is still owed to the server',
+      );
 
-      // Next launch, back online.
+      // Next launch, back online: the session hook pays the debt.
       h.profile.failWith = null;
       await h.container.read(authControllerProvider.notifier).bootstrap();
 
       expect(h.profile.onboardingUpdate?.displayName, 'Aanya');
+    });
+
+    test('a retry never renames an account that has been played', () async {
+      // The retry path runs on *any* session, including a sign-in to an
+      // established account on a device still carrying someone else's answer.
+      final h = _harness(google: _establishedPlayer);
+      final onboarding =
+          h.container.read(onboardingControllerProvider.notifier);
+      await onboarding.hydrate();
+      await h.container.read(authControllerProvider.notifier).continueAsGuest();
+      h.profile.failWith = DioException(
+        requestOptions: RequestOptions(path: '/users/me'),
+        type: DioExceptionType.connectionError,
+      );
+      await onboarding.complete(name: 'Typed On The Way In');
+      h.profile.failWith = null;
+      h.profile.currentDisplayName = _establishedPlayer.displayName;
+      // The failed attempt is on the record too; this asserts about the retry.
+      h.profile.updates.clear();
+
+      await h.container.read(authControllerProvider.notifier).signInWithGoogle();
+
+      final update = h.profile.onboardingUpdate;
+      expect(update, isNotNull);
+      expect(update!.displayName, isNull, reason: 'the account keeps its name');
       final state = h.container.read(authControllerProvider) as AuthAuthenticated;
-      expect(state.user.chosenName, 'Aanya');
+      expect(state.user.chosenName, 'Nova Sharma');
     });
   });
 
-  testWidgets('a first run names itself and arrives named on Home',
+  testWidgets('a first run signs in, then names itself, then lands on Home',
       (tester) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
@@ -395,11 +398,20 @@ void main() {
       ),
     );
 
-    // Splash finds no session and the gate sends a first run to the flow
-    // rather than straight at a sign-in wall.
+    // Splash finds no session and offers the ways in. Nothing is asked of
+    // someone who has not said who they are yet — this is the whole change.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('PLAY AS GUEST'), findsOneWidget);
+    expect(find.text('Pick your language'), findsNothing);
+
+    await tester.tap(find.text('PLAY AS GUEST'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Now there is an account, and it is a new one.
     expect(find.text('Pick your language'), findsOneWidget);
 
     await tester.tap(find.text('CONTINUE'));
@@ -412,22 +424,12 @@ void main() {
     await tester.tap(find.text("LET'S GO"));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-
-    // Onboarding hands off to the existing sign-in screen, which now knows
-    // who it is talking to.
-    expect(find.text('Ready when you are, Aanya.'), findsOneWidget);
-    expect(find.text('PLAY AS GUEST'), findsOneWidget);
-
-    await tester.tap(find.text('PLAY AS GUEST'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(tester.takeException(), isNull);
     // The generated handle never reaches the greeting.
     expect(h.profile.onboardingUpdate?.displayName, 'Aanya');
     expect(find.textContaining('AANYA'), findsOneWidget);
-    expect(find.text('Aanya'), findsWidgets);
     expect(find.textContaining('player_a1b2c3d4'), findsNothing);
   });
 }

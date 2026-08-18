@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/core/feedback/audio_service.dart';
+import 'package:speedquiz/core/push/local_notifications.dart';
 import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/i18n/language_providers.dart';
@@ -12,8 +13,31 @@ import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/deep_link_listener.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/multiplayer/presentation/inbox_channel.dart';
+import 'package:speedquiz/features/multiplayer/presentation/widgets/notification_popup.dart';
+import 'package:speedquiz/features/reminders/data/reminder_scheduler.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/core/theme/theme_mode_provider.dart';
+
+/// Every tapped-notification deep link, from both sources, as one stream.
+///
+/// A push and an on-device reminder both hand back an in-app path and both
+/// want the same navigation; the router should not have to care which of the
+/// two produced it. Merged here rather than inside either service so neither
+/// has to know the other exists.
+final notificationLinksProvider = Provider<Stream<String>>((ref) {
+  final merged = StreamController<String>.broadcast();
+  final subscriptions = <StreamSubscription<String>>[
+    ref.watch(pushServiceProvider).deepLinks.listen(merged.add),
+    ref.watch(localNotificationServiceProvider).deepLinks.listen(merged.add),
+  ];
+  ref.onDispose(() {
+    for (final subscription in subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    unawaited(merged.close());
+  });
+  return merged.stream;
+});
 
 class SpeedQuizApp extends ConsumerWidget {
   const SpeedQuizApp({super.key});
@@ -38,6 +62,11 @@ class SpeedQuizApp extends ConsumerWidget {
         // socket — it is authenticated as the account that just left.
         unawaited(ref.read(pushServiceProvider).unregister());
         ref.invalidate(inboxChannelProvider);
+        // Same reasoning for anything already on screen or already on the
+        // clock: a banner and a "your streak ends tonight" both belong to the
+        // account that just left the device.
+        NotificationPopup.clear();
+        unawaited(ref.read(reminderSchedulerProvider).cancelAll());
         return;
       }
       if (previous?.id == next.id) return;
@@ -58,7 +87,7 @@ class SpeedQuizApp extends ConsumerWidget {
 
     return DeepLinkListener(
       router: router,
-      pushLinks: ref.watch(pushServiceProvider).deepLinks,
+      pushLinks: ref.watch(notificationLinksProvider),
       child: MaterialApp.router(
         title: 'SpeedQuiz',
         debugShowCheckedModeBanner: false,

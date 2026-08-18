@@ -26,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -175,6 +175,17 @@ async def notify(
     db.add(row)
     await db.flush()
 
+    # The realtime payload carries the actor's *name*, which the stored one
+    # deliberately does not: an inbox row resolves its actor by id at read
+    # time, so a player who renames themselves is named correctly in history,
+    # while a live banner has one frame to say who this is and no second
+    # request to spend finding out. Every call site already computes the name
+    # for the push copy, so this costs nothing.
+    live_payload = dict(payload or {})
+    actor_name = (push_params or {}).get("actor")
+    if actor_name:
+        live_payload.setdefault("actor", actor_name)
+
     # Straight down the recipient's own channel, before push is even attempted.
     # This is what makes a friend request or a challenge appear on the other
     # device while you watch, rather than whenever that player next happens to
@@ -188,7 +199,7 @@ async def notify(
             "type": notification_type.value,
             "actor_user_id": str(actor_user_id) if actor_user_id else None,
             "match_id": str(match_id) if match_id else None,
-            "payload": payload or {},
+            "payload": live_payload,
             "deep_link": deep_link,
         },
     )
@@ -376,6 +387,23 @@ async def mark_read(
     if notification_ids:
         stmt = stmt.where(Notification.id.in_(notification_ids))
     result = await db.execute(stmt)
+    await db.flush()
+    return int(result.rowcount or 0)
+
+
+async def clear_all(db: AsyncSession, user_id: UUID) -> int:
+    """Empty this player's inbox. Returns how many rows went.
+
+    A real delete rather than a bulk mark-read: "clear" on an inbox means the
+    list is empty afterwards, and leaving the rows behind as read would be a
+    button that appears to do nothing to anyone who has already read them.
+
+    Scoped to one user by the same predicate the list uses, so there is no
+    shape of request that can reach somebody else's inbox.
+    """
+    result = await db.execute(
+        delete(Notification).where(Notification.user_id == user_id)
+    )
     await db.flush()
     return int(result.rowcount or 0)
 

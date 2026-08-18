@@ -22,14 +22,28 @@ from app.models import (
     DevicePlatform,
     DeviceToken,
     Match,
+    MatchDelivery,
+    MatchFormat,
     MatchOutcome,
     MatchParticipant,
+    MatchStatus,
     NotificationType,
+    ParticipantStatus,
     Question,
     QuestionOption,
     UserProfile,
 )
-from app.services import matches, matchmaking, notifications, ranking, realtime, usernames
+from tests.fakes import FakeSession
+
+from app.services import (
+    match_rules,
+    matches,
+    matchmaking,
+    notifications,
+    ranking,
+    realtime,
+    usernames,
+)
 
 
 # --- Usernames --------------------------------------------------------------
@@ -333,8 +347,15 @@ async def test_round_start_payload_carries_the_question_but_never_the_answer():
         "Mars",
         "Earth",
     ]
-    # Nothing that reveals the key, directly or by omission.
-    assert set(payload) == {"question_id", "prompt", "options", "time_limit_ms"}
+    # An explicit allowlist, not a subset check: a new key has to be added here
+    # deliberately, which is the moment to ask whether it leaks the answer.
+    assert set(payload) == {
+        "question_id",
+        "prompt",
+        "options",
+        "time_limit_ms",
+        "is_final_round",
+    }
     assert all(set(o) == {"index", "text"} for o in payload["options"])
     serialized = json.dumps(payload)
     assert "correct" not in serialized
@@ -358,6 +379,364 @@ async def test_round_start_payload_degrades_instead_of_breaking_a_live_match():
         option_orders=[[0, 1, 2, 3], [0, 1, 2, 3]],
     )
     assert await matches._round_payload(_StubQuestionDb(None), match, 0) is None
+
+
+# --- Settlement guards ------------------------------------------------------
+
+
+class _SettlementDb:
+    """Records whether the match was flushed; no rows, no queries."""
+
+    def __init__(self) -> None:
+        self.flushed = 0
+
+    async def flush(self) -> None:
+        self.flushed += 1
+
+
+def _seat(status: ParticipantStatus, rounds_answered: int = 0) -> MatchParticipant:
+    return MatchParticipant(
+        id=uuid4(),
+        match_id=uuid4(),
+        user_id=uuid4(),
+        status=status,
+        rounds_answered=rounds_answered,
+        score=0,
+        total_answer_ms=0,
+        correct_count=0,
+    )
+
+
+def _duel(*seats: MatchParticipant, question_count: int = 3) -> Match:
+    match = Match(
+        id=uuid4(),
+        format=MatchFormat.DUEL,
+        status=MatchStatus.LIVE,
+        delivery=MatchDelivery.ASYNC,
+        question_count=question_count,
+    )
+    match.participants = list(seats)
+    return match
+
+
+async def test_a_duel_does_not_settle_while_the_challenged_player_owes_a_board(
+    monkeypatch,
+):
+    """The reported bug: one player finishes and is declared the winner while
+    the friend they challenged has not had their turn."""
+    settled: list[Match] = []
+    monkeypatch.setattr(
+        matches, "finalize", lambda db, match: _record(settled, match)
+    )
+    monkeypatch.setattr(matches, "_notify_waiting_players", _noop)
+
+    match = _duel(
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+        _seat(ParticipantStatus.INVITED),
+    )
+    finished = await matches._finalize_if_everyone_done(_SettlementDb(), match)
+
+    assert finished is False
+    assert settled == []
+    assert match.status is MatchStatus.AWAITING_OPPONENT, "the inbox needs to say whose turn it is"
+
+
+async def test_a_duel_settles_once_both_sides_have_played(monkeypatch):
+    settled: list[Match] = []
+    monkeypatch.setattr(
+        matches, "finalize", lambda db, match: _record(settled, match)
+    )
+
+    match = _duel(
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+    )
+    assert await matches._finalize_if_everyone_done(_SettlementDb(), match) is True
+    assert settled == [match]
+
+
+async def test_a_room_is_not_held_hostage_by_someone_who_never_turned_up(
+    monkeypatch,
+):
+    """The opposite failure to the one above. In a duel the invitee is the whole
+    opposition; in a room they are one empty chair, and the people who did play
+    are owed their result."""
+    settled: list[Match] = []
+    monkeypatch.setattr(
+        matches, "finalize", lambda db, match: _record(settled, match)
+    )
+
+    match = _duel(
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+        _seat(ParticipantStatus.INVITED),
+    )
+    match.format = MatchFormat.ROOM
+
+    assert await matches._finalize_if_everyone_done(_SettlementDb(), match) is True
+    assert settled == [match]
+
+
+async def _record(sink: list, match: Match) -> None:
+    sink.append(match)
+
+
+async def _noop(*_args, **_kwargs) -> None:
+    return None
+
+
+async def test_parking_on_awaiting_opponent_hands_the_slow_player_their_own_board(
+    monkeypatch,
+):
+    """The deadlock behind "the match will not move".
+
+    A *live-delivery* match parked on AWAITING_OPPONENT keeps resolving every
+    player's round from the shared `match.current_round_index` — and nothing
+    advances that index any more, because `advance_if_due` returns early once
+    the status is no longer LIVE. So the player who still owes rounds is served
+    the same question forever, and every answer comes back `already_answered`.
+    Neither leaving nor waiting resolves it; only the 48-hour expiry does.
+
+    Parking has to hand that player their own board, which is exactly what
+    async delivery means.
+    """
+    monkeypatch.setattr(matches, "_notify_waiting_players", _noop)
+    monkeypatch.setattr(realtime, "publish", _noop)
+
+    slow = _seat(ParticipantStatus.PLAYING, rounds_answered=1)
+    match = _duel(
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+        slow,
+        question_count=3,
+    )
+    match.delivery = MatchDelivery.LIVE
+    match.current_round_index = 2
+
+    await matches._finalize_if_everyone_done(_SettlementDb(), match)
+
+    assert match.status is MatchStatus.AWAITING_OPPONENT
+    assert match.delivery is MatchDelivery.ASYNC, (
+        "a parked match has no shared clock left to run"
+    )
+    assert matches._round_index_for(match, slow) == 1, (
+        "the slow player resumes at their own progress, not the frozen index"
+    )
+
+
+class _ParkedDb:
+    """Answers one `select(Match)` with `rows`, then records the flush."""
+
+    def __init__(self, rows: list) -> None:
+        self._rows = rows
+        self.flushed = 0
+
+    async def execute(self, _statement):
+        return _ScalarResult(self._rows)
+
+    async def flush(self) -> None:
+        self.flushed += 1
+
+
+class _ScalarResult:
+    def __init__(self, rows: list) -> None:
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self) -> list:
+        return list(self._rows)
+
+
+async def test_the_sweep_releases_matches_already_wedged_in_the_database(
+    monkeypatch,
+):
+    """The forward fix does not help a row written before it. A player cannot
+    escape this state by playing, leaving, or waiting for anything short of the
+    48-hour expiry, so the sweep repairs it in place."""
+    monkeypatch.setattr(realtime, "publish", _noop)
+
+    wedged = _duel(
+        _seat(ParticipantStatus.PLAYING, rounds_answered=3),
+        _seat(ParticipantStatus.PLAYING, rounds_answered=1),
+        question_count=3,
+    )
+    wedged.status = MatchStatus.AWAITING_OPPONENT
+    wedged.delivery = MatchDelivery.LIVE
+    wedged.round_started_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    healed = await matches.heal_parked_matches(_ParkedDb([wedged]))
+
+    assert healed == 1
+    assert wedged.delivery is MatchDelivery.ASYNC
+    # Cleared with the delivery: each side runs its own clock from now on, and
+    # a stale shared start would time them out retroactively.
+    assert wedged.round_started_at is None
+
+
+async def test_healing_is_a_no_op_once_the_backlog_is_drained():
+    """It runs on every sweep tick forever, so selecting nothing has to cost
+    nothing and touch nothing."""
+    db = _ParkedDb([])
+    assert await matches.heal_parked_matches(db) == 0
+    assert db.flushed == 0
+
+
+def test_a_running_score_is_hidden_from_the_player_who_already_finished():
+    """The reported leak: you play your last question, and the opponent's row
+    shows a total that still has a question left to land. You watch a number
+    you have already beaten, then see it jump past you."""
+    me = _seat(ParticipantStatus.PLAYING, rounds_answered=3)
+    them = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    match = _duel(me, them, question_count=3)
+
+    assert matches._score_visible_to(match, them, me) is False
+    # Symmetrically: whoever is still playing is in the race and sees it all.
+    assert matches._score_visible_to(match, me, them) is True
+    # And your own number is always yours.
+    assert matches._score_visible_to(match, me, me) is True
+
+
+def test_scores_stay_visible_while_both_players_are_still_going():
+    """A live battle is meant to be a race you can watch, and the catch-up
+    bonus is only fair if you can see that you are behind."""
+    me = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    them = _seat(ParticipantStatus.PLAYING, rounds_answered=1)
+    match = _duel(me, them, question_count=3)
+
+    assert matches._score_visible_to(match, them, me) is True
+
+
+def test_the_result_reveals_everything():
+    me = _seat(ParticipantStatus.FINISHED, rounds_answered=3)
+    them = _seat(ParticipantStatus.FINISHED, rounds_answered=3)
+    match = _duel(me, them, question_count=3)
+    match.status = MatchStatus.COMPLETED
+
+    assert matches._score_visible_to(match, them, me) is True
+
+
+def test_awaiting_opponent_is_a_playable_status():
+    """It means the *other* side has finished, not that the match has. Treating
+    it as closed left the second player of an async match able to be served
+    every question and to answer none of them."""
+    assert MatchStatus.AWAITING_OPPONENT in matches.IN_PLAY_MATCH_STATUSES
+    assert MatchStatus.LIVE in matches.IN_PLAY_MATCH_STATUSES
+    assert MatchStatus.COMPLETED not in matches.IN_PLAY_MATCH_STATUSES
+    assert MatchStatus.CANCELLED not in matches.IN_PLAY_MATCH_STATUSES
+    assert MatchStatus.PENDING not in matches.IN_PLAY_MATCH_STATUSES
+
+
+# --- Match scoring rules ----------------------------------------------------
+
+
+def _score(**overrides):
+    kwargs = {
+        "is_correct": True,
+        "current_streak": 0,
+        "remaining_ms": 0,
+        "total_ms": 15000,
+        "is_first_correct": False,
+        "is_final_round": False,
+        "points_behind": 0,
+    }
+    kwargs.update(overrides)
+    return match_rules.score_answer(**kwargs)
+
+
+def test_a_wrong_answer_costs_nothing_and_breaks_the_combo():
+    """A negative score in a head-to-head reads as a bug. The punishment for
+    missing is the broken run and the round the opponent just banked."""
+    result = _score(is_correct=False, current_streak=3)
+    assert result.points == 0
+    assert result.new_streak == 0
+    assert result.combo_multiplier == 1.0
+
+
+@pytest.mark.parametrize(
+    ("streak_before", "expected"),
+    [(0, 1.0), (1, 1.25), (2, 1.5), (3, 2.0), (6, 2.0)],
+)
+def test_combo_escalates_and_then_holds(streak_before, expected):
+    """Reachable inside a seven-question board — the old streak tiers topped
+    out at ten in a row, which no duel is long enough to reach."""
+    assert _score(current_streak=streak_before).combo_multiplier == expected
+
+
+def test_combo_doubles_a_clean_run():
+    solo = _score(current_streak=0).points
+    fourth = _score(current_streak=3).points
+    assert fourth == solo * 2
+
+
+def test_first_correct_pays_a_flat_bonus():
+    alone = _score().points
+    first = _score(is_first_correct=True).points
+    assert first - alone == match_rules.FIRST_CORRECT_BONUS
+
+
+def test_the_first_bonus_is_not_multiplied_by_the_final_round():
+    """Flat so it reads as one number on the verdict, whenever it lands."""
+    final_plain = _score(is_final_round=True).points
+    final_first = _score(is_final_round=True, is_first_correct=True).points
+    assert final_first - final_plain == match_rules.FIRST_CORRECT_BONUS
+
+
+def test_the_last_question_is_worth_double():
+    assert _score(is_final_round=True).points == _score().points * 2
+
+
+def test_catch_up_scales_with_the_deficit_and_stops():
+    level = _score(points_behind=0).points
+    close = _score(points_behind=100).points
+    far = _score(points_behind=match_rules.CATCHUP_FULL_DEFICIT_POINTS).points
+    hopeless = _score(points_behind=5000).points
+
+    assert level < close < far
+    assert hopeless == far, "the bonus is capped, not unbounded"
+    assert far == pytest.approx(level * match_rules.CATCHUP_MAX_MULTIPLIER, rel=0.01)
+
+
+def test_being_ahead_earns_no_catch_up():
+    assert _score(points_behind=-400).points == _score(points_behind=0).points
+
+
+def test_the_leader_is_never_out_scored_by_the_catch_up_alone():
+    """A comeback has to be earned by answering better, not by being behind.
+    Two players answer identically, one of them trailing: the trailing player
+    must not out-earn the leader by more than the modest catch-up margin."""
+    leader = _score(remaining_ms=12000).points
+    trailing = _score(remaining_ms=12000, points_behind=5000).points
+    assert trailing < leader * 1.5
+
+
+def test_the_ceiling_covers_what_the_rules_can_actually_pay():
+    """Derived from the constants, so raising a multiplier cannot silently
+    start clamping honest answers."""
+    best = _score(
+        current_streak=10,
+        remaining_ms=15000,
+        total_ms=15000,
+        is_first_correct=True,
+        is_final_round=True,
+        points_behind=9999,
+    )
+    assert best.points <= match_rules.max_points_per_answer()
+    assert match_rules.clamp_points(best.points) == best.points
+
+
+def test_clamping_floors_at_zero():
+    assert match_rules.clamp_points(-50) == 0
+
+
+def test_combo_label_is_a_code_not_prose():
+    """The client draws the word from its own string table, so a match reads in
+    whatever language the app is set to."""
+    assert match_rules.combo_label(1) == ""
+    assert match_rules.combo_label(2) == "combo"
+    assert match_rules.combo_label(4) == "unstoppable"
+    for streak in range(0, 8):
+        assert match_rules.combo_label(streak).isascii()
 
 
 def test_option_order_normalizer_rejects_anything_but_a_permutation():
@@ -525,6 +904,60 @@ def test_every_notification_type_has_push_copy_in_every_language():
         assert set(table) >= {"en", "hi"}, notification_type
         for language, (title, body) in table.items():
             assert title.strip() and body.strip(), (notification_type, language)
+
+
+@pytest.mark.asyncio
+async def test_the_live_event_names_the_actor_but_the_stored_row_does_not(monkeypatch):
+    """A banner has one frame to say who this is and no second request to find
+    out, so the realtime event carries the name. The stored row must not: the
+    inbox resolves its actor by id at read time, which is what keeps history
+    correct after someone renames themselves."""
+    published: list[dict] = []
+
+    async def _capture(user_id, event, data):
+        published.append(data)
+
+    async def _skip_push(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(realtime, "publish_to_user", _capture)
+    monkeypatch.setattr(notifications, "_push", _skip_push)
+
+    row = await notifications.notify(
+        FakeSession(),
+        user_id=uuid4(),
+        notification_type=NotificationType.MATCH_INVITE,
+        actor_user_id=uuid4(),
+        payload={"topic_name": "Science"},
+        push_params={"actor": "ravi", "topic": "Science"},
+    )
+
+    assert published[0]["payload"] == {"topic_name": "Science", "actor": "ravi"}
+    assert row.payload == {"topic_name": "Science"}
+
+
+@pytest.mark.asyncio
+async def test_an_event_with_no_push_copy_still_publishes(monkeypatch):
+    """`push_params` is optional, and a caller that omits it must not lose the
+    realtime delivery along with the name."""
+    published: list[dict] = []
+
+    async def _capture(user_id, event, data):
+        published.append(data)
+
+    async def _skip_push(*args, **kwargs):
+        return False
+
+    monkeypatch.setattr(realtime, "publish_to_user", _capture)
+    monkeypatch.setattr(notifications, "_push", _skip_push)
+
+    await notifications.notify(
+        FakeSession(),
+        user_id=uuid4(),
+        notification_type=NotificationType.FRIEND_ACCEPTED,
+    )
+
+    assert published[0]["payload"] == {}
 
 
 def test_push_copy_interpolates_and_survives_a_missing_parameter():

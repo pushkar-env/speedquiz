@@ -180,7 +180,7 @@ class MatchParticipant extends Equatable {
     this.isHost = false,
     this.isMe = false,
     this.isConnected = false,
-    this.score = 0,
+    this.score,
     this.correctCount = 0,
     this.roundsAnswered = 0,
     this.bestStreak = 0,
@@ -198,7 +198,23 @@ class MatchParticipant extends Equatable {
   final bool isHost;
   final bool isMe;
   final bool isConnected;
-  final int score;
+
+  /// Null while the server is withholding it.
+  ///
+  /// That happens in exactly one window: you have played your last question
+  /// and this opponent has not. Their row then holds a *running* total with a
+  /// question still to land, and showing it would announce the result of a
+  /// match that is not decided. Nullable rather than zeroed so a render site
+  /// cannot quietly show a withheld score as `0` — see [scoreLabel].
+  final int? score;
+
+  /// True while [score] is being withheld.
+  bool get isScoreHidden => score == null;
+
+  /// What to draw in place of the number. An em dash rather than a spinner:
+  /// nothing is loading, the number simply does not exist yet.
+  String get scoreLabel => score == null ? '—' : '$score';
+
   final int correctCount;
   final int roundsAnswered;
   final int bestStreak;
@@ -252,7 +268,8 @@ class MatchParticipant extends Equatable {
         isHost: json['is_host'] as bool? ?? false,
         isMe: json['is_me'] as bool? ?? false,
         isConnected: json['is_connected'] as bool? ?? false,
-        score: json['score'] as int? ?? 0,
+        // Not `?? 0`: absent means withheld, and zero is a score.
+        score: json['score'] as int?,
         correctCount: json['correct_count'] as int? ?? 0,
         roundsAnswered: json['rounds_answered'] as int? ?? 0,
         bestStreak: json['best_streak'] as int? ?? 0,
@@ -273,7 +290,7 @@ class MatchParticipant extends Equatable {
 }
 
 class MatchState extends Equatable {
-  const MatchState({
+  MatchState({
     required this.id,
     required this.format,
     required this.kind,
@@ -298,7 +315,17 @@ class MatchState extends Equatable {
     this.roundDeadlineAt,
     this.myRoundsAnswered = 0,
     this.myOutcome,
-  });
+    DateTime? receivedAt,
+  }) : receivedAt = receivedAt ?? DateTime.now().toUtc();
+
+  /// This device's clock at the moment the response was parsed.
+  ///
+  /// Paired with [serverTime] to fix the offset *once*. Reading the device
+  /// clock later instead — which is what a lazy `DateTime.now()` in [clockSkew]
+  /// amounts to — folds the time since the fetch into the offset, so the
+  /// correction grows by a second every second and any deadline corrected by it
+  /// runs at double speed.
+  final DateTime receivedAt;
 
   final String id;
   final String? code;
@@ -330,7 +357,12 @@ class MatchState extends Equatable {
   /// Subtracting this from every server deadline is what keeps the countdown
   /// honest on a phone whose clock is wrong — which is common enough that a
   /// timer trusting the local clock will visibly lie to some players.
-  Duration get clockSkew => DateTime.now().toUtc().difference(serverTime);
+  ///
+  /// Constant for the life of this object, because both halves were sampled at
+  /// the same instant. A skew that moved would make every corrected deadline
+  /// move with it, which is a timer that neither counts down at one second per
+  /// second nor holds still between refetches.
+  Duration get clockSkew => receivedAt.difference(serverTime);
 
   /// Time left in the round, corrected for clock skew. Zero when there is no
   /// round in play.
@@ -397,6 +429,9 @@ class MatchState extends Equatable {
       roundDeadlineAt: roundDeadlineAt,
       myRoundsAnswered: myRoundsAnswered,
       myOutcome: myOutcome,
+      // Carried, not resampled. Re-reading the clock here would re-anchor the
+      // skew on every score update and jog the countdown each time one lands.
+      receivedAt: receivedAt,
     );
   }
 
@@ -486,7 +521,7 @@ class MatchOption extends Equatable {
 }
 
 class MatchRound extends Equatable {
-  const MatchRound({
+  MatchRound({
     required this.roundIndex,
     required this.totalRounds,
     required this.questionId,
@@ -497,7 +532,16 @@ class MatchRound extends Equatable {
     required this.servedAt,
     required this.serverTime,
     this.alreadyAnswered = false,
-  });
+    this.isFinalRound = false,
+    DateTime? receivedAt,
+  }) : receivedAt = receivedAt ?? DateTime.now().toUtc();
+
+  /// The last question of the board, which scores double.
+  final bool isFinalRound;
+
+  /// Device clock at parse time. See [MatchState.receivedAt] — same trap, same
+  /// fix, and this is the one the round countdown is actually read from.
+  final DateTime receivedAt;
 
   final int roundIndex;
   final int totalRounds;
@@ -510,10 +554,17 @@ class MatchRound extends Equatable {
   final DateTime serverTime;
   final bool alreadyAnswered;
 
-  Duration get clockSkew => DateTime.now().toUtc().difference(serverTime);
+  Duration get clockSkew => receivedAt.difference(serverTime);
+
+  /// The round's close time on *this device's* clock.
+  ///
+  /// What a countdown should be driven from: one absolute instant, fixed when
+  /// the round arrived, that a widget can subtract `DateTime.now()` from
+  /// forever without the answer drifting.
+  DateTime get localDeadline => deadlineAt.add(clockSkew);
 
   Duration get timeRemaining {
-    final left = deadlineAt.difference(DateTime.now().toUtc().subtract(clockSkew));
+    final left = localDeadline.difference(DateTime.now().toUtc());
     return left.isNegative ? Duration.zero : left;
   }
 
@@ -530,6 +581,7 @@ class MatchRound extends Equatable {
         servedAt: _requireUtc(json['served_at']),
         serverTime: _requireUtc(json['server_time']),
         alreadyAnswered: json['already_answered'] as bool? ?? false,
+        isFinalRound: json['is_final_round'] as bool? ?? false,
       );
 
   /// Build a playable round straight from a `round.start` event.
@@ -560,6 +612,7 @@ class MatchRound extends Equatable {
       deadlineAt: _requireUtc(data['deadline_at']),
       servedAt: _parseUtc(data['starts_at']) ?? serverTime,
       serverTime: serverTime,
+      isFinalRound: question['is_final_round'] as bool? ?? false,
     );
   }
 
@@ -591,6 +644,17 @@ class OpponentRoundState extends Equatable {
   List<Object?> get props => [userId, answered, isCorrect];
 }
 
+/// Combo tier reached by a run of correct answers. Codes, not prose — the
+/// client owns the wording so a match reads in the app's language.
+enum ComboTier { none, combo, onFire, unstoppable }
+
+ComboTier _comboFromWire(String? wire) => switch (wire) {
+      'combo' => ComboTier.combo,
+      'onfire' => ComboTier.onFire,
+      'unstoppable' => ComboTier.unstoppable,
+      _ => ComboTier.none,
+    };
+
 class MatchAnswerFeedback extends Equatable {
   const MatchAnswerFeedback({
     required this.roundIndex,
@@ -605,6 +669,11 @@ class MatchAnswerFeedback extends Equatable {
     required this.opponents,
     this.selectedOptionIndex,
     this.explanation,
+    this.comboMultiplier = 1.0,
+    this.comboTier = ComboTier.none,
+    this.firstBonus = 0,
+    this.isFinalRound = false,
+    this.catchupApplied = false,
   });
 
   final int roundIndex;
@@ -617,8 +686,22 @@ class MatchAnswerFeedback extends Equatable {
   final int score;
   final bool roundClosed;
   final bool matchFinished;
+
+  /// Kept on the wire for the solo/daily screens; the battle verdict
+  /// deliberately does not show it.
   final String? explanation;
   final List<OpponentRoundState> opponents;
+
+  // --- Match rules ---------------------------------------------------------
+  final double comboMultiplier;
+  final ComboTier comboTier;
+
+  /// Flat bonus for being first to answer this round correctly.
+  final int firstBonus;
+  final bool isFinalRound;
+  final bool catchupApplied;
+
+  bool get hasCombo => comboMultiplier > 1.0;
 
   factory MatchAnswerFeedback.fromJson(Map<String, dynamic> json) => MatchAnswerFeedback(
         roundIndex: json['round_index'] as int,
@@ -632,13 +715,19 @@ class MatchAnswerFeedback extends Equatable {
         roundClosed: json['round_closed'] as bool? ?? false,
         matchFinished: json['match_finished'] as bool? ?? false,
         explanation: json['explanation'] as String?,
+        comboMultiplier: (json['combo_multiplier'] as num?)?.toDouble() ?? 1.0,
+        comboTier: _comboFromWire(json['combo_label'] as String?),
+        firstBonus: json['first_bonus'] as int? ?? 0,
+        isFinalRound: json['is_final_round'] as bool? ?? false,
+        catchupApplied: json['catchup_applied'] as bool? ?? false,
         opponents: (json['opponents'] as List<dynamic>? ?? const [])
             .map((e) => OpponentRoundState.fromJson(e as Map<String, dynamic>))
             .toList(growable: false),
       );
 
   @override
-  List<Object?> get props => [roundIndex, isCorrect, score, roundClosed, matchFinished];
+  List<Object?> get props =>
+      [roundIndex, isCorrect, score, roundClosed, matchFinished, comboTier, firstBonus];
 }
 
 class MatchResult extends Equatable {
@@ -898,6 +987,14 @@ class AppNotification extends Equatable {
   final DateTime createdAt;
 
   bool get isUnread => readAt == null;
+
+  /// Friendship edge id, on a friend request — what lets the row be answered
+  /// in place instead of sending the player to the requests screen to find the
+  /// same two buttons.
+  String? get requestId {
+    final id = payload['request_id'];
+    return id is String && id.isNotEmpty ? id : null;
+  }
 
   factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
         id: json['id'] as String,

@@ -99,6 +99,7 @@ class InboxChannel {
     _events.add(
       InboxEvent(
         type: type,
+        notificationId: data['notification_id'] as String?,
         actorUserId: data['actor_user_id'] as String?,
         matchId: data['match_id'] as String?,
         deepLink: data['deep_link'] as String?,
@@ -120,6 +121,7 @@ class InboxChannel {
 class InboxEvent {
   const InboxEvent({
     required this.type,
+    this.notificationId,
     this.actorUserId,
     this.matchId,
     this.deepLink,
@@ -127,6 +129,10 @@ class InboxEvent {
   });
 
   final AppNotificationType type;
+
+  /// The inbox row this event was written from, so acting on the banner can
+  /// mark it read and keep the bell's count honest.
+  final String? notificationId;
   final String? actorUserId;
   final String? matchId;
   final String? deepLink;
@@ -137,6 +143,13 @@ class InboxEvent {
   String? get actorName {
     final name = payload['actor'];
     return name is String && name.isNotEmpty ? name : null;
+  }
+
+  /// Friendship edge id, on a friend request — what lets the banner answer it
+  /// without a trip to the requests screen first.
+  String? get requestId {
+    final id = payload['request_id'];
+    return id is String && id.isNotEmpty ? id : null;
   }
 }
 

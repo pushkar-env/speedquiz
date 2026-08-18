@@ -414,11 +414,18 @@ step.** On Android 8+ a notification naming a channel that does not exist is
 dropped with no error, no crash and nothing in the app's logs — the failure
 looks exactly like nobody having sent it.
 
-The channel is created in Kotlin rather than by adding
-`flutter_local_notifications`, which would be a whole plugin for fifteen lines
-of platform code. Its label lives in `android/app/src/main/res/values/strings.xml`
-(and `values-hi/`) because Android renders it in system Settings, where the
-Dart string table cannot reach.
+The channel is created in Kotlin rather than from Dart because a push can
+arrive at a process the user never opened, so it has to exist before any Dart
+runs. Its label lives in `android/app/src/main/res/values/strings.xml` (and
+`values-hi/`) because Android renders it in system Settings, where the Dart
+string table cannot reach.
+
+On-device reminders — the daily challenge, a lapsing streak, a nudge back after
+a few quiet days — are a separate system on a separate `speedquiz_reminders`
+channel, scheduled from Dart via `flutter_local_notifications` and needing no
+Firebase project at all. See `mobile/lib/core/push/local_notifications.dart`
+and `ReminderScheduler`. Keeping the two channels apart is what lets a player
+silence nudges in system settings without also losing challenges.
 
 ---
 

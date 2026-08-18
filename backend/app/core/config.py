@@ -197,8 +197,11 @@ class Settings(BaseSettings):
     match_min_question_count: int = 3
     match_max_question_count: int = 20
     match_question_time_limit_ms: int = 15000
-    #: Pause between rounds, so the verdict is readable before the next prompt.
-    match_round_reveal_ms: int = 3000
+    #: Pause between rounds. Long enough to read a verdict that is now a points
+    #: flash rather than an explanation — a competitive match should feel like
+    #: it is pulling the player along, and three seconds of dead air between
+    #: seven questions is most of a minute spent waiting.
+    match_round_reveal_ms: int = 1200
     match_max_players: int = 8
     #: How long a live lobby waits for everyone before the host can start
     #: anyway. Also how long an unanswered ranked pairing survives.

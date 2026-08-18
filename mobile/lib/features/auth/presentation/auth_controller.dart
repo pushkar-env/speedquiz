@@ -245,6 +245,24 @@ class AuthController extends StateNotifier<AuthState> {
     state = AuthAuthenticated(updated);
   }
 
+  /// The account has answered the first-run questions.
+  ///
+  /// Applied locally as well as on the server because the router keeps a
+  /// player on the onboarding screen until the flag flips — so an offline
+  /// profile write would otherwise trap them there with no way forward. The
+  /// server write is retried on the next session; being asked once more later
+  /// is a far better failure than a locked screen now.
+  void markOnboarded({String? displayName}) {
+    final current = state;
+    if (current is! AuthAuthenticated) return;
+    state = AuthAuthenticated(
+      current.user.copyWith(
+        displayName: displayName,
+        onboardingCompleted: true,
+      ),
+    );
+  }
+
   Future<void> refreshMe() async {
     try {
       final user = await _repo.fetchMe();

@@ -1,14 +1,21 @@
 import 'dart:async';
 
+import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speedquiz/features/multiplayer/data/match_socket.dart';
 import 'package:speedquiz/features/multiplayer/data/multiplayer_repository.dart';
 import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
+import 'package:speedquiz/features/multiplayer/presentation/multiplayer_providers.dart';
 
 /// Everything one battle screen needs to render, in one object.
+///
+/// Value equality is load-bearing, not tidiness. `StateNotifier` decides
+/// whether to rebuild by identity, so with the default behaviour every
+/// `copyWith` — one per socket event, one per poll — repainted the whole
+/// screen whether or not anything had changed. See [BattleController.updateShouldNotify].
 @immutable
-class BattleState {
+class BattleState extends Equatable {
   const BattleState({
     this.match,
     this.round,
@@ -16,6 +23,7 @@ class BattleState {
     this.result,
     this.isLoading = true,
     this.isConnected = false,
+    this.isReconnecting = false,
     this.isSubmitting = false,
     this.selectedOptionIndex,
     this.error,
@@ -34,6 +42,14 @@ class BattleState {
   /// Live socket held. False does not mean broken: an async match never opens
   /// one, and a live match that dropped is still playable over HTTP.
   final bool isConnected;
+
+  /// The socket has been down long enough to be worth telling the player about.
+  ///
+  /// Separate from [isConnected] because a reconnect takes a few hundred
+  /// milliseconds and resumes from a cursor, so the player loses nothing —
+  /// flashing a warning badge through it made a working match look broken.
+  final bool isReconnecting;
+
   final bool isSubmitting;
   final int? selectedOptionIndex;
   final String? error;
@@ -48,6 +64,7 @@ class BattleState {
     MatchResult? result,
     bool? isLoading,
     bool? isConnected,
+    bool? isReconnecting,
     bool? isSubmitting,
     int? selectedOptionIndex,
     String? error,
@@ -63,12 +80,27 @@ class BattleState {
       result: result ?? this.result,
       isLoading: isLoading ?? this.isLoading,
       isConnected: isConnected ?? this.isConnected,
+      isReconnecting: isReconnecting ?? this.isReconnecting,
       isSubmitting: isSubmitting ?? this.isSubmitting,
       selectedOptionIndex:
           clearSelection ? null : (selectedOptionIndex ?? this.selectedOptionIndex),
       error: clearError ? null : (error ?? this.error),
     );
   }
+
+  @override
+  List<Object?> get props => [
+        match,
+        round,
+        feedback,
+        result,
+        isLoading,
+        isConnected,
+        isReconnecting,
+        isSubmitting,
+        selectedOptionIndex,
+        error,
+      ];
 }
 
 /// Drives one match from lobby to result.
@@ -79,7 +111,8 @@ class BattleState {
 /// a network too hostile to hold a WebSocket, which is the network a good
 /// share of these players are on.
 class BattleController extends StateNotifier<BattleState> {
-  BattleController(this._repository, this.matchId) : super(const BattleState()) {
+  BattleController(this._ref, this._repository, this.matchId)
+      : super(const BattleState()) {
     // A socket almost never survives being backgrounded, and the player is
     // looking at the screen the instant they come back — so that is the moment
     // to reconnect and resync rather than waiting out a backoff.
@@ -87,6 +120,7 @@ class BattleController extends StateNotifier<BattleState> {
     _bootstrap();
   }
 
+  final Ref _ref;
   final MultiplayerRepository _repository;
   final String matchId;
 
@@ -94,6 +128,9 @@ class BattleController extends StateNotifier<BattleState> {
   MatchSocket? _socket;
   StreamSubscription<MatchSocketEvent>? _socketEvents;
   Timer? _poll;
+
+  /// Delays the "Reconnecting" badge past a blip. See [BattleState.isReconnecting].
+  Timer? _reconnectBadge;
 
   /// When the round in play opened, on this device's clock, corrected for skew.
   ///
@@ -175,11 +212,20 @@ class BattleController extends StateNotifier<BattleState> {
   void _onSocketEvent(MatchSocketEvent event) {
     switch (event.kind) {
       case MatchSocketEventKind.connected:
-        state = state.copyWith(isConnected: true);
+        _reconnectBadge?.cancel();
+        _reconnectBadge = null;
+        state = state.copyWith(isConnected: true, isReconnecting: false);
         // Reconnected after a gap. Whatever the replay missed, this catches.
         unawaited(_refreshMatchOnly());
       case MatchSocketEventKind.disconnected:
         state = state.copyWith(isConnected: false);
+        // Say nothing yet. A reconnect normally completes inside a second and
+        // replays what it missed, so announcing every blip is how a match that
+        // is working fine reads as broken.
+        _reconnectBadge ??= Timer(const Duration(seconds: 3), () {
+          if (!mounted || state.isConnected) return;
+          state = state.copyWith(isReconnecting: true);
+        });
       case MatchSocketEventKind.message:
         _onServerEvent(event.type, event.data);
     }
@@ -213,20 +259,23 @@ class BattleController extends StateNotifier<BattleState> {
   /// question payload falls back to fetching it.
   void _onRoundStart(Map<String, dynamic> data) {
     final match = state.match;
+    final round = MatchRound.fromEvent(data);
+    if (round != null) _startRoundClock(round);
+
+    // One write, not two. Clearing the old round and setting the new one as
+    // separate assignments put an empty frame between them — which on the
+    // board reads as a flicker at the top of every round.
     state = state.copyWith(
       clearFeedback: true,
       clearSelection: true,
-      clearRound: true,
+      // `clearRound` wins over `round` in copyWith, so it is only set when
+      // there is nothing to put in its place.
+      clearRound: round == null,
+      round: round,
       match: match?.withRoundReset(),
     );
 
-    final round = MatchRound.fromEvent(data);
-    if (round != null) {
-      _startRoundClock(round);
-      state = state.copyWith(round: round);
-    } else {
-      unawaited(_loadRound());
-    }
+    if (round == null) unawaited(_loadRound());
     // Reconciles scores and status behind the already-rendered question.
     unawaited(_refreshMatchOnly());
   }
@@ -321,6 +370,10 @@ class BattleController extends StateNotifier<BattleState> {
     } catch (_) {
       // Non-fatal: the result screen refetches on open.
     }
+    // A settled match is no longer "needs you". Same staleness the leave path
+    // fixes, reached by the ordinary route through a match rather than the
+    // early exit.
+    _forgetCachedMatches();
   }
 
   void _startPolling() {
@@ -375,8 +428,9 @@ class BattleController extends StateNotifier<BattleState> {
         await _loadResult();
       } else if (state.match?.delivery == MatchDelivery.asynchronous) {
         // No shared clock to wait on. Give the verdict a beat to read, then
-        // advance this player's own board.
-        await Future<void>.delayed(const Duration(milliseconds: 1600));
+        // advance this player's own board. Matched to the server's reveal pause
+        // so a match paces the same however it is being delivered.
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
         if (!mounted) return;
         state = state.copyWith(
           clearFeedback: true,
@@ -446,6 +500,25 @@ class BattleController extends StateNotifier<BattleState> {
     } catch (_) {
       // Leaving is best-effort — the server forfeits an absent player anyway.
     }
+    // Unconditionally, including after a failure: the hub holds this match in
+    // an `autoDispose` list that stays alive underneath the pushed match
+    // screen, so without this the player walks out and finds the match they
+    // just left still sitting there, still looking playable. Refetching is
+    // also how a best-effort leave that actually succeeded server-side gets
+    // reflected.
+    _forgetCachedMatches();
+  }
+
+  /// Drop the cached views of "matches that involve me".
+  ///
+  /// Called when this match stops being something the player owes a turn to —
+  /// they left it, or it settled. The hub, the friends list and the tab badge
+  /// all read from these, and all three are wrong the moment a match ends.
+  void _forgetCachedMatches() {
+    if (!mounted) return;
+    _ref
+      ..invalidate(matchListProvider)
+      ..invalidate(socialSummaryProvider);
   }
 
   bool _isConflict(Object error) => _statusOf(error) == 409;
@@ -472,9 +545,18 @@ class BattleController extends StateNotifier<BattleState> {
     return 'network_error';
   }
 
+  /// Rebuild only when something actually changed.
+  ///
+  /// The default is identity, which with a `copyWith` per socket event and per
+  /// poll meant the board, the timer and the standings were rebuilt several
+  /// times a second whether or not any of them differed.
+  @override
+  bool updateShouldNotify(BattleState old, BattleState current) => old != current;
+
   @override
   void dispose() {
     _poll?.cancel();
+    _reconnectBadge?.cancel();
     _lifecycle.dispose();
     _socketEvents?.cancel();
     unawaited(_socket?.dispose());
@@ -484,5 +566,5 @@ class BattleController extends StateNotifier<BattleState> {
 
 final battleControllerProvider = StateNotifierProvider.autoDispose
     .family<BattleController, BattleState, String>((ref, matchId) {
-  return BattleController(ref.watch(multiplayerRepositoryProvider), matchId);
+  return BattleController(ref, ref.watch(multiplayerRepositoryProvider), matchId);
 });

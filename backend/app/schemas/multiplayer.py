@@ -139,7 +139,10 @@ class MatchParticipantOut(BaseModel):
     is_me: bool = False
     #: Holding a live realtime connection right now.
     is_connected: bool = False
-    score: int = 0
+    #: `None` while withheld — see `matches._score_visible_to`. Absent rather
+    #: than zero on purpose: a zero is a score, and a client that forgot to
+    #: check a flag would render it as one.
+    score: Optional[int] = 0
     correct_count: int = 0
     rounds_answered: int = 0
     best_streak: int = 0
@@ -210,6 +213,8 @@ class MatchRoundOut(BaseModel):
     server_time: datetime
     #: True once this player has answered and is waiting on everyone else.
     already_answered: bool = False
+    #: The last question of the board, which scores double.
+    is_final_round: bool = False
 
 
 class OpponentRoundStateOut(BaseModel):
@@ -230,6 +235,21 @@ class MatchAnswerFeedbackOut(BaseModel):
     streak: int
     score: int
     explanation: Optional[str] = None
+
+    # --- Match rules, for the verdict card to celebrate ---------------------
+    #: Combo multiplier this answer earned, 1.0 when there is no run going.
+    combo_multiplier: float = 1.0
+    #: Tier code for the combo — `combo`, `onfire`, `unstoppable`, or empty.
+    #: A code rather than prose so the client renders it in the player's
+    #: language, like every other string it draws.
+    combo_label: str = ""
+    #: Flat bonus for being the first to answer this round correctly.
+    first_bonus: int = 0
+    #: The last question of the board, scored double.
+    is_final_round: bool = False
+    #: Whether the trailing-player bonus was in play for this answer.
+    catchup_applied: bool = False
+
     #: Whether the match moved on as a result of this answer.
     round_closed: bool = False
     match_finished: bool = False

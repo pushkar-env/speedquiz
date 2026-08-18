@@ -1,16 +1,16 @@
 import 'package:equatable/equatable.dart';
 
 /// Where this **device** stands with the first-run flow.
+///
+/// No longer a routing input. Whether to run the flow is asked of the account
+/// — `AuthUser.needsOnboarding` — because a device record made every reinstall
+/// look like a first run. What is left here tracks one thing: whether this
+/// device is still carrying answers the server has not accepted yet.
 enum OnboardingStatus {
   /// Not read from storage yet.
-  ///
-  /// Treated as "do not interrupt": showing the flow to someone who has
-  /// already been through it is worse than skipping it for someone who has
-  /// not, and the router asks this question on its very first redirect.
   unknown,
 
-  /// Never completed here, and no session has ever been restored on this
-  /// device — a genuine first run.
+  /// This device has a first-run record it has not resolved.
   needed,
 
   /// Completed, or implied complete by a session that already existed.
@@ -33,8 +33,6 @@ class OnboardingState extends Equatable {
   /// there is an account to write it to. Cleared once a session exists and the
   /// profile has actually taken it.
   final String? pendingName;
-
-  bool get isNeeded => status == OnboardingStatus.needed;
 
   OnboardingState copyWith({
     OnboardingStatus? status,

@@ -127,6 +127,13 @@ class SocialRepository {
     );
   }
 
+  /// Empty the inbox. Returns how many rows went, so the UI can say so.
+  Future<int> clearNotifications() async {
+    final response = await _dio.delete('$_p/notifications');
+    final data = response.data;
+    return data is Map ? (data['cleared'] as int? ?? 0) : 0;
+  }
+
   Future<void> registerDevice({
     required String token,
     required String platform,

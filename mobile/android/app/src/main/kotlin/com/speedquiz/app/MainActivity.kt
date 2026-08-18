@@ -22,11 +22,17 @@ class MainActivity : FlutterActivity() {
      * channel has to exist before the first push arrives, which means creating
      * it at launch rather than lazily.
      *
-     * Doing it here rather than pulling in `flutter_local_notifications` keeps
-     * a whole plugin out of the build for what is fifteen lines of platform
-     * code. Creating a channel that already exists is a documented no-op, so
-     * running this on every launch is free — and it is also what picks up a
-     * renamed channel after an app update.
+     * Kept in Kotlin even though the app now carries
+     * `flutter_local_notifications` for on-device reminders: that plugin
+     * creates its own `speedquiz_reminders` channel from Dart, on first
+     * initialize. This one has to exist *before* Dart runs at all, because a
+     * push can arrive at a process the user never opened. Two channels is also
+     * the right split for the player — reminders can be silenced in system
+     * settings without losing challenges.
+     *
+     * Creating a channel that already exists is a documented no-op, so running
+     * this on every launch is free — and it is also what picks up a renamed
+     * channel after an app update.
      *
      * The importance is HIGH because these are time-sensitive: a live match
      * has a round clock running, and a silent notification is a forfeit.

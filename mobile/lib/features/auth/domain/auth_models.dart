@@ -44,6 +44,21 @@ class AuthUser extends Equatable {
   final String? appLanguage;
   final String? quizLanguage;
 
+  /// Does this **account** still owe us a name and a language?
+  ///
+  /// Asked of the account rather than the device, which is the whole reason
+  /// the first-run flow moved behind sign-in: a device record made every
+  /// reinstall — and every cold start that failed to restore a session — look
+  /// like a first run, so an established player was asked to set up a name
+  /// they had already chosen, before they had even said who they were.
+  ///
+  /// The progress check is a second latch on the same question. An account can
+  /// carry `onboardingCompleted == false` for reasons that have nothing to do
+  /// with being new — created before the flag existed, or a sync that failed
+  /// offline — and nobody on level 3 with XP on the board is a new player. Two
+  /// independent signals both have to say "new" before anyone is interrupted.
+  bool get needsOnboarding => !onboardingCompleted && level <= 1 && xp == 0;
+
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     final daily = json['daily_streak'] as int? ?? json['current_streak'] as int? ?? 0;
     return AuthUser(

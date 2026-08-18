@@ -7,13 +7,21 @@ import 'package:speedquiz/features/onboarding/data/onboarding_store.dart';
 import 'package:speedquiz/features/onboarding/domain/onboarding_state.dart';
 import 'package:speedquiz/features/profile/data/profile_repository.dart';
 
-/// Owns the first-run flow: whether to run it, and getting what it collects
-/// onto the account.
+/// Owns the first-run flow: getting what it collects onto the account.
 ///
-/// The two halves are deliberately separated in time. A player answers before
-/// they sign in — that is the whole point of onboarding — so the answers live
-/// on the device until there is a session to write them to, and the write is
-/// attached to the moment a session appears rather than to any one screen.
+/// The flow runs *behind* sign-in, and only for an account that is genuinely
+/// new — see `AuthUser.needsOnboarding`. It used to run in front of the
+/// landing screen, keyed off a device-local record, which meant every
+/// reinstall and every cold start that failed to restore a session looked like
+/// a first run: an established player was asked to choose a name and a
+/// language they had already chosen, before they had a chance to say who they
+/// were.
+///
+/// There is therefore always a session by the time [complete] is called, and
+/// the answers can go straight to the profile. The device record survives as a
+/// retry buffer for the one case that still has no session to write to: a
+/// profile update that failed offline, which [_onSessionEstablished] picks up
+/// on the next launch.
 class OnboardingController extends StateNotifier<OnboardingState> {
   OnboardingController(this._ref) : super(const OnboardingState());
 
@@ -38,9 +46,9 @@ class OnboardingController extends StateNotifier<OnboardingState> {
 
   /// The flow is finished. [name] is null when the player skipped that step.
   ///
-  /// Marks the device done immediately rather than waiting for the sync: the
-  /// router is watching, and nobody should be asked these questions twice
-  /// because the network was slow.
+  /// Marks the account done locally before the write lands. The router keeps a
+  /// player on this screen until the flag flips, so waiting on the network to
+  /// release them would trap anyone who finished it on a bad connection.
   Future<void> complete({String? name}) async {
     final trimmed = name?.trim();
     final stored = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
@@ -49,6 +57,25 @@ class OnboardingController extends StateNotifier<OnboardingState> {
       pendingName: stored,
     );
     await _store.markCompleted(stored);
+
+    final auth = _ref.read(authControllerProvider.notifier);
+    // Let them through first, then persist. Order matters: this is the last
+    // screen between a new player and the app.
+    auth.markOnboarded(displayName: stored);
+
+    try {
+      await _ref.read(profileRepositoryProvider).update(
+            displayName: stored,
+            appLanguage: _ref.read(appLanguageProvider).code,
+            quizLanguage: _ref.read(quizLanguageProvider).code,
+            onboardingCompleted: true,
+          );
+      await _store.clearPending();
+    } catch (error) {
+      // Still on the device, still owed to the server. The next session
+      // retries it — see [_onSessionEstablished].
+      debugPrint('onboarding_sync_failed: $error');
+    }
   }
 
   /// Runs for every session the app establishes — a cold-start restore as well

@@ -12,12 +12,11 @@ import 'package:speedquiz/features/leaderboard/presentation/leaderboard_screen.d
 import 'package:speedquiz/features/multiplayer/presentation/battle_hub_screen.dart';
 import 'package:speedquiz/features/multiplayer/presentation/battle_screen.dart';
 import 'package:speedquiz/features/multiplayer/presentation/friends_screen.dart';
+import 'package:speedquiz/features/multiplayer/presentation/match_history_screen.dart';
 import 'package:speedquiz/features/multiplayer/presentation/notifications_screen.dart';
 import 'package:speedquiz/features/multiplayer/presentation/ranked_screen.dart';
 import 'package:speedquiz/features/multiplayer/presentation/username_edit_screen.dart';
-import 'package:speedquiz/features/onboarding/domain/onboarding_state.dart';
 import 'package:speedquiz/features/onboarding/presentation/landing_screen.dart';
-import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
 import 'package:speedquiz/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:speedquiz/features/onboarding/presentation/splash_screen.dart';
 import 'package:speedquiz/features/profile/presentation/achievements_screen.dart';
@@ -43,12 +42,29 @@ abstract final class Routes {
   static const profile = '/profile';
   static const friends = '/battle/friends';
   static const ranked = '/battle/ranked';
+  static const matchHistory = '/battle/history';
   static const username = '/profile/username';
   static const notifications = '/battle/notifications';
 
   /// Deep-link target for a match. Push notifications carry exactly this path,
   /// so the shape lives here rather than being spelled out at each call site.
   static String matchPath(String matchId) => '/battle/match/$matchId';
+
+  /// The five bottom-bar destinations.
+  ///
+  /// A notification may point at one of these — an on-device reminder sends
+  /// the player to Home or to quiz setup — and a tab has to be *switched to*,
+  /// not pushed: pushing one stacks a second copy of the shell on top of the
+  /// first. See `DeepLinkListener`.
+  static const tabRoots = <String>[
+    home,
+    explore,
+    battle,
+    leaderboard,
+    profile,
+  ];
+
+  static bool isTabRoot(String location) => tabRoots.contains(location);
   static const profileEdit = '/profile/edit';
   static const achievements = '/profile/achievements';
   static const stats = '/profile/stats';
@@ -83,13 +99,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         case AuthBooting():
           return location == Routes.splash ? null : Routes.splash;
         case AuthSignedOut():
-          // A first run answers two questions before it is offered an account;
-          // everyone else goes straight to the ways in.
-          if (ref.read(onboardingControllerProvider).isNeeded) {
+          // Always the ways in. Onboarding used to sit in front of this, which
+          // meant a returning player was asked to choose a name and a language
+          // before they had a chance to say they already had both.
+          return location == Routes.landing ? null : Routes.landing;
+        case AuthAuthenticated(:final user):
+          // Now the flow lives here, and only for an account that is genuinely
+          // new — a fresh guest or a first Google sign-in. See
+          // `AuthUser.needsOnboarding`.
+          if (user.needsOnboarding) {
             return location == Routes.onboarding ? null : Routes.onboarding;
           }
-          return location == Routes.landing ? null : Routes.landing;
-        case AuthAuthenticated():
           return (location == Routes.splash ||
                   location == Routes.landing ||
                   location == Routes.onboarding)
@@ -307,6 +327,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.matchHistory,
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: const SqBackGuard(
+            fallback: Routes.battle,
+            child: MatchHistoryScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
         path: Routes.ranked,
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
@@ -367,12 +398,9 @@ class _RouteRefresh extends ChangeNotifier {
         authControllerProvider,
         (previous, next) => notifyListeners(),
       ),
-      ref.listen<OnboardingState>(
-        onboardingControllerProvider,
-        (previous, next) {
-          if (previous?.status != next.status) notifyListeners();
-        },
-      ),
+      // Onboarding is no longer a routing input of its own: the flow runs
+      // behind sign-in and finishes by marking the *account* onboarded, which
+      // arrives through the auth listener above.
     ];
   }
 

@@ -15,6 +15,7 @@ import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/auth/presentation/widgets/google_sign_in_button.dart';
 import 'package:speedquiz/features/entitlements/data/entitlements_repository.dart';
 import 'package:speedquiz/features/profile/presentation/widgets/profile_widgets.dart';
+import 'package:speedquiz/features/reminders/data/reminder_scheduler.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -254,6 +255,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                     .read(settingsProvider.notifier)
                                     .setHaptics(value);
                                 if (value) Haptics.success();
+                              },
+                            ),
+                            Divider(height: 1, color: p.border),
+                            _SettingSwitch(
+                              icon: Icons.notifications_active_rounded,
+                              title: l10n.settingsReminders,
+                              subtitle: l10n.settingsRemindersSubtitle,
+                              value: settings.remindersEnabled,
+                              onChanged: (value) async {
+                                Haptics.tap();
+                                await ref
+                                    .read(settingsProvider.notifier)
+                                    .setReminders(value);
+                                // Switching off has to take the already-armed
+                                // ones down with it; switching on is also the
+                                // clearest moment to ask for the permission,
+                                // because the player just asked for this.
+                                final scheduler =
+                                    ref.read(reminderSchedulerProvider);
+                                if (value) {
+                                  await scheduler.refresh();
+                                } else {
+                                  await scheduler.cancelAll();
+                                }
                               },
                             ),
                           ],

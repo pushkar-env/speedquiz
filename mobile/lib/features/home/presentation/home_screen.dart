@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +14,8 @@ import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/daily/data/daily_repository.dart';
 import 'package:speedquiz/features/daily/domain/daily_models.dart';
+import 'package:speedquiz/features/multiplayer/presentation/widgets/notification_bell.dart';
+import 'package:speedquiz/features/reminders/data/reminder_scheduler.dart';
 import 'package:speedquiz/features/shell/presentation/main_shell.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/features/topics/presentation/topic_tile.dart';
@@ -170,6 +174,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Home is the one screen that always knows whether today's daily has been
+    // played — it is the screen the card lives on, and the screen a player
+    // lands back on after finishing a run. That makes it the right place to
+    // re-arm the on-device reminders, and it costs no request of its own.
+    ref.listen(dailyChallengeProvider, (_, next) {
+      final daily = next.valueOrNull;
+      if (daily == null) return;
+      unawaited(ref.read(reminderSchedulerProvider).refresh(daily: daily));
+    });
+
     final theme = Theme.of(context);
     final p = theme.sq;
     final l10n = context.l10n;
@@ -197,9 +211,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               children: [
                 SqStagger(
-                  child: _PlayerBar(
-                    user: user,
-                    onTap: () => context.go(Routes.profile),
+                  // The bell rides alongside the player strip rather than
+                  // inside it: the strip is one tap target that opens the
+                  // profile, and burying a second target in it would make
+                  // which one you hit a matter of pixels.
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _PlayerBar(
+                          user: user,
+                          onTap: () => context.go(Routes.profile),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      const NotificationBell(),
+                    ],
                   ),
                 ),
                 // Only present for a relaunch, and only once a day.

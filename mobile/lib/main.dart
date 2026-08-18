@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:speedquiz/app.dart';
 import 'package:speedquiz/core/i18n/language_providers.dart';
+import 'package:speedquiz/core/push/local_notifications.dart';
 import 'package:speedquiz/core/push/push_service.dart';
 import 'package:speedquiz/core/settings/app_settings.dart';
 import 'package:speedquiz/features/onboarding/presentation/onboarding_controller.dart';
@@ -63,6 +64,12 @@ Future<void> main() async {
       // starting after the first frame would drop it. It is a no-op — and
       // never throws — when the FIREBASE_* defines are absent.
       await container.read(pushServiceProvider).initialize();
+
+      // On-device reminders. Awaited for the same reason as push: a reminder
+      // the player tapped to launch the app is delivered once, at init, and
+      // starting this after the first frame would drop the deep link. Needs no
+      // configuration of any kind and never throws.
+      await container.read(localNotificationServiceProvider).initialize();
 
       runApp(
         UncontrolledProviderScope(

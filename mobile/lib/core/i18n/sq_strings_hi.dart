@@ -1013,6 +1013,11 @@ class SqStringsHi extends SqStrings {
   @override
   String get settingsMusicSubtitle => 'खेलते समय हल्का संगीत';
   @override
+  String get settingsReminders => 'रिमाइंडर';
+  @override
+  String get settingsRemindersSubtitle =>
+      'डेली चुनौती, स्ट्रीक और कभी-कभी याद दिलाना।';
+  @override
   String get settingsHaptics => 'हैप्टिक्स';
   @override
   String get settingsHapticsSubtitle => 'हर टैप और जवाब पर हल्का कंपन';
@@ -1134,6 +1139,9 @@ class SqStringsHi extends SqStrings {
   String get lobbyInviteAccepted => 'चुनौती स्वीकार की गई';
   @override
   String get lobbyChallengedYou => 'ने आपको चुनौती दी';
+
+  @override
+  String get lobbyChallengeTitle => 'चुनौती!';
   @override
   String get lobbyAccept => 'स्वीकार करें';
   @override
@@ -1159,6 +1167,8 @@ class SqStringsHi extends SqStrings {
   @override
   String get battleOpponentThinking => 'सोच रहे हैं…';
   @override
+  String get battleOpponentFinishing => 'पूरा कर रहे हैं…';
+  @override
   String get battleTimeUp => 'समय समाप्त';
   @override
   String get battleCorrect => 'सही';
@@ -1166,6 +1176,30 @@ class SqStringsHi extends SqStrings {
   String get battleWrong => 'गलत';
   @override
   String get battleReconnecting => 'दोबारा जुड़ रहे हैं…';
+
+  @override
+  String get battleCombo => 'कॉम्बो';
+
+  @override
+  String get battleOnFire => 'आग लगी है';
+
+  @override
+  String get battleUnstoppable => 'लाजवाब';
+
+  @override
+  String get battleFinalRound => 'आखिरी सवाल';
+
+  @override
+  String get battleDoublePoints => 'दोगुने अंक';
+
+  @override
+  String get battleFirstBonus => 'सबसे पहले!';
+
+  @override
+  String get battleCatchUp => 'कमबैक बोनस';
+
+  @override
+  String battleMultiplier(String value) => '×$value';
   @override
   String get battleOffline => 'ऑफ़लाइन — आपके जवाब फिर भी गिने जाएंगे';
   @override
@@ -1182,6 +1216,21 @@ class SqStringsHi extends SqStrings {
   // --- Battle: result ----------------------------------------------------
   @override
   String get resultWin => 'आप जीत गए!';
+  @override
+  String get resultYou => 'आप';
+  @override
+  String get resultVersus => 'बनाम';
+  @override
+  String get battleHistoryTitle => 'मैच इतिहास';
+  @override
+  String get battleHistorySeeAll => 'इतिहास';
+  @override
+  String get battleHistoryEmpty => 'अभी कोई पूरा मैच नहीं';
+  @override
+  String get battleHistoryEmptyBody =>
+      'एक बैटल खेलें, आपके पिछले दस मैच यहाँ दिखेंगे।';
+  @override
+  String battleCorrectOf(int correct, int total) => '$correct/$total सही';
   @override
   String get resultLoss => 'आप हार गए';
   @override
@@ -1369,6 +1418,15 @@ class SqStringsHi extends SqStrings {
   @override
   String get notificationsMarkRead => 'सभी पढ़ा हुआ करें';
   @override
+  String get notificationsClear => 'सब हटाएँ';
+  @override
+  String get notificationsClearTitle => 'सूचनाएँ हटाएँ?';
+  @override
+  String get notificationsClearBody =>
+      'इससे हर डिवाइस पर आपका इनबॉक्स खाली हो जाएगा। बिना जवाब वाली चुनौतियाँ बैटल में बनी रहेंगी।';
+  @override
+  String get notificationsCleared => 'इनबॉक्स खाली हो गया';
+  @override
   String get notificationsSettings => 'सूचना सेटिंग्स';
   @override
   String get notificationsPushDisabled =>
@@ -1385,6 +1443,40 @@ class SqStringsHi extends SqStrings {
   String notificationYourTurn(String name) => '$name आपके खेलने का इंतज़ार कर रहे हैं';
   @override
   String notificationMatchResult(String name) => '$name के साथ आपका मैच खत्म हुआ';
+  @override
+  String notificationsUnread(int count) =>
+      count == 1 ? '1 बिना पढ़ी सूचना' : '$count बिना पढ़ी सूचनाएँ';
+  @override
+  String get notificationTitleFriendRequest => 'फ़्रेंड रिक्वेस्ट';
+  @override
+  String get notificationTitleFriendAccepted => 'दोस्त जुड़े';
+  @override
+  String get notificationTitleYourTurn => 'आपकी बारी';
+  @override
+  String get notificationTitleMatchResult => 'मैच खत्म';
+  @override
+  String get notificationTitleExpiring => 'जल्द खत्म';
+  @override
+  String get notificationIgnore => 'अनदेखा करें';
+
+  // --- On-device reminders -----------------------------------------------
+  @override
+  String get reminderDailyTitle => 'आज की चुनौती तैयार है';
+  @override
+  String get reminderDailyBody => 'नया क्विज़ इंतज़ार कर रहा है। दो मिनट हैं?';
+  @override
+  String get reminderStreakTitle => 'आपकी स्ट्रीक आधी रात को खत्म';
+  @override
+  String reminderStreakBody(int days) => days == 1
+      ? 'एक दिन की स्ट्रीक। इसे बचाने के लिए डेली खेलें।'
+      : '$days दिन की स्ट्रीक। इसे बचाने के लिए डेली खेलें।';
+  @override
+  String get reminderComebackTitle => 'एक तेज़ राउंड के लिए तैयार?';
+  @override
+  String get reminderComebackBody => 'कोई टॉपिक चुनें और अपनी रफ़्तार देखें।';
+  @override
+  String reminderComebackBodyTopic(String topic) =>
+      '$topic इंतज़ार कर रहा है। अपनी रफ़्तार देखें।';
 
   // --- Shared errors -----------------------------------------------------
   @override

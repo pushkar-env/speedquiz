@@ -202,12 +202,23 @@ class _Side extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        if (showScore)
+        if (showScore && participant?.score != null)
           SqAnimatedCounter(
-            value: participant?.score ?? 0,
+            value: participant!.score!,
             style: theme.textTheme.headlineSmall?.copyWith(
               color: p.accent,
               fontWeight: FontWeight.w900,
+            ),
+          )
+        else if (showScore && (participant?.isScoreHidden ?? false))
+          // They are still on their last question. Their running total is not
+          // the result, and showing it would announce one — so the slot says
+          // what is actually happening instead.
+          Text(
+            l10n.battleOpponentFinishing,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: p.textSecondary,
+              fontWeight: FontWeight.w700,
             ),
           )
         else
@@ -383,6 +394,124 @@ class OpponentPips extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Live head-to-head bar: who is ahead, and by how much.
+///
+/// The scoreline as a shape rather than two numbers. A duel is decided by a
+/// margin, and a margin is something you read instantly from a bar and have to
+/// work out from a pair of integers — which is not a calculation anyone does
+/// with fifteen seconds on the clock.
+class ScoreBar extends StatelessWidget {
+  const ScoreBar({super.key, required this.me, required this.opponent});
+
+  final MatchParticipant? me;
+  final MatchParticipant? opponent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mine = me?.score ?? 0;
+    final theirs = opponent?.score;
+    // A withheld opponent score holds the bar level rather than reading as
+    // zero, which would draw the viewer as winning by everything.
+    final total = mine + (theirs ?? 0);
+    final share = (theirs == null || total <= 0) ? 0.5 : mine / total;
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: share, end: share),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+              child: SizedBox(
+                height: 8,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: (value * 1000).round().clamp(1, 999),
+                      child: ColoredBox(color: theme.sq.accent),
+                    ),
+                    Expanded(
+                      flex: ((1 - value) * 1000).round().clamp(1, 999),
+                      child: ColoredBox(
+                        color: theme.sq.textSecondary.withValues(alpha: 0.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text(
+                  '$mine',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.sq.accent,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  opponent?.scoreLabel ?? '0',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.sq.textSecondary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The double-points banner over the last question of a board.
+class FinalRoundBanner extends StatelessWidget {
+  const FinalRoundBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = context.l10n;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.warning.withValues(alpha: 0.30),
+            AppColors.danger.withValues(alpha: 0.22),
+          ],
+        ),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.bolt_rounded, size: 16, color: AppColors.warning),
+          const SizedBox(width: 6),
+          Text(
+            '${l10n.battleFinalRound} · ${l10n.battleDoublePoints}',
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.8,
+              color: AppColors.warning,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

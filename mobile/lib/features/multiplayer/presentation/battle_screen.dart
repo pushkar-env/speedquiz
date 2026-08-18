@@ -376,7 +376,7 @@ class _PlayView extends ConsumerWidget {
                       style: theme.textTheme.labelLarge,
                     ),
                   ),
-                  if (!state.isConnected &&
+                  if (state.isReconnecting &&
                       match.delivery == MatchDelivery.live)
                     SqBadge(
                       label: l10n.battleReconnecting,
@@ -387,6 +387,10 @@ class _PlayView extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.sm),
               VersusHeader(me: match.me, opponent: match.primaryOpponent),
+              const SizedBox(height: 6),
+              // The margin, as a shape. Updates off the round events, so it
+              // moves the moment the opponent banks a question.
+              ScoreBar(me: match.me, opponent: match.primaryOpponent),
               const SizedBox(height: AppSpacing.sm),
               SqProgressTrack(
                 value: (round.roundIndex + 1) / round.totalRounds,
@@ -398,6 +402,10 @@ class _PlayView extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.md),
             children: [
+              if (round.isFinalRound) ...[
+                const Center(child: FinalRoundBanner()),
+                const SizedBox(height: AppSpacing.md),
+              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -407,7 +415,11 @@ class _PlayView extends ConsumerWidget {
                   const SizedBox(width: AppSpacing.md),
                   if (!revealed)
                     RoundTimer(
-                      deadline: round.deadlineAt.subtract(match.clockSkew),
+                      // The round's own corrected deadline. The old expression
+                      // mixed the match's skew with the round's deadline and
+                      // subtracted where it should have added, which is a
+                      // countdown that both drifts and runs fast.
+                      deadline: round.localDeadline,
                       totalMs: round.timeLimitMs,
                       onExpired: controller.timeout,
                     ),
@@ -519,6 +531,14 @@ class _OptionButton extends StatelessWidget {
   }
 }
 
+/// The verdict, as a points flash.
+///
+/// Deliberately not a study aid. The solo and daily screens explain the answer
+/// and offer to teach the topic, because there the player is there to learn.
+/// In a duel the clock is the point: the explanation went unread, and the
+/// "waiting for the others" line turned a one-second beat into something that
+/// looked like a stall. What is left is the number, what earned it, and how
+/// the opponent did — all of which are about the match rather than the subject.
 class _Verdict extends StatelessWidget {
   const _Verdict({required this.feedback, required this.participants});
 
@@ -530,6 +550,13 @@ class _Verdict extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = context.l10n;
     final tint = feedback.isCorrect ? AppColors.success : AppColors.danger;
+
+    final comboLabel = switch (feedback.comboTier) {
+      ComboTier.combo => l10n.battleCombo,
+      ComboTier.onFire => l10n.battleOnFire,
+      ComboTier.unstoppable => l10n.battleUnstoppable,
+      ComboTier.none => null,
+    };
 
     return SqSurface(
       child: Column(
@@ -550,12 +577,44 @@ class _Verdict extends StatelessWidget {
               ),
               const Spacer(),
               if (feedback.pointsAwarded > 0)
-                SqBadge(label: '+${feedback.pointsAwarded}', dense: true),
+                Text(
+                  '+${feedback.pointsAwarded}',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: tint,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
             ],
           ),
-          if (feedback.explanation != null) ...[
+          if (feedback.isCorrect) ...[
             const SizedBox(height: AppSpacing.sm),
-            Text(feedback.explanation!, style: theme.textTheme.bodyMedium),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (comboLabel != null)
+                  SqBadge(
+                    label: '$comboLabel '
+                        '${l10n.battleMultiplier(_trim(feedback.comboMultiplier))}',
+                    color: AppColors.warning,
+                    dense: true,
+                  ),
+                if (feedback.firstBonus > 0)
+                  SqBadge(
+                    label: '${l10n.battleFirstBonus} +${feedback.firstBonus}',
+                    color: AppColors.success,
+                    dense: true,
+                  ),
+                if (feedback.isFinalRound)
+                  SqBadge(
+                    label: l10n.battleDoublePoints,
+                    color: AppColors.danger,
+                    dense: true,
+                  ),
+                if (feedback.catchupApplied)
+                  SqBadge(label: l10n.battleCatchUp, dense: true),
+              ],
+            ),
           ],
           if (feedback.opponents.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -595,11 +654,17 @@ class _Verdict extends StatelessWidget {
                 ),
               ),
           ],
-          const SizedBox(height: AppSpacing.sm),
-          Text(l10n.battleWaitingForOthers, style: theme.textTheme.bodySmall),
         ],
       ),
     );
+  }
+
+  /// "2" rather than "2.0", "1.25" rather than "1.250".
+  static String _trim(double value) {
+    final text = value.toStringAsFixed(2);
+    return text
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
   }
 
   String _nameFor(String userId) {
@@ -754,7 +819,7 @@ class _ResultViewState extends ConsumerState<_ResultView> {
                           PlayerTile(
                             player: participant.player,
                             subtitle:
-                                '${participant.correctCount}/${match.questionCount} · ${participant.score}',
+                                '${participant.correctCount}/${match.questionCount} · ${participant.scoreLabel}',
                             trailing: participant.placement == null
                                 ? null
                                 : SqBadge(

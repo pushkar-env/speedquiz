@@ -41,6 +41,17 @@ dependencies:
   # Opens the store-managed subscription screen — the only place a user can
   # cancel or fix a failed payment method.
   url_launcher: ^6.3.2
+  # On-device reminders — the daily challenge, a streak about to lapse, a
+  # nudge back after a few quiet days. Entirely local: these are scheduled by
+  # the app against the phone's own clock and need no Firebase project and no
+  # server round trip, which is what makes them work on a build with push
+  # switched off. See `LocalNotificationService`.
+  flutter_local_notifications: ^22.3.0
+  # `zonedSchedule` needs a real tz database, and the device's IANA zone name
+  # is the only way to get one that survives a DST boundary — "19:00" has to
+  # stay 19:00 in October.
+  timezone: ^0.11.1
+  flutter_timezone: ^5.1.0
 
 dev_dependencies:
   flutter_test:

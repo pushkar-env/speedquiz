@@ -10,6 +10,7 @@ class AppSettings extends Equatable {
     this.soundEnabled = true,
     this.musicEnabled = false,
     this.hapticsEnabled = true,
+    this.remindersEnabled = true,
   });
 
   /// Gameplay cues: correct, wrong, tick, celebrate.
@@ -20,20 +21,29 @@ class AppSettings extends Equatable {
 
   final bool hapticsEnabled;
 
+  /// On-device reminders: the daily challenge, a streak about to lapse, a
+  /// nudge back after a few quiet days. On by default, and switchable without
+  /// touching the system-level notification permission — a player who wants
+  /// challenges but not nudges should not have to choose between them.
+  final bool remindersEnabled;
+
   AppSettings copyWith({
     bool? soundEnabled,
     bool? musicEnabled,
     bool? hapticsEnabled,
+    bool? remindersEnabled,
   }) {
     return AppSettings(
       soundEnabled: soundEnabled ?? this.soundEnabled,
       musicEnabled: musicEnabled ?? this.musicEnabled,
       hapticsEnabled: hapticsEnabled ?? this.hapticsEnabled,
+      remindersEnabled: remindersEnabled ?? this.remindersEnabled,
     );
   }
 
   @override
-  List<Object?> get props => [soundEnabled, musicEnabled, hapticsEnabled];
+  List<Object?> get props =>
+      [soundEnabled, musicEnabled, hapticsEnabled, remindersEnabled];
 }
 
 class SettingsNotifier extends StateNotifier<AppSettings> {
@@ -42,6 +52,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   static const _soundKey = 'settings_sound';
   static const _musicKey = 'settings_music';
   static const _hapticsKey = 'settings_haptics';
+  static const _remindersKey = 'settings_reminders';
 
   Future<void> hydrate() async {
     final prefs = await SharedPreferences.getInstance();
@@ -49,6 +60,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
       soundEnabled: prefs.getBool(_soundKey) ?? true,
       musicEnabled: prefs.getBool(_musicKey) ?? false,
       hapticsEnabled: prefs.getBool(_hapticsKey) ?? true,
+      remindersEnabled: prefs.getBool(_remindersKey) ?? true,
     );
     Haptics.enabled = state.hapticsEnabled;
   }
@@ -67,6 +79,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(hapticsEnabled: enabled);
     Haptics.enabled = enabled;
     await _persist(_hapticsKey, enabled);
+  }
+
+  Future<void> setReminders(bool enabled) async {
+    state = state.copyWith(remindersEnabled: enabled);
+    await _persist(_remindersKey, enabled);
   }
 
   Future<void> _persist(String key, bool value) async {

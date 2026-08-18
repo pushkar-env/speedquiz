@@ -8,6 +8,7 @@ import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/multiplayer/data/multiplayer_repository.dart';
 import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
+import 'package:speedquiz/features/multiplayer/presentation/match_history_screen.dart';
 import 'package:speedquiz/features/multiplayer/presentation/multiplayer_providers.dart';
 import 'package:speedquiz/features/multiplayer/presentation/widgets/battle_widgets.dart';
 import 'package:speedquiz/features/shell/presentation/main_shell.dart';
@@ -125,15 +126,22 @@ class _BattleHubScreenState extends ConsumerState<BattleHubScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   const _Header({this.rank});
 
   final RankedProfile? rank;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final l10n = context.l10n;
+    // Pending friend requests are only visible *inside* the friends screen, so
+    // without a count on the way in there is nothing telling anyone to open it.
+    final requests = ref.watch(
+      socialSummaryProvider.select(
+        (summary) => summary.valueOrNull?.friendRequests ?? 0,
+      ),
+    );
 
     return Row(
       children: [
@@ -163,14 +171,16 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        SqIconButton(
-          icon: Icons.notifications_rounded,
-          onPressed: () => context.push(Routes.notifications),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        SqIconButton(
-          icon: Icons.people_alt_rounded,
-          onPressed: () => context.push(Routes.friends),
+        // The inbox bell used to sit here. It lives on Home now — see
+        // `NotificationBell` — because friend requests and results are not
+        // battle business and were unreachable without opening this tab.
+        SqBadged(
+          count: requests,
+          child: SqIconButton(
+            icon: Icons.people_alt_rounded,
+            tooltip: requests > 0 ? l10n.friendsRequestsTab : null,
+            onPressed: () => context.push(Routes.friends),
+          ),
         ),
       ],
     );
@@ -231,6 +241,11 @@ class _ModeCard extends StatelessWidget {
   }
 }
 
+/// How many finished matches the hub shows before handing over to the history
+/// screen. Enough to see the last session at a glance, few enough that the
+/// modes above it stay on screen.
+const _historyPreview = 3;
+
 class _MatchSections extends ConsumerWidget {
   const _MatchSections({required this.active, required this.recent});
 
@@ -265,9 +280,23 @@ class _MatchSections extends ConsumerWidget {
           const SizedBox(height: AppSpacing.lg),
         ],
         if (recent.isNotEmpty) ...[
-          SqSectionHeader(title: l10n.battleRecentMatches),
+          SqSectionHeader(
+            title: l10n.battleRecentMatches,
+            // Only shown once there is more history than the preview holds —
+            // an action that opens a screen showing the same three rows is a
+            // dead end wearing a link.
+            actionLabel: recent.length > _historyPreview
+                ? l10n.battleHistorySeeAll
+                : null,
+            onAction: recent.length > _historyPreview
+                ? () => context.push(Routes.matchHistory)
+                : null,
+          ),
           const SizedBox(height: AppSpacing.sm),
-          for (final match in recent) _MatchRow(match: match),
+          // A summary each, rather than a name and a verdict: who, what it was
+          // about, and the scoreline, without opening anything.
+          for (final match in recent.take(_historyPreview))
+            MatchSummaryCard(match: match),
         ],
       ],
     );

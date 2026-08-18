@@ -9,6 +9,7 @@ export 'sq_avatar.dart';
 export 'sq_backdrop.dart';
 export 'sq_button.dart';
 export 'sq_confetti.dart';
+export 'sq_count_dot.dart';
 export 'sq_dialog.dart';
 export 'sq_flame.dart';
 export 'sq_glow.dart';

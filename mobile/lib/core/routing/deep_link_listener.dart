@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/routing/deep_links.dart';
 
 /// Listens for cold-start + runtime deep links and navigates via [router].
@@ -17,8 +18,9 @@ class DeepLinkListener extends StatefulWidget {
   final GoRouter router;
   final Widget child;
 
-  /// In-app paths emitted when a push notification is tapped. Optional so the
-  /// listener still works on a build with no Firebase project configured.
+  /// In-app paths emitted when a notification is tapped — a push from another
+  /// player, or an on-device reminder. Optional so the listener still works on
+  /// a build with no Firebase project configured.
   final Stream<String>? pushLinks;
 
   @override
@@ -67,20 +69,26 @@ class _DeepLinkListenerState extends State<DeepLinkListener> {
     _startPushLinks();
   }
 
-  /// Routes taps on push notifications.
+  /// Routes taps on notifications.
   ///
-  /// Kept separate from the URI stream because a push carries an in-app path
-  /// (`/battle/match/<id>`) rather than a web URL — there is nothing for
-  /// `locationFromDeepLink` to parse, and passing it through that would only
-  /// invite a scheme mismatch. The same auth-settle delay applies: a cold
-  /// start's splash redirect would otherwise swallow the navigation.
+  /// Kept separate from the URI stream because a notification carries an
+  /// in-app path (`/battle/match/<id>`) rather than a web URL — there is
+  /// nothing for `locationFromDeepLink` to parse, and passing it through that
+  /// would only invite a scheme mismatch. The same auth-settle delay applies:
+  /// a cold start's splash redirect would otherwise swallow the navigation.
   void _startPushLinks() {
     _pushSub = widget.pushLinks?.listen((location) {
       if (!location.startsWith('/')) return;
       Future<void>(() async {
         await Future<void>.delayed(const Duration(milliseconds: 600));
         if (!mounted) return;
-        widget.router.push(location);
+        // A tab is switched to; anything else is pushed over whatever the
+        // player is on. Pushing a tab root would stack a second shell.
+        if (Routes.isTabRoot(location)) {
+          widget.router.go(location);
+        } else {
+          widget.router.push(location);
+        }
       });
     });
   }

@@ -516,6 +516,8 @@ abstract class SqStrings {
   String get settingsSoundSubtitle;
   String get settingsMusic;
   String get settingsMusicSubtitle;
+  String get settingsReminders;
+  String get settingsRemindersSubtitle;
   String get settingsHaptics;
   String get settingsHapticsSubtitle;
   String get settingsAccount;
@@ -575,6 +577,9 @@ abstract class SqStrings {
   String get lobbyJoin;
   String get lobbyInviteAccepted;
   String get lobbyChallengedYou;
+
+  /// Title of the popup raised when a challenge lands while the app is open.
+  String get lobbyChallengeTitle;
   String get lobbyAccept;
   String get lobbyDecline;
   String get lobbyDeclined;
@@ -588,10 +593,30 @@ abstract class SqStrings {
   String get battleWaitingForOthers;
   String get battleOpponentAnswered;
   String get battleOpponentThinking;
+  String get battleOpponentFinishing;
   String get battleTimeUp;
   String get battleCorrect;
   String get battleWrong;
   String get battleReconnecting;
+
+  // --- Match rules -------------------------------------------------------
+  /// Combo tiers, by run length. Shouted on the verdict card.
+  String get battleCombo;
+  String get battleOnFire;
+  String get battleUnstoppable;
+
+  /// Banner over the last question of the board.
+  String get battleFinalRound;
+  String get battleDoublePoints;
+
+  /// Awarded for answering a round correctly before the opponent.
+  String get battleFirstBonus;
+
+  /// Shown to the trailing player while the catch-up bonus is in play.
+  String get battleCatchUp;
+
+  /// Multiplier chip, e.g. "x2".
+  String battleMultiplier(String value);
   String get battleOffline;
   String get battleLeaveTitle;
   String get battleLeaveBody;
@@ -600,6 +625,15 @@ abstract class SqStrings {
 
   // --- Battle: result ----------------------------------------------------
   String get resultWin;
+  String get resultYou;
+  String get resultVersus;
+  String get battleHistoryTitle;
+  String get battleHistorySeeAll;
+  String get battleHistoryEmpty;
+  String get battleHistoryEmptyBody;
+
+  /// "7 / 10 correct" — the accuracy line under a match score.
+  String battleCorrectOf(int correct, int total);
   String get resultLoss;
   String get resultDraw;
   String get resultWinBody;
@@ -693,6 +727,10 @@ abstract class SqStrings {
   String get notificationsEmpty;
   String get notificationsEmptyBody;
   String get notificationsMarkRead;
+  String get notificationsClear;
+  String get notificationsClearTitle;
+  String get notificationsClearBody;
+  String get notificationsCleared;
   String get notificationsSettings;
   String get notificationsPushDisabled;
   String notificationFriendRequest(String name);
@@ -700,6 +738,30 @@ abstract class SqStrings {
   String notificationMatchInvite(String name, String topic);
   String notificationYourTurn(String name);
   String notificationMatchResult(String name);
+
+  /// Bell semantics on Home, so a screen reader announces the count rather
+  /// than "notifications, button" with a number drawn beside it.
+  String notificationsUnread(int count);
+
+  /// Headlines for the in-app banner. A challenge reuses `lobbyChallengeTitle`.
+  String get notificationTitleFriendRequest;
+  String get notificationTitleFriendAccepted;
+  String get notificationTitleYourTurn;
+  String get notificationTitleMatchResult;
+  String get notificationTitleExpiring;
+  String get notificationIgnore;
+
+  // --- On-device reminders -----------------------------------------------
+  //
+  // Rendered by the OS, often with the app closed, so these are baked at
+  // schedule time in whatever language the app was last set to.
+  String get reminderDailyTitle;
+  String get reminderDailyBody;
+  String get reminderStreakTitle;
+  String reminderStreakBody(int days);
+  String get reminderComebackTitle;
+  String get reminderComebackBody;
+  String reminderComebackBodyTopic(String topic);
 
   // --- Shared errors -----------------------------------------------------
   String get errorNotFriends;

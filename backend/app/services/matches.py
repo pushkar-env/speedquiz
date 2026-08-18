@@ -76,11 +76,10 @@ from app.schemas.multiplayer import (
     SubmitMatchAnswerRequest,
 )
 from app.models import NotificationType
-from app.services import anticheat, friends, notifications, ranking, realtime
+from app.services import anticheat, friends, match_rules, notifications, ranking, realtime
 from app.services.localization import localized_topic_name
 from app.services.progression import apply_xp
 from app.services.quiz_service import _select_questions, _user_seen_question_ids
-from app.services.scoring import scoring_service
 
 logger = get_logger(__name__)
 
@@ -94,6 +93,13 @@ ROOM_CODE_LENGTH = 6
 #: players' rounds incomparable; the `mode` column stays for when a mode is
 #: designed for two.
 MATCH_GAME_MODE = GameMode.CASUAL
+
+#: Statuses in which a player may still be served a round and score an answer.
+#:
+#: AWAITING_OPPONENT belongs here: it means one side has finished and the other
+#: has not. Treating it as closed is what made the second player of an async
+#: match unable to answer anything they were shown.
+IN_PLAY_MATCH_STATUSES = frozenset({MatchStatus.LIVE, MatchStatus.AWAITING_OPPONENT})
 
 #: Rewards. Deliberately modest next to a solo run: multiplayer should be worth
 #: playing for the match, and a ladder that is also the fastest way to farm XP
@@ -257,7 +263,7 @@ def round_deadline(match: Match, participant: Optional[MatchParticipant]) -> Opt
     shared clock — each side's window opens when they are served — so the
     deadline is read from their own participant row.
     """
-    if match.status is not MatchStatus.LIVE:
+    if match.status not in IN_PLAY_MATCH_STATUSES:
         return None
     started = (
         _aware(match.round_started_at)
@@ -267,6 +273,35 @@ def round_deadline(match: Match, participant: Optional[MatchParticipant]) -> Opt
     if started is None:
         return None
     return started + timedelta(milliseconds=match.question_time_limit_ms)
+
+
+def _has_finished(match: Match, participant: MatchParticipant) -> bool:
+    return participant.rounds_answered >= match.question_count
+
+
+def _score_visible_to(
+    match: Match,
+    participant: MatchParticipant,
+    viewer: Optional[MatchParticipant],
+) -> bool:
+    """May [viewer] see [participant]'s score right now?
+
+    Yes during play — a live battle is meant to be a race you can see, and the
+    catch-up bonus is only fair if you know you are behind. Yes once the match
+    is over, which is the point of a result.
+
+    No in exactly one window: the viewer has played their last question and the
+    opponent has not. What is on the opponent's row then is a *running* total
+    with one question still to land, and showing it announces the result of a
+    match that is not decided — the finished player watches a number they
+    already beat, then sees it jump past them. Whoever is still playing keeps
+    seeing everything, because they are the one in the race.
+    """
+    if match.status not in IN_PLAY_MATCH_STATUSES:
+        return True
+    if viewer is None or participant.user_id == viewer.user_id:
+        return True
+    return not (_has_finished(match, viewer) and not _has_finished(match, participant))
 
 
 async def serialize_match(
@@ -309,7 +344,11 @@ async def serialize_match(
                 is_host=participant.is_host,
                 is_me=participant.user_id == viewer_id,
                 is_connected=str(participant.user_id) in connected,
-                score=participant.score,
+                score=(
+                    participant.score
+                    if _score_visible_to(match, participant, me)
+                    else None
+                ),
                 correct_count=participant.correct_count,
                 rounds_answered=participant.rounds_answered,
                 best_streak=participant.best_streak,
@@ -350,6 +389,27 @@ async def serialize_match(
         server_time=_now(),
         my_rounds_answered=me.rounds_answered if me else 0,
         my_outcome=me.outcome if me else None,
+    )
+
+
+async def _round_has_correct_answer(
+    db: AsyncSession, match_id: UUID, round_index: int
+) -> bool:
+    """Whether anyone has already got this round right.
+
+    Drives the first-correct bonus. Asked before the incoming answer is
+    written, so the player being scored never counts as beating themselves.
+    """
+    return bool(
+        await db.scalar(
+            select(MatchAnswer.id)
+            .where(
+                MatchAnswer.match_id == match_id,
+                MatchAnswer.round_index == round_index,
+                MatchAnswer.is_correct.is_(True),
+            )
+            .limit(1)
+        )
     )
 
 
@@ -731,7 +791,7 @@ async def get_round(db: AsyncSession, user: User, match_id: UUID) -> MatchRoundO
 
     if match.status is MatchStatus.PENDING or match.status is MatchStatus.LOBBY:
         raise _err("match_not_started", "The match has not started.", status.HTTP_409_CONFLICT)
-    if match.status in (MatchStatus.COMPLETED, MatchStatus.EXPIRED, MatchStatus.CANCELLED):
+    if match.status not in IN_PLAY_MATCH_STATUSES:
         raise _err("match_over", "This match is over.", status.HTTP_409_CONFLICT)
 
     if participant.status is ParticipantStatus.INVITED:
@@ -789,6 +849,7 @@ async def get_round(db: AsyncSession, user: User, match_id: UUID) -> MatchRoundO
         served_at=served,
         server_time=now,
         already_answered=bool(already),
+        is_final_round=round_index == match.question_count - 1,
     )
 
 
@@ -829,6 +890,10 @@ async def _round_payload(
             if original in by_position
         ],
         "time_limit_ms": match.question_time_limit_ms,
+        # Drives the double-points banner. Sent with the round rather than
+        # inferred client-side from an index, so a board of a different length
+        # cannot get it wrong.
+        "is_final_round": round_index == match.question_count - 1,
     }
 
 
@@ -855,7 +920,12 @@ async def submit_answer(
     match = await load_match(db, match_id)
     participant = require_participant(match, user.id)
 
-    if match.status is not MatchStatus.LIVE:
+    # AWAITING_OPPONENT is a playable status, not a closed one: it means the
+    # *other* side has finished and this player still owes the match a board.
+    # Accepting only LIVE meant the second player of an async match could be
+    # served every question and have every answer rejected — so they never
+    # finished, and the match settled on the first player's score alone.
+    if match.status not in (MatchStatus.LIVE, MatchStatus.AWAITING_OPPONENT):
         raise _err("match_not_live", "This match is not in play.", status.HTTP_409_CONFLICT)
     if not await anticheat.check_answer_rate_limit(user.id):
         raise _err("rate_limited", "Slow down.", status.HTTP_429_TOO_MANY_REQUESTS)
@@ -897,14 +967,25 @@ async def submit_answer(
         is_correct = False
 
     remaining_ms = max(0, match.question_time_limit_ms - elapsed_ms)
-    breakdown = scoring_service.score_answer(
+
+    # Read before this answer is written: "first correct" means nobody had got
+    # it right when this one arrived.
+    is_first_correct = is_correct and not await _round_has_correct_answer(
+        db, match.id, expected_round
+    )
+    best_opponent = max(
+        (p.score for p in match.participants if p.user_id != user.id), default=0
+    )
+    breakdown = match_rules.score_answer(
         is_correct=is_correct,
         current_streak=participant.streak,
         remaining_ms=remaining_ms,
         total_ms=match.question_time_limit_ms,
-        mode=MATCH_GAME_MODE,
+        is_first_correct=is_first_correct,
+        is_final_round=expected_round == match.question_count - 1,
+        points_behind=max(0, best_opponent - participant.score),
     )
-    points = anticheat.clamp_points_awarded(breakdown.points_awarded)
+    points = match_rules.clamp_points(breakdown.points)
 
     answer = MatchAnswer(
         id=uuid4(),
@@ -919,7 +1000,7 @@ async def submit_answer(
         server_elapsed_ms=elapsed_ms,
         base_points=breakdown.base_points,
         speed_bonus=breakdown.speed_bonus,
-        streak_multiplier=Decimal(breakdown.streak_multiplier),
+        streak_multiplier=Decimal(str(breakdown.combo_multiplier)),
         points_awarded=points,
     )
     db.add(answer)
@@ -951,17 +1032,21 @@ async def submit_answer(
     # Somebody is here. Whatever the presence hash believes, a scored answer is
     # proof the match is not abandoned.
     await realtime.clear_abandoned(match.id)
-    await realtime.publish(
-        match.id,
-        realtime.EVENT_ROUND_PROGRESS,
-        {
-            "round_index": expected_round,
-            "user_id": str(user.id),
-            "answered": True,
-            "rounds_answered": participant.rounds_answered,
-            "scores": {str(p.user_id): p.score for p in match.participants},
-        },
-    )
+    progress = {
+        "round_index": expected_round,
+        "user_id": str(user.id),
+        "answered": True,
+        "rounds_answered": participant.rounds_answered,
+    }
+    # The scores map is broadcast to the whole match channel, so it cannot be
+    # filtered per recipient — and once someone has finished, the only player
+    # still answering is the one whose running total must stay hidden from
+    # them. Omitting it entirely for the rest of the match is the honest fix:
+    # the client keeps whatever it last had, and `serialize_match` hands each
+    # side the scores it is allowed to see on the next refresh.
+    if not any(_has_finished(match, p) for p in match.participants):
+        progress["scores"] = {str(p.user_id): p.score for p in match.participants}
+    await realtime.publish(match.id, realtime.EVENT_ROUND_PROGRESS, progress)
 
     closed, finished = await advance_if_due(db, match)
 
@@ -975,6 +1060,11 @@ async def submit_answer(
         streak=participant.streak,
         score=participant.score,
         explanation=question.explanation,
+        combo_multiplier=breakdown.combo_multiplier,
+        combo_label=breakdown.combo_label,
+        first_bonus=breakdown.first_bonus,
+        is_final_round=breakdown.is_final_round,
+        catchup_applied=breakdown.catchup_multiplier > 1.0,
         round_closed=closed,
         match_finished=finished,
         opponents=await _opponent_states(db, match, expected_round, exclude=user.id, revealed=closed),
@@ -1032,12 +1122,17 @@ async def advance_if_due(db: AsyncSession, match: Match) -> tuple[bool, bool]:
     one caller the winner, and the compare-and-set on `current_round_index`
     means even a lock that expired early cannot double-advance.
     """
-    if match.status is not MatchStatus.LIVE:
+    if match.status not in IN_PLAY_MATCH_STATUSES:
         return (False, False)
 
     if match.delivery is MatchDelivery.ASYNC:
         # No shared round to close. The match ends when everyone has played out
         # their own board.
+        return (False, await _finalize_if_everyone_done(db, match))
+
+    if match.status is not MatchStatus.LIVE:
+        # A live-delivery match parked on AWAITING_OPPONENT has no shared clock
+        # left to run; only the async settle above applies.
         return (False, await _finalize_if_everyone_done(db, match))
 
     round_index = match.current_round_index
@@ -1182,10 +1277,23 @@ async def _close_round(db: AsyncSession, match: Match, round_index: int) -> None
 
 async def _finalize_if_everyone_done(db: AsyncSession, match: Match) -> bool:
     players = _live_players(match)
-    if not players:
-        await finalize(db, match)
-        return True
-    if all(p.rounds_answered >= match.question_count for p in players):
+
+    # A duel whose challenged player has not opened the match yet. They are not
+    # in `players` — an invite is not an active seat — but in a duel they *are*
+    # the entire opposition, and settling without them hands the challenger a
+    # win for getting to their phone first. The expiry sweep releases it after
+    # the async deadline, so this waits for a day rather than forever.
+    #
+    # Scoped to duels deliberately. In a room the players who turned up should
+    # not be held hostage by an invitee who never did.
+    awaiting_challenged_player = match.format is MatchFormat.DUEL and any(
+        p.status is ParticipantStatus.INVITED for p in match.participants
+    )
+
+    everyone_played = bool(players) and all(
+        p.rounds_answered >= match.question_count for p in players
+    )
+    if not awaiting_challenged_player and (not players or everyone_played):
         await finalize(db, match)
         return True
 
@@ -1196,6 +1304,19 @@ async def _finalize_if_everyone_done(db: AsyncSession, match: Match) -> bool:
         p.rounds_answered >= match.question_count for p in players
     ):
         match.status = MatchStatus.AWAITING_OPPONENT
+        # And it has to become async, or the match deadlocks.
+        #
+        # Live delivery resolves *every* player's round from the shared
+        # `match.current_round_index`, and nothing advances that index once the
+        # status is no longer LIVE — `advance_if_due` returns early. So the
+        # player who still owes rounds was served the same question forever and
+        # every answer came back `already_answered`: unwinnable, unleavable,
+        # and only released by the 48-hour expiry sweep.
+        #
+        # There is no shared clock left to run here by definition — one side
+        # has already finished — so async is not a degradation, it is what this
+        # state already is.
+        await convert_to_async(db, match, reason="opponent_finished")
         await db.flush()
         await _notify_waiting_players(db, match, players)
     return False
@@ -1483,6 +1604,43 @@ async def leave_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
     return match
 
 
+async def heal_parked_matches(db: AsyncSession, *, limit: int = 100) -> int:
+    """Release matches parked on AWAITING_OPPONENT with a live delivery.
+
+    That combination is a deadlock: live delivery resolves every player's round
+    from the shared `match.current_round_index`, and nothing advances it once
+    the status is no longer LIVE. The player who still owes rounds is served
+    one question forever and every answer comes back `already_answered`.
+
+    [_finalize_if_everyone_done] no longer creates the state, but rows written
+    before that fix are still sitting in the database, and a player cannot get
+    out of one by playing, leaving, or waiting for anything short of the
+    48-hour expiry. So this repairs them in place rather than making the fix
+    conditional on nobody having hit the bug yet.
+
+    Cheap by construction: the combination is rare, and once the backlog is
+    drained this selects nothing on every tick forever.
+    """
+    parked = (
+        await db.execute(
+            select(Match)
+            .options(selectinload(Match.participants))
+            .where(
+                Match.status == MatchStatus.AWAITING_OPPONENT,
+                Match.delivery == MatchDelivery.LIVE,
+            )
+            .limit(limit)
+        )
+    ).scalars().all()
+
+    for match in parked:
+        logger.info("match_unparked", match_id=str(match.id))
+        await convert_to_async(db, match, reason="parked_deadlock")
+    if parked:
+        await db.flush()
+    return len(parked)
+
+
 async def sweep_live_matches(db: AsyncSession, *, limit: int = 200) -> int:
     """Run the clock for live matches nobody is currently driving.
 
@@ -1505,6 +1663,10 @@ async def sweep_live_matches(db: AsyncSession, *, limit: int = 200) -> int:
 
     Returns how many matches were touched.
     """
+    # First, unwedge anything already deadlocked — a stuck match has no clock
+    # to run until it has been handed back to its players.
+    touched_parked = await heal_parked_matches(db)
+
     settings = get_settings()
     now = _now()
     # A coarse pre-filter only. The real deadline is per-match — every match
@@ -1555,7 +1717,7 @@ async def sweep_live_matches(db: AsyncSession, *, limit: int = 200) -> int:
             await realtime.clear_abandoned(match.id)
 
     await db.flush()
-    return touched
+    return touched + touched_parked
 
 
 async def expire_stale(db: AsyncSession, *, limit: int = 100) -> int:
@@ -1675,6 +1837,19 @@ async def get_result(db: AsyncSession, user: User, match_id: UUID) -> MatchResul
     )
 
 
+#: How far back a player's match history goes.
+#:
+#: Ten is a deliberate ceiling rather than a page size: anything older is not
+#: paged to, it simply is not shown. A history screen that grows without bound
+#: turns into a scroll nobody reads, and every row costs a `serialize_match`
+#: with its own profile and presence lookups.
+#:
+#: The rows stay in the database. Head-to-head records on the friends screen
+#: are counted from them, and deleting a match to tidy a list would silently
+#: rewrite the standings between two players.
+MATCH_HISTORY_LIMIT = 10
+
+
 async def list_for_user(
     db: AsyncSession, user: User, *, limit: int = 20
 ) -> tuple[list[MatchOut], list[MatchOut]]:
@@ -1686,19 +1861,20 @@ async def list_for_user(
             .join(MatchParticipant, MatchParticipant.match_id == Match.id)
             .where(MatchParticipant.user_id == user.id)
             .order_by(Match.created_at.desc())
-            .limit(limit * 2)
+            .limit(limit + MATCH_HISTORY_LIMIT)
         )
     ).scalars().unique().all()
 
     active: list[MatchOut] = []
     recent: list[MatchOut] = []
     for match in rows:
-        state = await serialize_match(db, match, viewer_id=user.id)
         if match.status in OPEN_MATCH_STATUSES:
-            active.append(state)
-        elif len(recent) < limit:
-            recent.append(state)
-    return active[:limit], recent
+            if len(active) >= limit:
+                continue
+            active.append(await serialize_match(db, match, viewer_id=user.id))
+        elif len(recent) < MATCH_HISTORY_LIMIT:
+            recent.append(await serialize_match(db, match, viewer_id=user.id))
+    return active, recent
 
 
 async def count_open_challenges(db: AsyncSession, user_id: UUID) -> int:
