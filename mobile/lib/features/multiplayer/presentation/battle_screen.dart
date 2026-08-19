@@ -53,10 +53,28 @@ class BattleScreen extends ConsumerWidget {
         // on an async opponent — there is nothing left to forfeit once your own
         // board is done, so the warning promised a consequence that the server
         // (rightly) refuses to apply.
+        //
+        // Mid-board, back *is* the abandon button and behaves like it: the
+        // match settles and the screen stays put on the result. It used to pop
+        // straight out to the Battle list, so the player who had just ended a
+        // match — and taken a loss and a rating hit for it — was shown nothing
+        // at all, and the match looked to them like it had simply vanished
+        // rather than concluded. What they confirmed was "end this match", not
+        // "navigate away"; `canPop` is true once it is over, so the next back
+        // press leaves freely.
         if (match!.isMyTurn) {
-          final confirmed = await _confirmAbandon(context);
-          if (!confirmed || !context.mounted) return;
+          final abandoned = await _abandonMatch(context, controller);
+          if (!abandoned || !context.mounted) return;
+          // `leave` is best-effort and swallows a network failure, so a forfeit
+          // that never reached the server would leave the screen unchanged and
+          // the gesture reading as ignored. Only then fall back to leaving,
+          // which is what was asked for — the server forfeits an absent player
+          // anyway.
+          final settled = ref.read(battleControllerProvider(matchId)).match?.isOver;
+          if (settled == false) context.pop();
+          return;
         }
+        // A lobby has no result to show, so backing out of one still leaves.
         await controller.leave();
         if (context.mounted) context.pop();
       },
@@ -102,19 +120,24 @@ Future<bool> _confirmAbandon(BuildContext context) async {
   return result ?? false;
 }
 
-/// Abandon from inside a round: confirm, then forfeit.
+/// Abandon a match in progress: confirm, then forfeit.
 ///
-/// Stays on the screen rather than popping, unlike the back gesture. Back means
-/// "get me out of here"; this button means "end this match" — and the match
-/// settles immediately, so staying put lands the player on the result they just
-/// caused, with the rematch button right there.
-Future<void> _abandonFromPlay(
+/// Shared by the Abandon button and the back gesture, which mid-board mean the
+/// same thing and should not behave differently. Neither pops. The match
+/// settles the moment this returns, so staying put lands the player on the
+/// result they just caused — their loss, the rating it moved, and the rematch
+/// button — rather than on the Battle list with nothing to show for it.
+///
+/// Returns whether the player went through with it, so the back gesture can
+/// tell a cancelled dialog (stay in the match) from a completed forfeit.
+Future<bool> _abandonMatch(
   BuildContext context,
   BattleController controller,
 ) async {
-  if (!await _confirmAbandon(context)) return;
+  if (!await _confirmAbandon(context)) return false;
   Haptics.tap();
   await controller.leave();
+  return true;
 }
 
 class _Body extends ConsumerWidget {
@@ -433,7 +456,7 @@ class _PlayView extends ConsumerWidget {
                     tooltip: l10n.battleAbandonAction,
                     color: context.sq.textFaint,
                     visualDensity: VisualDensity.compact,
-                    onPressed: () => _abandonFromPlay(context, controller),
+                    onPressed: () => _abandonMatch(context, controller),
                   ),
                 ],
               ),

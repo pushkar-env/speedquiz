@@ -425,6 +425,37 @@ async def _participants_answered(
     return {row[0] for row in rows.all()}
 
 
+async def _participants_missed_every_round(
+    db: AsyncSession, match_id: UUID, rounds: Sequence[int]
+) -> set[UUID]:
+    """Participants who let the clock run out on *every* one of `rounds`.
+
+    A miss is a recorded one — the NULL-selection row [_close_round] writes for
+    whoever did not answer in time. Reading those back rather than keeping a
+    counter somewhere means the signal is the same thing the scoreboard is
+    built from: it cannot drift from it, and it survives a restart, a failover
+    or a sweep that stopped running.
+
+    A round with no row at all does *not* count as a miss. A seat that was not
+    in play for it has no row, and reading that gap as a miss would forfeit a
+    player for having arrived late.
+    """
+    wanted = set(rounds)
+    if not wanted:
+        return set()
+    rows = await db.execute(
+        select(MatchAnswer.participant_id, MatchAnswer.round_index).where(
+            MatchAnswer.match_id == match_id,
+            MatchAnswer.round_index.in_(tuple(wanted)),
+            MatchAnswer.selected_option_index.is_(None),
+        )
+    )
+    missed: dict[UUID, set[int]] = {}
+    for participant_id, round_index in rows.all():
+        missed.setdefault(participant_id, set()).add(round_index)
+    return {seat for seat, seen in missed.items() if seen >= wanted}
+
+
 # --- Loading ----------------------------------------------------------------
 
 
@@ -1244,6 +1275,12 @@ async def advance_if_due(db: AsyncSession, match: Match) -> tuple[bool, bool]:
     Safe to call from anywhere and as often as you like: the Redis lock makes
     one caller the winner, and the compare-and-set on `current_round_index`
     means even a lock that expired early cannot double-advance.
+
+    Closing a round is also where a player who vanished mid-match is noticed
+    and forfeited — see [_forfeit_departed_players]. That check rides here
+    rather than in the sweep on purpose: the opponent who is still playing is
+    already calling this on every answer and every poll, so they get their
+    result without waiting for a worker tick.
     """
     if match.status not in IN_PLAY_MATCH_STATUSES:
         return (False, False)
@@ -1298,6 +1335,18 @@ async def advance_if_due(db: AsyncSession, match: Match) -> tuple[bool, bool]:
 
         await _close_round(db, match, round_index)
         finished = match.current_round_index >= match.question_count
+        # `everyone_answered` means nobody let this round run out, so nobody can
+        # have let a whole window of them run out either — worth checking, so
+        # the ordinary round close where both players are present pays nothing
+        # for this.
+        if not finished and not everyone_answered:
+            if await _forfeit_departed_players(db, match):
+                # Settled on the same terms a tapped Leave settles on: a duel
+                # has nobody left to play against, a room keeps going until one
+                # player remains.
+                finished = (
+                    match.format is MatchFormat.DUEL or len(_live_players(match)) <= 1
+                )
         if finished:
             await finalize(db, match)
         return (True, finished)
@@ -1396,6 +1445,79 @@ async def _close_round(db: AsyncSession, match: Match, round_index: int) -> None
     else:
         match.round_started_at = None
         await db.flush()
+
+
+async def _forfeit_departed_players(db: AsyncSession, match: Match) -> bool:
+    """Forfeit anyone who left without telling us. Returns whether any did.
+
+    A player who kills the app, swipes it away or drives into a tunnel never
+    reaches [leave_match], so their seat stays PLAYING and every remaining
+    round waits out its full clock for an answer that is not coming. On a
+    seven-question board that is over a minute of dead air for the player who
+    *is* there — the one answering in two seconds and then staring at a timer.
+
+    Two signals, and **both** are required:
+
+    * They are holding no live connection to the match.
+    * They have let every one of the last `match_abandon_rounds` rounds run out.
+
+    Either alone is a false positive waiting to happen. Presence is invisible to
+    a player whose network blocks WebSockets but who is answering perfectly well
+    over HTTP; silence is ordinary for someone connected and thinking, or
+    reading a reveal. Only together do they mean nobody is on the other end.
+
+    Deliberately not applied when *everyone* qualifies. A room with nobody left
+    in it is not a match everybody lost — it is the abandoned-match case that
+    [sweep_live_matches] settles on the scores it has, and forfeiting both sides
+    of a duel neither player was around for would hand out two losses and the
+    Elo to match.
+    """
+    settings = get_settings()
+    window = settings.match_abandon_rounds
+    # `current_round_index` doubles as the count of rounds that have closed.
+    if window <= 0 or match.current_round_index < window:
+        return False
+
+    players = _live_players(match)
+    if len(players) < 2:
+        # Nobody is being kept waiting by anybody. One seat left is a match
+        # already on its way to settlement, and forfeiting it would leave the
+        # standings with no player in them who finished.
+        return False
+
+    missed = await _participants_missed_every_round(
+        db,
+        match.id,
+        range(match.current_round_index - window, match.current_round_index),
+    )
+    if not missed:
+        return False
+
+    connected = await realtime.connected_user_ids(match.id)
+    departed = [
+        p for p in players if p.id in missed and str(p.user_id) not in connected
+    ]
+    if not departed or len(departed) == len(players):
+        return False
+
+    now = _now()
+    for participant in departed:
+        # The same status a tapped Leave writes, so everything downstream is
+        # already built: [_rank_participants] sorts them last whatever the
+        # score, [finalize] hands them the loss and the rating that goes with
+        # it, and the result screen reads FORFEITED to tell the winner they won
+        # because the other player walked.
+        participant.status = ParticipantStatus.FORFEITED
+        participant.finished_at = now
+        logger.info(
+            "match_participant_abandoned",
+            match_id=str(match.id),
+            user_id=str(participant.user_id),
+            consecutive_misses=window,
+        )
+    await db.flush()
+    await _publish_participants(db, match)
+    return True
 
 
 async def _finalize_if_everyone_done(db: AsyncSession, match: Match) -> bool:
@@ -1835,6 +1957,11 @@ async def sweep_live_matches(db: AsyncSession, *, limit: int = 200) -> int:
        `match_abandon_rounds`; on reaching the limit the match is finalized on
        the scores it has, so the player who did turn up gets their result in
        under a minute instead of waiting out the whole board.
+
+    The sibling case — *one* player gone while the other plays on — needs no
+    help from here. [advance_if_due] forfeits the absentee as the round closes,
+    and the player still tapping answers is calling it far more often than this
+    sweep runs.
 
     Returns how many matches were touched.
     """

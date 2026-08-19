@@ -460,6 +460,296 @@ async def test_backing_out_of_a_lobby_does_not_settle_anything(monkeypatch):
     assert settled == []
 
 
+# --- Walking out without saying so ------------------------------------------
+#
+# Killing the app, swiping it away or losing signal never reaches
+# `leave_match`. The seat stays PLAYING, so every remaining round waits out its
+# full clock for an answer that is not coming, and the player who *is* there
+# spends most of a board watching a timer.
+
+
+class _MissDb:
+    """Answers the abandon check's one query with the rows it was handed."""
+
+    def __init__(self, *rows: tuple) -> None:
+        self._rows = list(rows)
+
+    async def execute(self, _statement):
+        return SimpleNamespace(all=lambda: list(self._rows))
+
+
+def _live_duel(*seats: MatchParticipant, question_count: int = 7, closed: int = 2) -> Match:
+    """A duel mid-board: `closed` rounds behind it, a shared clock running."""
+    match = _duel(*seats, question_count=question_count)
+    match.delivery = MatchDelivery.LIVE
+    match.current_round_index = closed
+    match.question_time_limit_ms = 15000
+    match.round_started_at = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    return match
+
+
+def _abandon_signals(
+    monkeypatch,
+    *,
+    missed: tuple[MatchParticipant, ...] = (),
+    connected: tuple[MatchParticipant, ...] = (),
+) -> list:
+    """Stub the two signals the abandon check reads.
+
+    Returns the list the round window it asked about lands in, so a test can
+    assert it looked at the *last* few rounds rather than the whole board.
+    """
+    windows: list = []
+
+    async def _missed(_db, _match_id, rounds):
+        windows.append(list(rounds))
+        return {p.id for p in missed}
+
+    async def _connected(_match_id):
+        return {str(p.user_id) for p in connected}
+
+    monkeypatch.setattr(matches, "_participants_missed_every_round", _missed)
+    monkeypatch.setattr(matches.realtime, "connected_user_ids", _connected)
+    monkeypatch.setattr(matches, "_publish_participants", _noop)
+    return windows
+
+
+async def test_the_abandon_bar_is_every_round_in_the_window():
+    """`stayer` let one of the two rounds run out, which is a player still
+    there having a bad round. `newcomer` has no row for the first of them at
+    all, which is a seat that was not in play for it. Neither has abandoned
+    anything; only the player who missed both has."""
+    ghost, stayer, newcomer = uuid4(), uuid4(), uuid4()
+    db = _MissDb((ghost, 3), (ghost, 4), (stayer, 3), (newcomer, 4))
+
+    assert await matches._participants_missed_every_round(db, uuid4(), [3, 4]) == {ghost}
+
+
+async def test_a_player_who_vanished_is_forfeited_without_ever_tapping_leave(
+    monkeypatch,
+):
+    """The whole point: the opponent stops existing and the match stops waiting
+    for them, instead of playing the board out at full clock."""
+    ghost = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    stayer = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    _abandon_signals(monkeypatch, missed=(ghost,), connected=(stayer,))
+
+    forfeited = await matches._forfeit_departed_players(
+        _SettlementDb(), _live_duel(ghost, stayer)
+    )
+
+    assert forfeited is True
+    assert ghost.status is ParticipantStatus.FORFEITED
+    assert stayer.status is ParticipantStatus.PLAYING
+
+
+async def test_a_dropped_socket_does_not_forfeit_a_player_who_is_answering(
+    monkeypatch,
+):
+    """Presence is invisible to a player whose network blocks WebSockets but
+    who is answering perfectly well over HTTP — and to everyone at once if
+    Redis is unreachable, which returns an empty set. Silence has to be the
+    other half of the test, or a bad network becomes a loss.
+
+    The opponent here is the mirror image, and the reason the check runs at
+    all: plainly connected, and letting every round run out."""
+    over_http = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    thinking = _seat(ParticipantStatus.PLAYING, rounds_answered=0)
+    _abandon_signals(monkeypatch, missed=(thinking,), connected=(thinking,))
+
+    assert (
+        await matches._forfeit_departed_players(
+            _SettlementDb(), _live_duel(over_http, thinking)
+        )
+        is False
+    )
+    assert over_http.status is ParticipantStatus.PLAYING
+
+
+async def test_silence_does_not_forfeit_a_player_who_is_still_connected(
+    monkeypatch,
+):
+    """The other half. Someone connected and thinking, or reading a reveal, has
+    let the clock run out and is still very much in the match."""
+    slow = _seat(ParticipantStatus.PLAYING, rounds_answered=0)
+    quick = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    _abandon_signals(monkeypatch, missed=(slow,), connected=(slow, quick))
+
+    assert (
+        await matches._forfeit_departed_players(_SettlementDb(), _live_duel(slow, quick))
+        is False
+    )
+    assert slow.status is ParticipantStatus.PLAYING
+
+
+async def test_a_match_nobody_is_left_in_is_not_a_pile_of_forfeits(monkeypatch):
+    """Both sides gone is the abandoned-match case `sweep_live_matches` already
+    settles on the scores it has. Forfeiting everyone instead would hand out two
+    losses, and in a ranked duel the Elo to go with them."""
+    a = _seat(ParticipantStatus.PLAYING, rounds_answered=0)
+    b = _seat(ParticipantStatus.PLAYING, rounds_answered=0)
+    _abandon_signals(monkeypatch, missed=(a, b), connected=())
+
+    assert (
+        await matches._forfeit_departed_players(_SettlementDb(), _live_duel(a, b)) is False
+    )
+    assert {a.status, b.status} == {ParticipantStatus.PLAYING}
+
+
+async def test_a_room_forfeits_only_the_seat_that_emptied(monkeypatch):
+    ghost = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    others = [_seat(ParticipantStatus.PLAYING, rounds_answered=2) for _ in range(2)]
+    match = _live_duel(ghost, *others)
+    match.format = MatchFormat.ROOM
+    _abandon_signals(monkeypatch, missed=(ghost,), connected=tuple(others))
+
+    assert await matches._forfeit_departed_players(_SettlementDb(), match) is True
+    assert ghost.status is ParticipantStatus.FORFEITED
+    assert [p.status for p in others] == [ParticipantStatus.PLAYING] * 2
+
+
+async def test_one_quiet_round_is_not_an_abandonment(monkeypatch):
+    """`match_abandon_rounds` is two for a reason, and a board that has not run
+    that many rounds yet has nothing to judge anyone on."""
+    ghost = _seat(ParticipantStatus.PLAYING, rounds_answered=0)
+    stayer = _seat(ParticipantStatus.PLAYING, rounds_answered=1)
+    windows = _abandon_signals(monkeypatch, missed=(ghost,), connected=(stayer,))
+
+    forfeited = await matches._forfeit_departed_players(
+        _SettlementDb(), _live_duel(ghost, stayer, closed=1)
+    )
+
+    assert forfeited is False
+    assert windows == [], "and no history to read, so nothing was read"
+
+
+async def test_the_abandon_window_is_the_last_rounds_not_the_whole_board(
+    monkeypatch,
+):
+    """A player who missed rounds one and two and then came back and played
+    four and five has not abandoned anything."""
+    window = matches.get_settings().match_abandon_rounds
+    windows = _abandon_signals(monkeypatch)
+
+    await matches._forfeit_departed_players(
+        _SettlementDb(),
+        _live_duel(
+            _seat(ParticipantStatus.PLAYING),
+            _seat(ParticipantStatus.PLAYING),
+            closed=6,
+        ),
+    )
+
+    assert windows == [list(range(6 - window, 6))]
+
+
+# --- ...and what the round clock does about it ------------------------------
+
+
+class _LockedDb:
+    """Answers the one re-read `advance_if_due` makes under the round lock."""
+
+    def __init__(self, match: Match) -> None:
+        self._match = match
+
+    async def execute(self, _statement):
+        return SimpleNamespace(
+            one_or_none=lambda: SimpleNamespace(
+                status=self._match.status,
+                current_round_index=self._match.current_round_index,
+            )
+        )
+
+    async def flush(self) -> None:
+        return None
+
+
+async def _yes(*_args, **_kwargs) -> bool:
+    return True
+
+
+def _round_closing(
+    match: Match,
+    monkeypatch,
+    *,
+    answered: tuple[MatchParticipant, ...] = (),
+    abandoned: tuple[MatchParticipant, ...] = (),
+):
+    """Run one round close with the reveal, the Redis lock and the abandon check
+    itself stubbed, leaving only the decisions `advance_if_due` makes."""
+    log = SimpleNamespace(settled=[], abandon_checks=0)
+
+    async def _answers(_db, _match_id, _round_index):
+        return {p.id for p in answered}
+
+    async def _close(_db, closing: Match, round_index: int):
+        closing.current_round_index = round_index + 1
+
+    async def _forfeit(_db, _match):
+        log.abandon_checks += 1
+        for seat in abandoned:
+            seat.status = ParticipantStatus.FORFEITED
+        return bool(abandoned)
+
+    monkeypatch.setattr(matches, "_participants_answered", _answers)
+    monkeypatch.setattr(matches, "_close_round", _close)
+    monkeypatch.setattr(matches, "_forfeit_departed_players", _forfeit)
+    monkeypatch.setattr(matches, "finalize", lambda db, m: _record(log.settled, m))
+    monkeypatch.setattr(matches.realtime, "acquire_round_lock", _yes)
+    monkeypatch.setattr(matches.realtime, "release_round_lock", _noop)
+    return log
+
+
+async def test_a_duel_settles_the_moment_the_other_player_turns_out_to_be_gone(
+    monkeypatch,
+):
+    """The reported bug. Every round after the disconnect ran its full
+    `question_time_limit_ms` for a player who answered in two seconds, because
+    `everyone_answered` waits on a seat nobody is sitting in — over a minute of
+    dead clock on a seven-question board."""
+    ghost = _seat(ParticipantStatus.PLAYING, rounds_answered=1)
+    stayer = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    match = _live_duel(ghost, stayer, closed=1)
+    log = _round_closing(match, monkeypatch, answered=(stayer,), abandoned=(ghost,))
+
+    closed, finished = await matches.advance_if_due(_LockedDb(match), match)
+
+    assert (closed, finished) == (True, True)
+    assert log.settled == [match], "there is nobody left to play the other five"
+
+
+async def test_a_room_with_players_left_in_it_plays_on(monkeypatch):
+    """One empty chair is not the end of a room, the same way a tapped Leave is
+    not — the people still answering are owed the rest of their board."""
+    ghost = _seat(ParticipantStatus.PLAYING, rounds_answered=1)
+    others = [_seat(ParticipantStatus.PLAYING, rounds_answered=2) for _ in range(2)]
+    match = _live_duel(ghost, *others, closed=1)
+    match.format = MatchFormat.ROOM
+    log = _round_closing(match, monkeypatch, answered=tuple(others), abandoned=(ghost,))
+
+    closed, finished = await matches.advance_if_due(_LockedDb(match), match)
+
+    assert (closed, finished) == (True, False)
+    assert log.settled == []
+
+
+async def test_a_round_everyone_answered_never_goes_looking_for_an_absentee(
+    monkeypatch,
+):
+    """Nobody let this round run out, so nobody can have let a whole window of
+    them run out — and this is the hot path, every round of every match where
+    both players are present."""
+    a = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    b = _seat(ParticipantStatus.PLAYING, rounds_answered=2)
+    match = _live_duel(a, b, closed=1)
+    log = _round_closing(match, monkeypatch, answered=(a, b))
+
+    closed, finished = await matches.advance_if_due(_LockedDb(match), match)
+
+    assert (closed, finished) == (True, False)
+    assert log.abandon_checks == 0
+
+
 # --- The simultaneous rematch -----------------------------------------------
 
 
