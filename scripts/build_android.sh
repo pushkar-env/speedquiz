@@ -96,9 +96,73 @@ echo "Built mobile/$ARTIFACT"
 
 # The signing key decides whether Google Sign-In works at all — an unregistered
 # SHA-1 fails as an instant picker dismissal that reads like a user cancel.
-APKSIGNER="$(ls "${ANDROID_HOME:-$HOME/AppData/Local/Android/Sdk}"/build-tools/*/apksigner.bat 2>/dev/null | tail -1 || true)"
-if [[ -n "$APKSIGNER" && "$TARGET" == "apk" ]]; then
-  echo "Signed by:"
-  "$APKSIGNER" verify --print-certs "$ARTIFACT" 2>/dev/null \
-    | grep -iE "SHA-1 digest" | sed 's/^/  /' || true
+#
+# apksigner is a JVM wrapper, so it wants a JDK as well as the SDK. Gradle finds
+# one by itself (Flutter hands it Android Studio's bundled JBR) but this runs
+# outside Gradle and inherits neither, so on a machine with no JAVA_HOME and no
+# java on PATH the tool errored, the error went to `2>/dev/null`, and the whole
+# check printed "Signed by:" and nothing else — silent whether the build was
+# signed correctly, signed with the debug key, or not checked at all. Hence the
+# JDK lookup below, and stderr no longer being thrown away.
+
+find_apksigner() {
+  local root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/AppData/Local/Android/Sdk}}"
+  # Newest build-tools wins; both spellings, since only Windows has the .bat.
+  ls "$root"/build-tools/*/apksigner.bat "$root"/build-tools/*/apksigner \
+    2>/dev/null | tail -1 || true
+}
+
+# apksigner accepts either a JAVA_HOME or a java on PATH, so only look when it
+# has neither.
+ensure_java() {
+  command -v java >/dev/null 2>&1 && return 0
+  [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]] && return 0
+
+  local candidate
+  for candidate in \
+    "/c/Program Files/Android/Android Studio/jbr" \
+    "/c/Program Files/Android/Android Studio Preview/jbr" \
+    "/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+    "$HOME/android-studio/jbr"; do
+    if [[ -x "$candidate/bin/java" || -x "$candidate/bin/java.exe" ]]; then
+      # apksigner.bat is a Windows batch file and reads JAVA_HOME through cmd,
+      # which cannot follow a POSIX path — so hand it a native one where the
+      # conversion is available.
+      if command -v cygpath >/dev/null 2>&1; then
+        export JAVA_HOME="$(cygpath -w "$candidate")"
+      else
+        export JAVA_HOME="$candidate"
+      fi
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [[ "$TARGET" == "apk" ]]; then
+  APKSIGNER="$(find_apksigner)"
+  if [[ -z "$APKSIGNER" ]]; then
+    echo "note: no apksigner under the Android SDK; signature unverified." >&2
+    echo "      Set ANDROID_HOME if the SDK lives somewhere else." >&2
+  elif ! ensure_java; then
+    echo "note: no JDK found, so apksigner cannot run; signature unverified." >&2
+    echo "      Set JAVA_HOME (Android Studio ships one under its jbr/)." >&2
+  elif ! CERTS="$("$APKSIGNER" verify --print-certs "$ARTIFACT" 2>&1)"; then
+    # First lines only: a JVM stack trace is mostly frames, and the exception
+    # that names the cause is at the top. Re-run apksigner by hand for the rest.
+    echo "warning: apksigner could not verify $ARTIFACT:" >&2
+    printf '%s\n' "$CERTS" | head -5 | sed 's/^/  /' >&2
+  else
+    echo "Signed by:"
+    # SHA-1 goes to the Google Cloud Android OAuth client, SHA-256 to the
+    # backend's APP_LINK_ANDROID_SHA256_CERT_FINGERPRINTS. See docs/RELEASE.md.
+    printf '%s\n' "$CERTS" \
+      | grep -iE "certificate (SHA-1|SHA-256) digest" | sed 's/^/  /' || true
+    if printf '%s\n' "$CERTS" | grep -qi "CN=Android Debug"; then
+      echo "warning: this APK is DEBUG-signed — key.properties was not picked" >&2
+      echo "         up, so it cannot be shipped and Google Sign-In will fail." >&2
+      echo "         The fingerprints above are the debug key's; do not register" >&2
+      echo "         them. See docs/RELEASE.md section 1." >&2
+    fi
+  fi
 fi
