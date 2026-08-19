@@ -13,6 +13,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -614,6 +615,89 @@ def test_the_result_reveals_everything():
     match.status = MatchStatus.COMPLETED
 
     assert matches._score_visible_to(match, them, me) is True
+
+
+class _LobbyDb:
+    """Enough session for `start_match` to reach `_begin`."""
+
+    def __init__(self) -> None:
+        self.flushed = 0
+
+    async def flush(self) -> None:
+        self.flushed += 1
+
+
+async def test_start_now_refuses_while_an_opponent_has_not_readied(monkeypatch):
+    """The reported bug: the check was for two *seated* players, which counts
+    anyone who has merely joined. A host could drop an opponent who had not
+    readied — and might not be looking at their phone — into a live round with
+    the clock already running."""
+    began: list[Match] = []
+    monkeypatch.setattr(matches, "_begin", lambda db, match: _record(began, match))
+
+    host = _seat(ParticipantStatus.READY)
+    host.is_host = True
+    guest = _seat(ParticipantStatus.JOINED)
+    match = _duel(host, guest)
+    match.status = MatchStatus.PENDING
+
+    monkeypatch.setattr(matches, "load_match", _returns(match))
+
+    with pytest.raises(HTTPException) as caught:
+        await matches.start_match(_LobbyDb(), _user_for(host), match.id)
+
+    assert caught.value.detail["code"] == "players_not_ready"
+    assert began == [], "nobody is dropped into a round they did not agree to"
+
+
+async def test_start_now_goes_once_everyone_has_readied(monkeypatch):
+    began: list[Match] = []
+    monkeypatch.setattr(matches, "_begin", lambda db, match: _record(began, match))
+
+    host = _seat(ParticipantStatus.READY)
+    host.is_host = True
+    guest = _seat(ParticipantStatus.READY)
+    match = _duel(host, guest)
+    match.status = MatchStatus.PENDING
+    monkeypatch.setattr(matches, "load_match", _returns(match))
+
+    await matches.start_match(_LobbyDb(), _user_for(host), match.id)
+
+    assert began == [match]
+
+
+async def test_an_idle_seat_in_a_room_is_left_as_an_invite(monkeypatch):
+    """A room should not be held hostage by one person who wandered off — but
+    they are not dragged in either. Back to INVITED is the same state as never
+    having answered, and it still lets them play the board asynchronously."""
+    began: list[Match] = []
+    monkeypatch.setattr(matches, "_begin", lambda db, match: _record(began, match))
+
+    host = _seat(ParticipantStatus.READY)
+    host.is_host = True
+    ready = _seat(ParticipantStatus.READY)
+    idle = _seat(ParticipantStatus.JOINED)
+    match = _duel(host, ready, idle)
+    match.format = MatchFormat.ROOM
+    match.status = MatchStatus.LOBBY
+    monkeypatch.setattr(matches, "load_match", _returns(match))
+
+    await matches.start_match(_LobbyDb(), _user_for(host), match.id)
+
+    assert began == [match]
+    assert idle.status is ParticipantStatus.INVITED
+    assert ready.status is ParticipantStatus.READY
+
+
+def _returns(match: Match):
+    async def _load(_db, _match_id):
+        return match
+
+    return _load
+
+
+def _user_for(participant: MatchParticipant):
+    return SimpleNamespace(id=participant.user_id)
 
 
 def test_awaiting_opponent_is_a_playable_status():

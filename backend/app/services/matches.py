@@ -689,7 +689,20 @@ async def set_ready(db: AsyncSession, user: User, match_id: UUID, *, ready: bool
 
 
 async def start_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
-    """Host override: start with whoever has turned up."""
+    """Host override: start with everyone who is actually ready.
+
+    "Ready" is the whole point, and it used to be ignored: the check was for
+    two *seated* players, which includes anyone who has merely joined. So a
+    host could tap Start Now and drop an opponent who had not readied — and
+    might not even be looking at their phone — into a live round with a clock
+    already running. In a duel that is the entire match decided by one player's
+    impatience.
+
+    Anyone seated but not ready is put back to INVITED rather than dragged in.
+    That is the same state as someone who never answered the invite, and it
+    means they can still play the identical board asynchronously instead of
+    losing a match they never started.
+    """
     match = await load_match(db, match_id)
     participant = require_participant(match, user.id)
     if not participant.is_host:
@@ -697,12 +710,17 @@ async def start_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
     if match.status not in (MatchStatus.PENDING, MatchStatus.LOBBY):
         raise _err("match_started", "Already started.", status.HTTP_409_CONFLICT)
 
-    seated = [
-        p for p in match.participants
-        if p.status in (ParticipantStatus.JOINED, ParticipantStatus.READY)
-    ]
-    if len(seated) < 2:
-        raise _err("not_enough_players", "You need at least one opponent.")
+    ready = [p for p in match.participants if p.status is ParticipantStatus.READY]
+    if len(ready) < 2:
+        raise _err(
+            "players_not_ready",
+            "Everyone needs to be ready before you can start.",
+        )
+
+    for seat in match.participants:
+        if seat.status is ParticipantStatus.JOINED:
+            seat.status = ParticipantStatus.INVITED
+
     await _begin(db, match)
     return match
 

@@ -1,0 +1,1424 @@
+{
+  "exam": {
+    "name": "JEE Main 2025",
+    "date": "2025-01-22",
+    "shift": "Shift 1",
+    "source_document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo",
+    "total_questions": 75,
+    "sections": {
+      "Mathematics": {
+        "question_range": "1-25",
+        "count": 25
+      },
+      "Physics": {
+        "question_range": "26-51",
+        "count": 26
+      },
+      "Chemistry": {
+        "question_range": "52-75",
+        "count": 24
+      }
+    }
+  },
+  "schema": {
+    "id": "integer question number",
+    "subject": "Mathematics | Physics | Chemistry",
+    "type": "mcq_single | numerical",
+    "question": "question text",
+    "options": "array of option strings; empty for numerical questions",
+    "correct_answer": "answer value or option text",
+    "solution": "concise solution/explanation",
+    "page": "source PDF page",
+    "diagram_required": "true if the original PDF visual is needed"
+  },
+  "questions": [
+    {
+      "id": 1,
+      "subject": "Mathematics",
+      "question": "Let a1,a2,a3,... be a G.P. of increasing positive terms. If a1*a5=28 and a2+a4=29, then a6 is equal to:",
+      "options": [
+        "628",
+        "812",
+        "526",
+        "784"
+      ],
+      "correct_answer": "784",
+      "solution": "Since a1*a5=a3^2=28, a3=2√7. Also a2+a4=a3(r+1/r)=29. With r>1, solving for r gives a3*r^3=784, hence a6=784.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 2,
+      "subject": "Mathematics",
+      "question": "Let x=x(y) be the solution of y^2 dx+(x−1/y)dy=0. If x(1)=1, then x(1/2) is:",
+      "options": [
+        "1/2+e",
+        "3+e",
+        "3−e",
+        "3/2+e"
+      ],
+      "correct_answer": "3−e",
+      "solution": "Treat x as a function of y: dx/dy+x/y^2=1/y^3. The integrating factor is e^(−1/y). Integration gives x=1+1/y+C e^(1/y). Using x(1)=1 gives C=−e^(−1). Thus x(1/2)=3−e.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 3,
+      "subject": "Mathematics",
+      "question": "Two balls are selected one by one without replacement from a bag containing 4 white and 6 black balls. If P(first is black | second is black)=m/n, gcd(m,n)=1, then m+n is:",
+      "options": [
+        "4",
+        "14",
+        "13",
+        "11"
+      ],
+      "correct_answer": "14",
+      "solution": "P(B1|B2)=P(B1∩B2)/P(B2)=(6/10·5/9)/(6/10)=5/9. Hence m+n=5+9=14.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 4,
+      "subject": "Mathematics",
+      "question": "The product of all solutions of e^(5(ln x)^2+3)=x^8, x>0, is:",
+      "options": [
+        "e^(8/5)",
+        "e^(6/5)",
+        "e^2",
+        "e^(6/5)"
+      ],
+      "correct_answer": "e^(8/5)",
+      "solution": "Put t=ln x. Then 5t^2+3=8t, so 5t^2−8t+3=0, giving t=1 and 3/5. Therefore the product of roots x is e^(1+3/5)=e^(8/5).",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 5,
+      "subject": "Mathematics",
+      "question": "Triangle PQR is the image of the triangle with vertices (1,3), (3,1), and (2,4) in the line x+2y=2. If the centroid of ΔPQR is (α,β), find 15(α−β).",
+      "options": [
+        "19",
+        "24",
+        "21",
+        "22"
+      ],
+      "correct_answer": "22",
+      "solution": "Reflect each vertex across x+2y−2=0. The images are (−1,−1), (9/5,−7/5), and (−6/5,−12/5). Their centroid is (−2/15,−8/5), so 15(α−β)=22.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 6,
+      "subject": "Mathematics",
+      "question": "Let f(x)=7tan^8x+7tan^6x−3tan^4x−3tan^2x, I1=∫_0^(π/4)f(x)dx and I2=∫_0^(π/4)x f(x)dx. Then 7I1+12I2 is:",
+      "options": [
+        "2",
+        "1",
+        "2π",
+        "π"
+      ],
+      "correct_answer": "1",
+      "solution": "Direct integration/symmetry gives I1=0 and I2=1/12. Therefore 7I1+12I2=1.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 7,
+      "subject": "Mathematics",
+      "question": "The parabola y=x^2+px−3 meets the coordinate axes at P,Q,R. If the circle with centre (−1,−1) passes through P,Q,R, the area of ΔPQR is:",
+      "options": [
+        "7",
+        "4",
+        "6",
+        "5"
+      ],
+      "correct_answer": "6",
+      "solution": "The y-intercept is (0,−3). Its distance squared from (−1,−1) is 5. Thus each x-intercept (x,0) satisfies (x+1)^2+1=5, giving x=1,−3. The triangle has base 4 and height 3, so area=6.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 8,
+      "subject": "Mathematics",
+      "question": "Let L1:(x−1)/2=(y−2)/3=(z−3)/4 and L2:(x−2)/3=(y−4)/4=(z−5)/5. Which point lies on the line of shortest distance between L1 and L2?",
+      "options": [
+        "(14/3,−3,22/3)",
+        "(−5/3,−7,1)",
+        "(2,3,1/3)",
+        "(8/3,−1,1/3)"
+      ],
+      "correct_answer": "(14/3,−3,22/3)",
+      "solution": "The common perpendicular direction is d1×d2. Construct the common perpendicular through corresponding points on L1 and L2 and solve the orthogonality conditions; the resulting line contains (14/3,−3,22/3).",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 9,
+      "subject": "Mathematics",
+      "question": "Let f(x) be real differentiable, f(0)=1 and f(x+y)=f(x)f'(y)+f'(x)f(y) for all x,y∈R. Then Σ_{n=1}^{100} log_e f(n) is:",
+      "options": [
+        "2525",
+        "5220",
+        "2384",
+        "2406"
+      ],
+      "correct_answer": "2525",
+      "solution": "Set y=0: f(x)=f(x)f'(0)+f'(x). At x=0, f'(0)=1/2. Hence f'(x)=f(x)/2 and f(x)=e^(x/2). Therefore Σln f(n)=1/2·100·101/2=2525.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 10,
+      "subject": "Mathematics",
+      "question": "From the 26 English alphabets, five letters are chosen and arranged in alphabetical order. The number of ways in which the middle letter is M is:",
+      "options": [
+        "5148",
+        "6084",
+        "4356",
+        "14950"
+      ],
+      "correct_answer": "5148",
+      "solution": "For M to be the middle of the ordered five letters, choose 2 letters from A–L and 2 from N–Z. Count=C(12,2)C(13,2)=66×78=5148.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 11,
+      "subject": "Mathematics",
+      "question": "Using principal values of inverse trigonometric functions, find the sum of the maximum and minimum values of 16(sec^−1 x)^2+(cosec^−1 x)^2.",
+      "options": [
+        "24π^2",
+        "22π^2",
+        "31π^2",
+        "18π^2"
+      ],
+      "correct_answer": "22π^2",
+      "solution": "Let A=sec^−1x and B=cosec^−1x using principal values. For x≥1, A+B=π/2; for x≤−1, the same complementary relation holds with A∈[π/2,π]. The expression 16(A²+B²) has global minimum 4π² (as |x|→∞) and maximum 20π² (at x=−1). Their sum is 24π².",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 12,
+      "subject": "Mathematics",
+      "question": "Let f:R→R be twice differentiable with f(x+y)=f(x)f(y), f'(0)=4a, and f''(x)−3af'(x)−f(x)=0, a>0. Find the area of R={(x,y):0≤y≤f(ax),0≤x≤2}.",
+      "options": [
+        "e^2−1",
+        "e^2+1",
+        "e^4+1",
+        "e^4−1"
+      ],
+      "correct_answer": "e^2−1",
+      "solution": "The functional equation gives f(x)=e^(4ax). Substitution in the differential equation gives 16a^2−12a^2−1=0, hence a=1/2. Therefore f(ax)=e^x and area=∫_0^2e^x dx=e^2−1.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 13,
+      "subject": "Mathematics",
+      "question": "Find the area inside (x−2√3)^2+y^2=12 and outside y^2=2√3 x.",
+      "options": [
+        "3π+8",
+        "6π−16",
+        "3π−8",
+        "6π−8"
+      ],
+      "correct_answer": "6π−16",
+      "solution": "Use the circle-parabola intersection points and integrate the vertical difference over the common x-range. Simplifying the circular-sector and parabolic areas gives 6π−16.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 14,
+      "subject": "Mathematics",
+      "question": "The foci of a hyperbola are (1,14) and (1,−12). If it passes through (1,6), find its latus-rectum length.",
+      "options": [
+        "24/5",
+        "25/6",
+        "144/5",
+        "288/5"
+      ],
+      "correct_answer": "288/5",
+      "solution": "The centre is (1,1), c=13. Since (1,6) lies on the transverse axis, a=5. Thus b^2=c^2−a^2=144. Latus rectum=2b^2/a=288/5.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 15,
+      "subject": "Mathematics",
+      "question": "If Σ_{r=1}^n T_r=(2n−1)(2n+1)(2n+3)(2n+5)/64, then lim_{n→∞} Σ_{r=1}^n (1/T_r) is:",
+      "options": [
+        "0",
+        "2/3",
+        "1",
+        "1/3"
+      ],
+      "correct_answer": "2/3",
+      "solution": "First find T_r by subtracting consecutive partial sums: T_r=[(2r−1)(2r+1)(2r+3)]/8. Hence 1/T_r=8/[(2r−1)(2r+1)(2r+3)], which decomposes into telescoping terms. Summing to infinity gives 2/3.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 16,
+      "subject": "Mathematics",
+      "question": "A coin is tossed three times. X is the number of times a tail follows a head. If μ and σ² are the mean and variance of X, find 64(μ+σ²).",
+      "options": [
+        "51",
+        "64",
+        "32",
+        "48"
+      ],
+      "correct_answer": "48",
+      "solution": "Enumerating the 8 equally likely sequences gives E[X]=1/2 and Var(X)=1/4. Hence 64(1/2+1/4)=48.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 17,
+      "subject": "Mathematics",
+      "question": "The number of non-empty equivalence relations on {1,2,3} is:",
+      "options": [
+        "6",
+        "5",
+        "7",
+        "4"
+      ],
+      "correct_answer": "5",
+      "solution": "Equivalence relations correspond to set partitions. The Bell number B3=5, so there are 5.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 18,
+      "subject": "Mathematics",
+      "question": "A circle C of radius 2 lies in the second quadrant and touches both coordinate axes. Another circle has centre (2,5) and radius r. It intersects C at exactly two points. If r∈(α,β), find 3β−2α.",
+      "options": [
+        "10",
+        "15",
+        "12",
+        "14"
+      ],
+      "correct_answer": "15",
+      "solution": "The first circle has centre (−2,2). The distance between centres is 5. Two intersections require |r−2|<5<r+2, giving 3<r<7. Thus 3β−2α=21−6=15.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 19,
+      "subject": "Mathematics",
+      "question": "Let A={1,2,...,10} and B={m/n:m,n∈A,m<n,gcd(m,n)=1}. Find n(B).",
+      "options": [
+        "36",
+        "31",
+        "37",
+        "29"
+      ],
+      "correct_answer": "31",
+      "solution": "Count the coprime ordered pairs (m,n) with 1≤m<n≤10; each pair gives a distinct reduced fraction. The total is 31.",
+      "page": 2,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 2
+      }
+    },
+    {
+      "id": 20,
+      "subject": "Mathematics",
+      "question": "Let z1,z2,z3 lie on |z|=1 with arg(z1)=−π/4, arg(z2)=0, arg(z3)=π/4. If |z1 z̄2+z2 z̄3+z3 z̄1|^2=α+β√2, α,β∈Z, find α²+β².",
+      "options": [
+        "24",
+        "29",
+        "41",
+        "31"
+      ],
+      "correct_answer": "29",
+      "solution": "Here z1=z̄3=e^(−iπ/4), z2=1. The sum is 2e^(−iπ/4)+i. Its squared modulus is 5−2√2, so α=5, β=−2 and α²+β²=29.",
+      "page": 3,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 21,
+      "subject": "Mathematics",
+      "question": "Let A be a 3×3 matrix with det(A)=−2 and det(3 adj(−6 adj(3A)))=2^(m+n)·3^(mn), m>n. Find 4m+2n.",
+      "options": [],
+      "correct_answer": "34",
+      "solution": "For a 3×3 matrix, adj(kA)=k²adj(A) and adj(adj A)=det(A)A. Simplifying the nested adjugates gives determinant=2^10·3^21. Hence m+n=10 and mn=21, so (m,n)=(7,3). Therefore 4m+2n=34.",
+      "page": 3,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 22,
+      "subject": "Mathematics",
+      "question": "If Σ_{r=0}^5 C(11,2r+1)/(2r+2)=m/n, gcd(m,n)=1, find m−n.",
+      "options": [],
+      "correct_answer": "2035",
+      "solution": "Evaluate the finite binomial sum: Σ C(11,2r+1)/(2r+2)=2047/12. Thus m=2047, n=12 and m−n=2035.",
+      "page": 3,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 23,
+      "subject": "Mathematics",
+      "question": "Let c be the projection vector of b=λ i+4k, λ>0, on a=i+2j+2k. If |a+c|=7, find the area of the parallelogram formed by b and c.",
+      "options": [],
+      "correct_answer": "16",
+      "solution": "Since c is parallel to a, c=t a. With |a|=3 and |a+c|=|1+t||a|=7, λ>0 selects t=4/3, giving λ=4 and c=(4/3)(i+2j+2k). The magnitude |b×c|=16.",
+      "page": 3,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 24,
+      "subject": "Mathematics",
+      "question": "Let f(x)={−3ax²−2, x<1; a²+bx, x≥1}, a>1. If f is differentiable for all real x and the area enclosed by y=f(x) and y=−20 is α+β√3, find α+β.",
+      "options": [],
+      "correct_answer": "34",
+      "solution": "Continuity and differentiability at x=1 give a²+b=−3a−2 and b=−6a. Thus a=2,b=−12. Integrating the vertical gap to y=−20 from x=−√3 to 1 and from 1 to 2 gives area=22+12√3, so α+β=34.",
+      "page": 3,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 25,
+      "subject": "Mathematics",
+      "question": "Let L1:(x−1)/3=(y−1)/(−1)=(z+1)/0 and L2:(x−2)/2=y/0=(z+4)/α, α∈R, intersecting at B. If P is the foot of perpendicular from A(1,1,−1) to L2, find 26α(PB)^2.",
+      "options": [],
+      "correct_answer": "216",
+      "solution": "From L1, y=0 gives B=(4,0,−1). On L2 this corresponds to parameter 1, so α=3. The direction of L2 is (2,0,3). Project A−B=(−3,1,0) onto this direction: PB²=36/13. Hence 26·3·36/13=216.",
+      "page": 3,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 26,
+      "subject": "Physics",
+      "question": "An electron enters symmetrically between two parallel and oppositely charged plates, each 10 cm long. It emerges with horizontal velocity 10^6 m/s. If E=9.1 V/cm, m=9.1×10^−31 kg and |q|=1.6×10^−19 C, find its vertical velocity component.",
+      "options": [
+        "0",
+        "1×10^6 m/s",
+        "16×10^6 m/s",
+        "16×10^4 m/s"
+      ],
+      "correct_answer": "16×10^6 m/s",
+      "solution": "Time inside the field is t=L/vx=0.1/10^6=10^−7 s. Acceleration magnitude is qE/m=(1.6×10^−19×910)/(9.1×10^−31)=1.6×10^14 m/s². Thus vy=at=1.6×10^7 m/s.",
+      "page": 3,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 27,
+      "subject": "Physics",
+      "question": "Statement I: The equivalent emf of two nonideal batteries in parallel is smaller than either emf. Statement II: The equivalent internal resistance of two nonideal batteries in parallel is smaller than either internal resistance. Choose the correct option.",
+      "options": [
+        "Both false",
+        "I false, II true",
+        "Both true",
+        "I true, II false"
+      ],
+      "correct_answer": "I false, II true",
+      "solution": "Parallel internal resistances combine to a smaller value, so II is true. Equivalent emf is a weighted average of the individual emfs and need not be smaller than both, so I is false.",
+      "page": 3,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 3
+      }
+    },
+    {
+      "id": 28,
+      "subject": "Physics",
+      "question": "A uniform disc of radius R and mass M rotates about its central perpendicular axis. A circular part of radius R/2, as shown, is removed. Find the moment of inertia of the remaining part about the same axis.",
+      "options": [
+        "7MR²/32",
+        "9MR²/32",
+        "17MR²/32",
+        "13MR²/32"
+      ],
+      "correct_answer": "13MR²/32",
+      "solution": "The original disc has I=MR²/2. The removed disc has mass M/4 and its centre is R/2 from the main axis. By the parallel-axis theorem, I_removed=(1/2)(M/4)(R/2)^2+(M/4)(R/2)^2=3MR²/32. Hence I_remaining=16/32−3/32=13MR²/32.",
+      "page": 4,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "disc-removal diagram",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 4
+      }
+    },
+    {
+      "id": 29,
+      "subject": "Physics",
+      "question": "10^−3 kg of ice at −10°C is converted into steam at 110°C. Given c_ice=2100, c_water=4180, c_steam=1920 J kg^−1 K^−1, L_f=3.35×10^5 and L_v=2.25×10^6 J kg^−1. Find the heat required.",
+      "options": [
+        "3043 J",
+        "3024 J",
+        "3003 J",
+        "3022 J"
+      ],
+      "correct_answer": "3043 J",
+      "solution": "Q=m[c_ice(10)+L_f+c_water(100)+L_v+c_steam(10)]. Substitution gives Q=3043.2 J≈3043 J.",
+      "page": 1,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 1
+      }
+    },
+    {
+      "id": 30,
+      "subject": "Physics",
+      "question": "Hydrogen electron radius is 5.3×10^−11 m in the ground state and 8.48×10^−10 m in the third excited state. The ratio of de Broglie wavelength in the excited state to that in the ground state is:",
+      "options": [
+        "3",
+        "16",
+        "9",
+        "4"
+      ],
+      "correct_answer": "4",
+      "solution": "For a Bohr orbit, λ=2πr/n and r∝n², hence λ∝n. Third excited state has n=4, so λ_4/λ_1=4.",
+      "page": 4,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 4
+      }
+    },
+    {
+      "id": 31,
+      "subject": "Physics",
+      "question": "A bob performs vertical circular motion. Starting at A with horizontal speed v0, the string becomes slack at D. Find the ratio of kinetic energies at B and C as shown.",
+      "options": [
+        "1",
+        "2",
+        "4",
+        "3"
+      ],
+      "correct_answer": "2",
+      "solution": "Use conservation of mechanical energy between A, B, C, D and the slack condition at D (T=0). The geometry gives the required speed-squared ratio v_B²/v_C²=2; since K∝v², K_B/K_C=2.",
+      "page": 4,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "vertical circular motion diagram",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 4
+      }
+    },
+    {
+      "id": 32,
+      "subject": "Physics",
+      "question": "A thin convex glass lens of refractive index μ has both radii of curvature R. One side is polished for complete reflection. At what distance from the lens should an object be placed on the axis so that the image forms on the object itself?",
+      "options": [
+        "R/μ",
+        "R/(2μ−3)",
+        "μR",
+        "R/(2μ−1)"
+      ],
+      "correct_answer": "R/(2μ−1)",
+      "solution": "Apply refraction at the first spherical surface, reflection at the polished second surface, and refraction back through the first surface. Imposing the final-image condition at the original object gives the object distance R/(2μ−1).",
+      "page": 4,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 4
+      }
+    },
+    {
+      "id": 33,
+      "subject": "Physics",
+      "question": "Which of the shown circuits represent a forward-biased diode?",
+      "options": [
+        "A and D only",
+        "B, D and E only",
+        "C and E only",
+        "B, C and E only"
+      ],
+      "correct_answer": "B, C and E only",
+      "solution": "A diode is forward biased when its p-side is at higher potential than its n-side. Checking the polarity in each circuit gives B, C and E.",
+      "page": 5,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "five diode circuit diagrams",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 5
+      }
+    },
+    {
+      "id": 34,
+      "subject": "Physics",
+      "question": "A potentiometer has total resistance 1 Ω and the sliding contact is at its middle. An external resistance of 2 Ω is connected through the sliding contact as shown with a 0.9 V source. Find the circuit current.",
+      "options": [
+        "0.9 A",
+        "1.35 A",
+        "0.3 A",
+        "1.0 A"
+      ],
+      "correct_answer": "1.0 A",
+      "solution": "The two halves of the potentiometer each contribute 0.5 Ω; the external 2 Ω is connected across one half. Reduce that parallel combination and add the remaining series resistance. The resulting equivalent resistance is 0.9 Ω, so I=0.9/0.9=1 A.",
+      "page": 5,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "potentiometer circuit diagram",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 5
+      }
+    },
+    {
+      "id": 35,
+      "subject": "Physics",
+      "question": "A point mass m is at distance 2R from the centre of a uniform solid sphere M,R. The original force is F1. A spherical part of radius R/3 is removed as shown and the remaining force is F2. Find F1:F2.",
+      "options": [
+        "12:11",
+        "11:10",
+        "12:9",
+        "16:9"
+      ],
+      "correct_answer": "12:11",
+      "solution": "Use superposition: the original sphere gives F1=GMm/(2R)^2. Treat the removed sphere as a negative mass; its mass is M/27 and its centre is 2R/3 from O, hence its distance from P is 4R/3. Subtracting its force gives F2=(11/12)F1, so F1:F2=12:11.",
+      "page": 6,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "removed-sphere diagram",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 6
+      }
+    },
+    {
+      "id": 36,
+      "subject": "Physics",
+      "question": "A closed organ pipe and an open organ pipe contain gases with the same bulk modulus but densities ρ1 and ρ2. The 9th harmonic of the closed pipe equals the 4th harmonic of the open pipe. If L_closed=10 cm and ρ1:ρ2=1:16, find L_open.",
+      "options": [
+        "15/7 cm",
+        "20/7 cm",
+        "15/9 cm",
+        "20/9 cm"
+      ],
+      "correct_answer": "20/9 cm",
+      "solution": "Wave speed v∝1/√ρ, so v1/v2=4. For the 9th harmonic of a closed pipe, f=9v1/(4L1); for the 4th harmonic of an open pipe, f=4v2/(2L2)=2v2/L2. Equating gives L2=20/9 cm.",
+      "page": 6,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 6
+      }
+    },
+    {
+      "id": 37,
+      "subject": "Physics",
+      "question": "If B is magnetic field and μ0 is permeability of free space, what are the dimensions of B/μ0?",
+      "options": [
+        "ML²T^−2A^−1",
+        "MT^−2A^−1",
+        "L^−1A",
+        "LT^−2A^−1"
+      ],
+      "correct_answer": "L^−1A",
+      "solution": "Since B/μ0 has the dimensions of magnetic field intensity H, and H has dimensions current/length, the dimensions are A L^−1.",
+      "page": 6,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 6
+      }
+    },
+    {
+      "id": 38,
+      "subject": "Physics",
+      "question": "A line charge of length a/2 lies along the centre of an edge of a cube of edge a. If its linear charge density is λ, find the total electric flux through all faces of the cube.",
+      "options": [
+        "λa/(2ε0)",
+        "λa/(4ε0)",
+        "λa/(16ε0)",
+        "λa/(8ε0)"
+      ],
+      "correct_answer": "λa/(8ε0)",
+      "solution": "The charge on the half-edge is q=λa/2. Four identical cubes can be arranged around the edge so that the charge is symmetrically enclosed. Hence one cube gets one-fourth of q/ε0: Φ=λa/(8ε0).",
+      "page": 6,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "cube/edge-charge diagram",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 6
+      }
+    },
+    {
+      "id": 39,
+      "subject": "Physics",
+      "question": "Statement I: In a vernier callipers, one vernier-scale division is always smaller than one main-scale division. Statement II: Vernier constant equals one main-scale division multiplied by the number of vernier divisions. Choose the correct option.",
+      "options": [
+        "I true, II false",
+        "I false, II true",
+        "Both false",
+        "Both true"
+      ],
+      "correct_answer": "Both false",
+      "solution": "Statement I is not universally true because retrograde verniers can have a larger vernier division. Statement II is wrong because vernier constant is the difference between one main-scale division and one vernier-scale division for a direct vernier, not their product.",
+      "page": 6,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 6
+      },
+      "validation_note": "The source answer key marks option 3 (both statements false)."
+    },
+    {
+      "id": 40,
+      "subject": "Physics",
+      "question": "Cs and Li have work functions 1.9 eV and 2.5 eV. For incident light of wavelength 550 nm, photoelectric emission is possible from:",
+      "options": [
+        "Both Cs and Li",
+        "Neither Cs nor Li",
+        "Cs only",
+        "Li only"
+      ],
+      "correct_answer": "Cs only",
+      "solution": "Photon energy E=1240/550≈2.25 eV. This exceeds Cs's 1.9 eV work function but is below Li's 2.5 eV, so only Cs emits.",
+      "page": 7,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 7
+      }
+    },
+    {
+      "id": 41,
+      "subject": "Physics",
+      "question": "Two spherical bodies of the same material have radii 0.2 m and 0.8 m and temperatures 800 K and 400 K. If the smaller body's radiated energy is E, find the larger body's radiated energy.",
+      "options": [
+        "16E",
+        "E",
+        "64E",
+        "256E"
+      ],
+      "correct_answer": "E",
+      "solution": "Radiated power ∝A T^4∝r²T^4. Ratio big/small=(0.8/0.2)^2(400/800)^4=16×1/16=1.",
+      "page": 7,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 7
+      }
+    },
+    {
+      "id": 42,
+      "subject": "Physics",
+      "question": "Three lens-shaped interfaces are formed as shown, with water μ=4/3 and glass μ=3/2. Neglect thickness. Find the power of the combination in terms of R1 and R2.",
+      "options": [
+        "(1/6)(1/R1−1/R2)",
+        "−(1/6)(1/R1+1/R2)",
+        "(1/6)(1/R1+1/R2)",
+        "−(1/6)(1/R1−1/R2)"
+      ],
+      "correct_answer": "−(1/6)(1/R1−1/R2)",
+      "solution": "Use the spherical-surface power P=(μ2−μ1)/R for each interface and add the three powers. Substituting the water/glass refractive indices and the signed radii shown gives −(1/6)(1/R1−1/R2).",
+      "page": 7,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "three-lens/container diagram",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 7
+      }
+    },
+    {
+      "id": 43,
+      "subject": "Physics",
+      "question": "Assertion: In Young's double-slit experiment in an optically denser medium than air, consecutive fringes come closer. Reason: Light speed decreases in the denser medium while frequency remains unchanged.",
+      "options": [
+        "Both true, but R not explanation",
+        "Both true and R explains A",
+        "A true, R false",
+        "A false, R true"
+      ],
+      "correct_answer": "Both true and R explains A",
+      "solution": "Fringe width β=λD/d. In a medium λ=v/f=λ0/μ, while frequency is unchanged. Therefore β decreases. Both statements are true and the reason explains the assertion.",
+      "page": 7,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 7
+      }
+    },
+    {
+      "id": 44,
+      "subject": "Physics",
+      "question": "A 40 μF capacitor is connected to 100 V. A dielectric of K=2 is inserted while still connected to the supply. Find the extra charge and change in electrostatic energy.",
+      "options": [
+        "4 mC and 0.2 J",
+        "8 mC and 2.0 J",
+        "2 mC and 0.4 J",
+        "2 mC and 0.2 J"
+      ],
+      "correct_answer": "4 mC and 0.2 J",
+      "solution": "With constant V, C changes from 40 to 80 μF. Extra charge=(80−40)μF×100=4 mC. Energy changes from 1/2CV² to 1/2(2C)V², so ΔU=1/2CV²=0.2 J.",
+      "page": 7,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 7
+      }
+    },
+    {
+      "id": 45,
+      "subject": "Physics",
+      "question": "Which resistivity-versus-temperature curve is most suitable for wire-wound standard resistors?",
+      "options": [
+        "Curve 1",
+        "Curve 2",
+        "Curve 3",
+        "Curve 4"
+      ],
+      "correct_answer": "Curve 4",
+      "solution": "A standard resistor should have a very small temperature coefficient so its resistance remains nearly constant with temperature. Among the plotted curves, curve 4 is the flattest.",
+      "page": 8,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "four resistivity-temperature curves",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 8
+      }
+    },
+    {
+      "id": 46,
+      "subject": "Physics",
+      "question": "A convex mirror has radius 2 m. A car approaches it at 90 km/h. When the car is 24 m away, the magnitude of image acceleration is a. Find 100a.",
+      "options": [
+        "2",
+        "4",
+        "8",
+        "16"
+      ],
+      "correct_answer": "8",
+      "solution": "For a convex mirror f=1 m. With object distance x, image distance magnitude v=x/(x+1). For uniform approach speed u=25 m/s, |d²v/dt²|=2u²/(x+1)^3. At x=24 m, a=0.08 m/s², so 100a=8.",
+      "page": 8,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 8
+      }
+    },
+    {
+      "id": 47,
+      "subject": "Physics",
+      "question": "Two soap bubbles of radii 2 cm and 4 cm are in contact. Find the radius of curvature of the common surface, in cm.",
+      "options": [],
+      "correct_answer": "1",
+      "solution": "Pressure differences are ΔP=4T/r for soap bubbles. The pressure difference between the two bubbles is 4T(1/2−1/4)=T. For the common soap interface, ΔP=2T/R, giving R=1 cm.",
+      "page": 8,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 8
+      }
+    },
+    {
+      "id": 48,
+      "subject": "Physics",
+      "question": "Two 1 kg particles have r_A=(α1 t² i+α2 t j+α3 t k)m and r_B=(β1 t i+β2 t² j+β3 t k)m, where α1=1 m/s², α2=3n m/s, α3=2 m/s, β1=2 m/s, β2=−1 m/s², β3=4p m/s. At t=1 s their velocity magnitudes are equal and velocities are perpendicular. If angular momentum of A about B has magnitude √L kg m² s^−1, find L.",
+      "options": [],
+      "correct_answer": "90",
+      "solution": "At t=1, v_A=(2,3n,2), v_B=(2,−2,4p). Equal magnitudes gives 3n=±4p; orthogonality selects 3n=−4p. Using the given position vectors and |(r_A−r_B)×v_A|=√L gives n=1/3, p=−1/4 and L=90.",
+      "page": 8,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 8
+      }
+    },
+    {
+      "id": 49,
+      "subject": "Physics",
+      "question": "Three same-length conductors with conductivities k1=60, k2=120, k3=135 J s^−1 m^−1 K^−1 are connected as shown. Conductors 1 and 2 have equal area; conductor 3 has twice that area. The ends are at 100°C and 0°C. Find the junction temperature θ.",
+      "options": [],
+      "correct_answer": "40",
+      "solution": "At steady state, heat conducted through 1 and 2 in parallel equals heat through 3. Thus (k1+k2)A(100−θ)=k3(2A)θ. Hence 180(100−θ)=270θ, giving θ=40°C.",
+      "page": 8,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 8
+      }
+    },
+    {
+      "id": 50,
+      "subject": "Physics",
+      "question": "A particle is projected at 30° with speed 60 m/s. The height traversed in the first second is h0 and the height traversed in the last second before maximum height is h1. Find h0:h1. Take g=10 m/s².",
+      "options": [],
+      "correct_answer": "5",
+      "solution": "Initial vertical speed is 30 m/s. Height in first second=30−5=25 m. Time to maximum=3 s; height during the last second (2 to 3 s)=5 m. Therefore h0:h1=25:5=5.",
+      "page": 9,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 51,
+      "subject": "Physics",
+      "question": "The radius of the first excited state of He+ is, in terms of a0, the radius of the first stationary state of hydrogen.",
+      "options": [
+        "4a0",
+        "2a0",
+        "a0/4",
+        "a0/2"
+      ],
+      "correct_answer": "2a0",
+      "solution": "For a hydrogen-like ion r_n=n²a0/Z. For He+, Z=2 and first excited state n=2, so r=4a0/2=2a0.",
+      "page": 9,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 52,
+      "subject": "Chemistry",
+      "question": "Which statements regarding geometrical isomerism are incorrect? (A) Propene shows geometrical isomerism. (B) Trans isomer has identical atoms/groups on opposite sides of the double bond. (C) Cis-but-2-ene has higher dipole moment than trans-but-2-ene. (D) 2-methylbut-2-ene shows two geometrical isomers. (E) Trans-isomer has lower melting point than cis isomer.",
+      "options": [
+        "A and E only",
+        "A, D and E only",
+        "B and C only",
+        "C, D and E only"
+      ],
+      "correct_answer": "A, D and E only",
+      "solution": "Propene and 2-methylbut-2-ene do not satisfy the two-different-groups-on-each-double-bond-carbon requirement. Also trans-but-2-ene has a higher melting point than cis due to better packing, so E is false. Thus A,D,E are incorrect.",
+      "page": 9,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 53,
+      "subject": "Chemistry",
+      "question": "A liquid at 25°C is kept in a thermally insulated closed vessel and mechanically stirred from outside. Which thermodynamic relation is correct?",
+      "options": [
+        "ΔU<0,q=0,w>0",
+        "ΔU=0,q=0,w=0",
+        "ΔU>0,q=0,w>0",
+        "ΔU=0,q<0,w>0"
+      ],
+      "correct_answer": "ΔU>0,q=0,w>0",
+      "solution": "Thermal insulation gives q=0. Mechanical stirring does positive work on the system, w>0, so by the first law ΔU=q+w>0.",
+      "page": 9,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 54,
+      "subject": "Chemistry",
+      "question": "Which electronegativity order is incorrect?",
+      "options": [
+        "Mg<Be<B<N",
+        "S<Cl<O<F",
+        "Al<Si<C<N",
+        "Al<Mg<B<N"
+      ],
+      "correct_answer": "Al<Mg<B<N",
+      "solution": "Across a period electronegativity generally increases left to right. The correct order for these elements is Mg<Al<B<N, so Al<Mg<B<N is incorrect.",
+      "page": 9,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 55,
+      "subject": "Chemistry",
+      "question": "Lanthanoid ions with 4f^7 configuration are: (A) Eu2+, (B) Gd3+, (C) Eu3+, (D) Tb3+, (E) Sm2+. Choose the correct pair.",
+      "options": [
+        "A and D only",
+        "B and C only",
+        "A and B only",
+        "B and E only"
+      ],
+      "correct_answer": "A and B only",
+      "solution": "Eu2+ is [Xe]4f^7 and Gd3+ is also [Xe]4f^7. Therefore A and B are correct.",
+      "page": 9,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 56,
+      "subject": "Chemistry",
+      "question": "Statement I: One mole of propyne reacts with excess sodium to liberate half a mole of H2. Statement II: 4 g propyne reacts with NaNH2 to liberate NH3 occupying 224 mL at STP. Choose the correct option.",
+      "options": [
+        "I incorrect, II correct",
+        "Both correct",
+        "I correct, II incorrect",
+        "Both incorrect"
+      ],
+      "correct_answer": "I correct, II incorrect",
+      "solution": "Two terminal-alkyne molecules react with 2 Na to release one H2, so 1 mol propyne gives 0.5 mol H2. But 4 g propyne is 0.1 mol and would give 0.1 mol NH3=2.24 L, not 224 mL. Hence I true, II false.",
+      "page": 9,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 9
+      }
+    },
+    {
+      "id": 57,
+      "subject": "Chemistry",
+      "question": "Which compounds give a positive Fehling's test? (A) benzaldehyde, (B) acetophenone, (C) a reducing sugar, (D) acetaldehyde, (E) phenylacetaldehyde.",
+      "options": [
+        "A,D,E only",
+        "C,D,E only",
+        "A,C,D only",
+        "A,B,C only"
+      ],
+      "correct_answer": "C,D,E only",
+      "solution": "Aliphatic aldehydes and reducing sugars give positive Fehling's test. Benzaldehyde and ketones such as acetophenone do not. Thus C,D,E.",
+      "page": 10,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "chemical structures A-E",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 10
+      }
+    },
+    {
+      "id": 58,
+      "subject": "Chemistry",
+      "question": "Which electrolyte can be used to obtain H2S2O8 by electrolysis?",
+      "options": [
+        "Dilute sodium sulfate",
+        "Acidified dilute sodium sulfate",
+        "Dilute sulfuric acid",
+        "Concentrated sulfuric acid"
+      ],
+      "correct_answer": "Concentrated sulfuric acid",
+      "solution": "Peroxodisulfuric acid is produced by anodic oxidation of concentrated H2SO4, forming peroxodisulfate ions which give H2S2O8.",
+      "page": 10,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 10
+      }
+    },
+    {
+      "id": 59,
+      "subject": "Chemistry",
+      "question": "Statement I: CH3−O−CH2−Cl undergoes SN1 despite being a primary halide. Statement II: neopentyl chloride (CH3)3C−CH2−Cl does not undergo SN2 easily although it is primary. Choose the correct option.",
+      "options": [
+        "Both incorrect",
+        "Both correct",
+        "I incorrect, II correct",
+        "I correct, II incorrect"
+      ],
+      "correct_answer": "Both correct",
+      "solution": "In CH3OCH2Cl, neighboring oxygen stabilizes the oxocarbenium ion, facilitating SN1. Neopentyl chloride is strongly sterically hindered near the reaction centre, making SN2 difficult. Both are true.",
+      "page": 10,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 10
+      }
+    },
+    {
+      "id": 60,
+      "subject": "Chemistry",
+      "question": "Which acid is a vitamin?",
+      "options": [
+        "Adipic acid",
+        "Ascorbic acid",
+        "Saccharic acid",
+        "Aspartic acid"
+      ],
+      "correct_answer": "Ascorbic acid",
+      "solution": "Ascorbic acid is vitamin C.",
+      "page": 10,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 10
+      }
+    },
+    {
+      "id": 61,
+      "subject": "Chemistry",
+      "question": "Match: (A) Al3+<Mg2+<Na+<F−; (B) B<C<O<N; (C) B<Al<Mg<K; (D) Si<P<S<Cl with (I) ionisation enthalpy, (II) metallic character, (III) electronegativity, (IV) ionic radii.",
+      "options": [
+        "A-IV,B-I,C-II,D-III",
+        "A-IV,B-I,C-III,D-II",
+        "A-III,B-IV,C-II,D-I",
+        "A-II,B-III,C-IV,D-I"
+      ],
+      "correct_answer": "A-IV,B-I,C-II,D-III",
+      "solution": "A is ionic-radius order, B follows ionisation-enthalpy trends, C follows increasing metallic character, and D follows increasing electronegativity. Thus A-IV, B-I, C-II, D-III.",
+      "page": 10,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 10
+      }
+    },
+    {
+      "id": 62,
+      "subject": "Chemistry",
+      "question": "Which statement is not true for radioactive decay?",
+      "options": [
+        "Decay constant increases with temperature",
+        "After 3 half-lives, amount is 1/8 initial",
+        "Decay constant does not depend on temperature",
+        "Half-life is ln2 times reciprocal of decay constant"
+      ],
+      "correct_answer": "Decay constant increases with temperature",
+      "solution": "Radioactive decay constants are essentially independent of ordinary temperature. Hence statement 1 is false; the other statements are standard decay relations.",
+      "page": 11,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 11
+      }
+    },
+    {
+      "id": 63,
+      "subject": "Chemistry",
+      "question": "Starting from nitrobenzene, perform (i) Br2/AcOH, (ii) Sn/HCl, (iii) NaNO2/HCl at 273 K, (iv) C2H5OH. Identify the products A+B.",
+      "options": [
+        "m-bromophenol + CH3CHO",
+        "m-bromophenetole + CH3COOH",
+        "bromobenzene + CH3CHO",
+        "phenol + bromoethane"
+      ],
+      "correct_answer": "bromobenzene + CH3CHO",
+      "solution": "Nitrobenzene undergoes meta bromination to m-bromonitrobenzene; Sn/HCl reduces NO2 to NH2; diazotization forms the diazonium salt; ethanol replaces the diazonium group by H and is oxidized to acetaldehyde. Hence bromobenzene + CH3CHO.",
+      "page": 11,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "reaction scheme/options",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 11
+      }
+    },
+    {
+      "id": 64,
+      "subject": "Chemistry",
+      "question": "How many different stereoisomers are possible for CH3−CH(OH)−CH=CH−CH3?",
+      "options": [
+        "2",
+        "1",
+        "4",
+        "3"
+      ],
+      "correct_answer": "4",
+      "solution": "There is one chiral centre at C2 and one E/Z double-bond element. Thus 2×2=4 stereoisomers.",
+      "page": 11,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "stereochemistry structure",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 11
+      }
+    },
+    {
+      "id": 65,
+      "subject": "Chemistry",
+      "question": "A vessel at 1000 K contains CO2 at 0.5 atm. Some CO2 reacts with graphite: CO2(g)+C(s)⇌2CO(g). If total equilibrium pressure is 0.8 atm, find Kp.",
+      "options": [
+        "1.8 atm",
+        "0.3 atm",
+        "3 atm",
+        "0.18 atm"
+      ],
+      "correct_answer": "1.8 atm",
+      "solution": "Let the pressure change be x. Total pressure rises by x, so x=0.3 atm. Thus P_CO2=0.2 atm and P_CO=0.6 atm. Kp=P_CO²/P_CO2=0.36/0.2=1.8 atm.",
+      "page": 11,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 11
+      }
+    },
+    {
+      "id": 66,
+      "subject": "Chemistry",
+      "question": "AlCl3 solution is electrolysed for 30 min at 2 A. Given Al molar mass 27 g/mol and F=96500 C/mol, find mass of Al deposited.",
+      "options": [
+        "1.660 g",
+        "0.336 g",
+        "0.441 g",
+        "1.007 g"
+      ],
+      "correct_answer": "0.336 g",
+      "solution": "Al3+ +3e−→Al. Charge passed=It=2×1800=3600 C. Mass=(27×3600)/(3×96500)=0.336 g.",
+      "page": 11,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 11
+      }
+    },
+    {
+      "id": 67,
+      "subject": "Chemistry",
+      "question": "Find the IUPAC name of the shown compound containing a carboxylic acid and a methyl ester substituent.",
+      "options": [
+        "Methyl-6-carboxy-2,5-dimethylhexanoate",
+        "2-Carboxy-5-methoxycarbonylhexane",
+        "6-Methoxycarbonyl-2,5-dimethylhexanoic acid",
+        "Methyl-5-carboxy-2-methylhexanoate"
+      ],
+      "correct_answer": "6-Methoxycarbonyl-2,5-dimethylhexanoic acid",
+      "solution": "The carboxylic acid has highest priority, so the parent is hexanoic acid. Numbering from COOH gives methyl substituents at 2 and 5 and a methoxycarbonyl substituent at 6.",
+      "page": 12,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "organic structure",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 68,
+      "subject": "Chemistry",
+      "question": "In which complex is CFSE, Δ, equal to zero?",
+      "options": [
+        "[Fe(en)3]Cl3",
+        "K4[Fe(CN)6]",
+        "[Fe(NH3)6]Br2",
+        "K3[Fe(SCN)6]"
+      ],
+      "correct_answer": "K3[Fe(SCN)6]",
+      "solution": "In K3[Fe(SCN)6], Fe is +3, hence d5. SCN− is a weak-field ligand, so the complex is high-spin d5 with equal occupation of t2g and eg; CFSE=0.",
+      "page": 12,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 69,
+      "subject": "Chemistry",
+      "question": "Arrange increasing boiling points: (i) 10^−3 M NaCl, (ii) 10^−4 M urea, (iii) 10^−2 M NaCl, (iv) 10^−4 M NaCl.",
+      "options": [
+        "i<ii<iii<iv",
+        "iv<iii<i<ii",
+        "ii<i=iii<iv",
+        "ii<i<iii<iv"
+      ],
+      "correct_answer": "ii<i<iii<iv",
+      "solution": "Elevation in boiling point is proportional to i·m. Urea is non-electrolyte, while NaCl has i≈2. Therefore 10^−4 M urea <10^−4 M NaCl <10^−3 M NaCl <10^−2 M NaCl.",
+      "page": 12,
+      "type": "mcq_single",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 70,
+      "subject": "Chemistry",
+      "question": "From the magnetic behaviour of [NiCl4]2− (paramagnetic) and [Ni(CO)4] (diamagnetic), choose the correct geometry and oxidation states.",
+      "options": [
+        "[NiCl4]2−: Ni(II), tetrahedral; [Ni(CO)4]: Ni(II), square planar",
+        "[NiCl4]2−: Ni(II), square planar; [Ni(CO)4]: Ni(0), square planar",
+        "[NiCl4]2−: Ni(II), tetrahedral; [Ni(CO)4]: Ni(0), tetrahedral",
+        "[NiCl4]2−: Ni(0), tetrahedral; [Ni(CO)4]: Ni(0), square planar"
+      ],
+      "correct_answer": "[NiCl4]2−: Ni(II), tetrahedral; [Ni(CO)4]: Ni(0), tetrahedral",
+      "solution": "Cl− gives Ni oxidation state +2 and a d8 tetrahedral paramagnetic complex. CO is neutral, so Ni is 0 and Ni(CO)4 is tetrahedral and diamagnetic.",
+      "page": 12,
+      "type": "mcq_single",
+      "diagram_required": true,
+      "diagram_note": "complexes/options",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 71,
+      "subject": "Chemistry",
+      "question": "How many molecules/ions are linear among SO2, BeCl2, CO2, N3−, NO2+, F2O, XeF2, NO, I3− and O3?",
+      "options": [],
+      "correct_answer": "6",
+      "solution": "The linear species are BeCl2, CO2, N3−, XeF2, NO2+ and I3−. SO2, neutral NO2, F2O and O3 are bent. Therefore the count is 6.",
+      "page": 12,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      },
+      "validation_note": "The source answer key marks 6; the listed species make BeCl2, CO2, N3−, XeF2, NO2+, and I3− linear."
+    },
+    {
+      "id": 72,
+      "subject": "Chemistry",
+      "question": "A→B is a first-order isomerisation at 1000 K. The activation barrier is 191.48 kJ/mol and frequency factor is 10^20 s^−1. Find the time for 50% conversion, in picoseconds.",
+      "options": [],
+      "correct_answer": "69",
+      "solution": "Arrhenius: k=Ae^(−Ea/RT)≈9.95×10^9 s^−1. For first-order 50% conversion, t1/2=ln2/k≈6.97×10^−11 s=69.7 ps≈69 ps.",
+      "page": 12,
+      "type": "numerical",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 73,
+      "subject": "Chemistry",
+      "question": "Starting with nitrobenzene, perform (i) Sn+HCl, (ii) NaNO2,HCl at 0°C, (iii) Cu2Cl2, (iv) Na/ether. Find the molar mass of product A.",
+      "options": [],
+      "correct_answer": "154",
+      "solution": "Nitrobenzene→aniline→benzenediazonium chloride→chlorobenzene. Sodium/ether couples chlorobenzene to biphenyl. Molar mass of C12H10 is 12×12+10=154 g/mol.",
+      "page": 12,
+      "type": "numerical",
+      "diagram_required": true,
+      "diagram_note": "reaction scheme",
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 74,
+      "subject": "Chemistry",
+      "question": "CO2 is kept at 1 atm and 273 K in a sealed container. It is passed through Ca(OH)2. Excess Ca(OH)2 is neutralized with 40 mL of 0.1 M HCl. If the container volume is x cm^3 and the reacted CO2 equals exactly half the initial Ca(OH)2, find x.",
+      "options": [],
+      "correct_answer": "45",
+      "solution": "Excess Ca(OH)2=0.040×0.1/2=0.002 mol. Hence initial Ca(OH)2=0.004 mol and reacted CO2=0.002 mol. At 1 atm and 273 K, molar volume≈22400 cm³, so x=0.002×22400=44.8≈45 cm³.",
+      "page": 12,
+      "type": "numerical",
+      "diagram_required": false,
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 12
+      }
+    },
+    {
+      "id": 75,
+      "subject": "Chemistry",
+      "question": "In Carius estimation, 180 mg organic compound gives 143.5 mg AgCl. Find percentage chlorine. Ag=108, Cl=35.5 g/mol.",
+      "options": [],
+      "correct_answer": "20",
+      "solution": "Moles AgCl=0.1435/143.5=0.001 mol, so chlorine mass=0.001×35.5=0.0355 g. Percentage Cl=(0.0355/0.180)×100≈19.72%, reported as 20% in the source answer key.",
+      "page": 13,
+      "type": "numerical",
+      "diagram_required": false,
+      "source": {
+        "document": "JEE Main 2025 (22 Jan Shift 1) Previous Year Paper with Answer Keys - MathonGo.pdf",
+        "page": 13
+      }
+    }
+  ],
+  "source_answer_key_note": "Answer values were taken from the answer-key page of the uploaded PDF (page 14). The question/option text was reconstructed from the PDF text and page images; diagram-heavy questions are flagged."
+}

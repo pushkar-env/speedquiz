@@ -308,9 +308,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: Routes.friends,
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: const SqBackGuard(
+          child: SqBackGuard(
             fallback: Routes.battle,
-            child: FriendsScreen(),
+            // A friend-request notification points at `?tab=requests`, so
+            // tapping it lands on the tab the request is actually on.
+            child: FriendsScreen(
+              openRequests: state.uri.queryParameters['tab'] == 'requests',
+            ),
           ),
         ),
       ),

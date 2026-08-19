@@ -391,6 +391,33 @@ async def mark_read(
     return int(result.rowcount or 0)
 
 
+async def resolve_request(db: AsyncSession, *, user_id: UUID, request_id: UUID) -> int:
+    """Mark the friend-request notification for [request_id] read.
+
+    Answering a request settles it, and the inbox row offers Accept and Decline
+    for as long as it is unread — so without this, someone who accepted from
+    the heads-up banner still found the same two buttons waiting in their
+    notifications, for a request that no longer exists.
+
+    Done here rather than in the client because the answer can come from any of
+    three places (the banner, the inbox row, the requests screen) and from any
+    device. One of them clearing its own copy is not the same as the request
+    being answered.
+    """
+    result = await db.execute(
+        update(Notification)
+        .where(
+            Notification.user_id == user_id,
+            Notification.type == NotificationType.FRIEND_REQUEST,
+            Notification.read_at.is_(None),
+            Notification.payload["request_id"].astext == str(request_id),
+        )
+        .values(read_at=_now())
+    )
+    await db.flush()
+    return int(result.rowcount or 0)
+
+
 async def clear_all(db: AsyncSession, user_id: UUID) -> int:
     """Empty this player's inbox. Returns how many rows went.
 

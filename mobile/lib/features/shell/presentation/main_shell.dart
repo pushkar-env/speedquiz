@@ -41,10 +41,6 @@ class MainShell extends ConsumerStatefulWidget {
   /// Index of the tab back always falls through to.
   static const _homeIndex = 0;
 
-  /// Home carries the inbox count, because Home is where the bell is. A player
-  /// on any other tab has no way to know something arrived otherwise.
-  static const _battleIndex = 2;
-
   /// Labels are resolved per build rather than stored, so switching language
   /// relabels the bar in place.
   static List<_ShellTab> _tabsFor(SqStrings l10n) => <_ShellTab>[
@@ -117,7 +113,7 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   DateTime? _exitArmedAt;
 
-  /// Refreshes the battle badge when the app comes back to the foreground.
+  /// Refreshes the social counts when the app comes back to the foreground.
   ///
   /// This, plus the refresh on mount and the inbox channel below, is what
   /// replaces a background poller: the count only has to be right at the moment
@@ -292,7 +288,6 @@ class _MainShellState extends ConsumerState<MainShell> {
     }
 
     final p = context.sq;
-    final summary = ref.watch(socialSummaryProvider).valueOrNull;
 
     return PopScope(
       canPop: false,
@@ -303,24 +298,15 @@ class _MainShellState extends ConsumerState<MainShell> {
         backgroundColor: p.background,
         extendBody: true,
         body: widget.child,
+        // No counts on the bar. A badge on a tab says "something is somewhere
+        // in here" and leaves the player to find it; the same number on the
+        // control that actually opens the thing — the inbox bell on Home, the
+        // friends button in Battle — says where. Two of them competing for the
+        // same glance is one too many.
         bottomNavigationBar: _FloatingNavBar(
           tabs: MainShell._tabsFor(context.l10n),
           index: index,
           onSelect: _select,
-          // Two counts, deliberately different questions.
-          //
-          // Home answers "is there anything unread in the inbox", because the
-          // bell that opens the inbox lives there — without this, a player on
-          // any other tab has no way to know a notification arrived.
-          //
-          // Battle answers "is anyone waiting on me", which is a friend
-          // request or a turn owed. The two overlap but are not the same: a
-          // read notification about a finished match still counts for nothing
-          // on Battle, and an unopened result still counts on Home.
-          badges: {
-            MainShell._homeIndex: summary?.unreadNotifications ?? 0,
-            MainShell._battleIndex: summary?.badgeCount ?? 0,
-          },
         ),
       ),
     );
@@ -346,15 +332,11 @@ class _FloatingNavBar extends StatelessWidget {
     required this.tabs,
     required this.index,
     required this.onSelect,
-    this.badges = const {},
   });
 
   final List<_ShellTab> tabs;
   final int index;
   final ValueChanged<int> onSelect;
-
-  /// Tab index -> unread count. Zero or missing draws nothing.
-  final Map<int, int> badges;
 
   @override
   Widget build(BuildContext context) {
@@ -394,7 +376,6 @@ class _FloatingNavBar extends StatelessWidget {
                         child: _NavItem(
                           tab: tabs[i],
                           selected: i == index,
-                          badge: badges[i] ?? 0,
                           onTap: () => onSelect(i),
                         ),
                       ),
@@ -572,13 +553,11 @@ class _NavItem extends StatelessWidget {
     required this.tab,
     required this.selected,
     required this.onTap,
-    this.badge = 0,
   });
 
   final _ShellTab tab;
   final bool selected;
   final VoidCallback onTap;
-  final int badge;
 
   @override
   Widget build(BuildContext context) {
@@ -619,22 +598,11 @@ class _NavItem extends StatelessWidget {
                           Tween<double>(begin: 0.6, end: 1).animate(animation),
                       child: FadeTransition(opacity: animation, child: child),
                     ),
-                    child: Stack(
+                    child: Icon(
                       key: ValueKey(selected),
-                      clipBehavior: Clip.none,
-                      children: [
-                        Icon(
-                          selected ? tab.selectedIcon : tab.icon,
-                          size: 22,
-                          color: color,
-                        ),
-                        if (badge > 0)
-                          Positioned(
-                            right: -6,
-                            top: -4,
-                            child: SqCountDot(count: badge),
-                          ),
-                      ],
+                      selected ? tab.selectedIcon : tab.icon,
+                      size: 22,
+                      color: color,
                     ),
                   ),
                 ),

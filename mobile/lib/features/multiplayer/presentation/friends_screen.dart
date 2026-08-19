@@ -6,16 +6,22 @@ import 'package:share_plus/share_plus.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
-import 'package:speedquiz/features/multiplayer/data/multiplayer_repository.dart';
 import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
+import 'package:speedquiz/features/multiplayer/presentation/challenge_flow.dart';
 import 'package:speedquiz/features/multiplayer/presentation/multiplayer_providers.dart';
 import 'package:speedquiz/features/multiplayer/presentation/widgets/battle_widgets.dart';
-import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
 /// Friends, requests and search — the whole social graph on one screen.
 class FriendsScreen extends ConsumerStatefulWidget {
-  const FriendsScreen({super.key});
+  const FriendsScreen({super.key, this.openRequests = false});
+
+  /// Open on the requests tab rather than the friends list.
+  ///
+  /// Set when arriving from a friend-request notification: landing on the
+  /// friends list and leaving the player to notice a second tab is how a
+  /// request that had just arrived looked like it had not.
+  final bool openRequests;
 
   @override
   ConsumerState<FriendsScreen> createState() => _FriendsScreenState();
@@ -23,7 +29,11 @@ class FriendsScreen extends ConsumerStatefulWidget {
 
 class _FriendsScreenState extends ConsumerState<FriendsScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 2, vsync: this);
+  late final TabController _tabs = TabController(
+    length: 2,
+    vsync: this,
+    initialIndex: widget.openRequests ? 1 : 0,
+  );
   final _searchController = TextEditingController();
   String _query = '';
 
@@ -225,50 +235,12 @@ class _FriendRow extends ConsumerWidget {
     );
   }
 
-  Future<void> _challenge(BuildContext context, WidgetRef ref) async {
-    // A challenge needs a topic. Reuse the catalog rather than inventing a
-    // second picker: the player already knows this list. Only playable topics
-    // are offered — challenging someone to an empty bank fails server-side.
-    final topics = (await ref.read(topicsProvider.future))
-        .where((topic) => topic.isPlayable)
-        .toList(growable: false);
-    if (!context.mounted || topics.isEmpty) return;
-
-    final topicId = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) => SqSheetShell(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * 0.6,
-          child: ListView(
-            children: [
-              SqSectionHeader(title: context.l10n.setupPickATopic),
-              const SizedBox(height: AppSpacing.sm),
-              for (final topic in topics)
-                ListTile(
-                  title: Text(topic.name),
-                  onTap: () => Navigator.of(sheetContext).pop(topic.id),
-                ),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _challenge(BuildContext context, WidgetRef ref) {
+    return startChallenge(
+      context,
+      ref,
+      opponentUserId: friend.player.userId,
     );
-    if (topicId == null || !context.mounted) return;
-
-    try {
-      final match = await ref.read(multiplayerRepositoryProvider).createChallenge(
-            topicId: topicId,
-            opponentUserId: friend.player.userId,
-          );
-      if (!context.mounted) return;
-      ref.invalidate(matchListProvider);
-      context.push(Routes.matchPath(match.id));
-    } catch (error) {
-      if (!context.mounted) return;
-      SqToast.error(context, context.l10n.matchError(errorCodeOf(error)));
-    }
   }
 
   Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {

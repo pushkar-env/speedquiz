@@ -331,7 +331,11 @@ async def send_friend_request(
             # inbox row without first loading the requests screen to find out
             # what this request is called.
             payload={"request_id": str(edge.id)},
-            deep_link="/battle/friends",
+            # The tab, not just the screen. `/battle/friends` opens on the
+            # friends list, and a brand-new request lives one tab over — so
+            # tapping the notification landed on a screen that looked like
+            # nothing had arrived.
+            deep_link="/battle/friends?tab=requests",
             push_params={"actor": user.profile.username},
         )
     return {"id": str(edge.id), "status": edge.status.value}
@@ -368,6 +372,7 @@ async def _resolve_target(db, payload: SendFriendRequestRequest) -> UUID:
 @router.post("/friends/requests/{request_id}/accept")
 async def accept_request(request_id: UUID, user: CurrentUser, db: DbSession) -> dict:
     edge = await friends.respond_to_request(db, user.id, request_id, accept=True)
+    await notifications.resolve_request(db, user_id=user.id, request_id=request_id)
     await notifications.notify(
         db,
         user_id=edge.requester_id,
@@ -382,6 +387,7 @@ async def accept_request(request_id: UUID, user: CurrentUser, db: DbSession) -> 
 @router.post("/friends/requests/{request_id}/decline")
 async def decline_request(request_id: UUID, user: CurrentUser, db: DbSession) -> dict:
     edge = await friends.respond_to_request(db, user.id, request_id, accept=False)
+    await notifications.resolve_request(db, user_id=user.id, request_id=request_id)
     # Deliberately silent. Telling someone they were declined turns a private
     # non-answer into a rejection notice.
     return {"status": edge.status.value}

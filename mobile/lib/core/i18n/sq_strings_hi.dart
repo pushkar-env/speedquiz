@@ -1126,6 +1126,8 @@ class SqStringsHi extends SqStrings {
   @override
   String get lobbyStartNow => 'अभी शुरू करें';
   @override
+  String get lobbyWaitingForReady => 'सबका इंतज़ार';
+  @override
   String get lobbyRoomCode => 'रूम कोड';
   @override
   String get lobbyShareCode => 'कोड भेजें';
@@ -1250,6 +1252,10 @@ class SqStringsHi extends SqStrings {
   String get resultRematch => 'दोबारा खेलें';
   @override
   String get resultBackToBattle => 'बैटल पर वापस';
+  @override
+  String get resultNewTopic => 'नया विषय';
+  @override
+  String get resultHome => 'होम';
   @override
   String get resultStandings => 'अंतिम नतीजा';
   @override
@@ -1511,6 +1517,7 @@ class SqStringsHi extends SqStrings {
         'friends_full' => 'आपकी दोस्तों की सूची भर चुकी है।',
         'too_many_requests' => 'बहुत ज़्यादा रिक्वेस्ट। बाद में कोशिश करें।',
         'not_enough_players' => 'कम से कम एक प्रतिद्वंद्वी चाहिए।',
+        'players_not_ready' => 'पहले सभी का तैयार होना ज़रूरी है।',
         'not_host' => 'सिर्फ़ होस्ट ही शुरू कर सकता है।',
         'rate_limited' => 'ज़रा धीरे।',
         _ => errorNetwork,

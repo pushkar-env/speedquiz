@@ -570,6 +570,7 @@ abstract class SqStrings {
   String get lobbyReady;
   String get lobbyNotReady;
   String get lobbyStartNow;
+  String get lobbyWaitingForReady;
   String get lobbyRoomCode;
   String get lobbyShareCode;
   String get lobbyCodeCopied;
@@ -643,6 +644,8 @@ abstract class SqStrings {
   String get resultAwaitingOpponentBody;
   String get resultRematch;
   String get resultBackToBattle;
+  String get resultNewTopic;
+  String get resultHome;
   String get resultStandings;
   String resultRatingGained(int points);
   String resultRatingLost(int points);

@@ -10,6 +10,7 @@ import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
 import 'package:speedquiz/features/multiplayer/presentation/battle_controller.dart';
+import 'package:speedquiz/features/multiplayer/presentation/challenge_flow.dart';
 import 'package:speedquiz/features/multiplayer/presentation/widgets/battle_widgets.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
@@ -34,16 +35,25 @@ class BattleScreen extends ConsumerWidget {
     final match = state.match;
 
     return PopScope(
-      // Leaving mid-round forfeits, so it needs a confirmation. Everywhere
-      // else back is ordinary.
-      canPop: match == null || !match.isPlayable || match.isOver,
+      // Back is intercepted for anything still open, not only a live round.
+      //
+      // It used to pop freely whenever the match was not *playable*, which is
+      // true of a lobby — so backing out of one never told the server, and the
+      // match sat there PENDING, still listed on the Battle tab as something
+      // waiting on the player, until the lobby timeout eventually swept it.
+      canPop: match == null || match.isOver,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        final confirmed = await _confirmLeave(context);
-        if (confirmed && context.mounted) {
-          await controller.leave();
-          if (context.mounted) context.pop();
+        // Only a round in progress is worth a confirmation: that one forfeits
+        // and cannot be undone. Walking out of a lobby costs nothing, and
+        // making someone confirm it is how you train them to confirm the one
+        // that matters without reading it.
+        if (match!.isPlayable) {
+          final confirmed = await _confirmLeave(context);
+          if (!confirmed || !context.mounted) return;
         }
+        await controller.leave();
+        if (context.mounted) context.pop();
       },
       child: Scaffold(
         backgroundColor: context.sq.background,
@@ -194,9 +204,15 @@ class _LobbyView extends ConsumerWidget {
               ),
               if (isHost && seated.length >= 2) ...[
                 const SizedBox(height: AppSpacing.sm),
+                // Off until everyone has readied. The server refuses either
+                // way — see `start_match` — but a button that fails when
+                // pressed teaches nothing, and the subtitle above already
+                // says how many are ready.
                 SqGhostButton(
-                  label: l10n.lobbyStartNow,
-                  onPressed: controller.start,
+                  label: readyCount >= 2
+                      ? l10n.lobbyStartNow
+                      : l10n.lobbyWaitingForReady,
+                  onPressed: readyCount >= 2 ? controller.start : null,
                 ),
               ],
             ],
@@ -849,15 +865,98 @@ class _ResultViewState extends ConsumerState<_ResultView> {
             ),
             Padding(
               padding: const EdgeInsets.all(AppSpacing.md),
-              child: SqButton(
-                label: l10n.resultBackToBattle,
-                onPressed: () => context.go(Routes.battle),
-              ),
+              child: _ResultActions(match: match),
             ),
           ],
         ),
         if (outcome == MatchOutcome.win)
           const IgnorePointer(child: SqConfetti(play: true)),
+      ],
+    );
+  }
+}
+
+/// Where a finished match lets you go.
+///
+/// The end of a match is the moment someone most wants another one, and it
+/// used to offer a single button back to the Battle list — so playing the same
+/// friend again meant navigating to Friends, finding them, and picking the
+/// topic over. Three ways out instead: the same quiz again, a different one
+/// against the same player, or done for now.
+///
+/// A rematch is an *invitation*, not a restart. It creates a fresh challenge
+/// the opponent has to accept, which is what makes it mutual — one player
+/// cannot drag another back in — and it means an offer that arrives after they
+/// have gone back to Home reaches them as a notification that opens straight
+/// into the match.
+class _ResultActions extends ConsumerStatefulWidget {
+  const _ResultActions({required this.match});
+
+  final MatchState match;
+
+  @override
+  ConsumerState<_ResultActions> createState() => _ResultActionsState();
+}
+
+class _ResultActionsState extends ConsumerState<_ResultActions> {
+  /// One challenge in flight at a time. Two taps on a slow connection would
+  /// otherwise send the opponent two invitations for the same rematch.
+  bool _sending = false;
+
+  Future<void> _challenge({String? topicId}) async {
+    final opponent = widget.match.primaryOpponent;
+    if (opponent == null || _sending) return;
+    setState(() => _sending = true);
+    Haptics.tap();
+    await startChallenge(
+      context,
+      ref,
+      opponentUserId: opponent.userId,
+      topicId: topicId,
+      replaceCurrentRoute: true,
+    );
+    if (mounted) setState(() => _sending = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final opponent = widget.match.primaryOpponent;
+
+    // A room has no single opponent to challenge back, and a rematch against
+    // "whoever was in the room" is not a thing this app models.
+    if (opponent == null) {
+      return SqButton(
+        label: l10n.resultBackToBattle,
+        onPressed: () => context.go(Routes.battle),
+      );
+    }
+
+    return Column(
+      children: [
+        SqButton(
+          label: l10n.resultRematch,
+          loading: _sending,
+          onPressed: _sending ? null : () => _challenge(topicId: widget.match.topicId),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            Expanded(
+              child: SqGhostButton(
+                label: l10n.resultNewTopic,
+                onPressed: _sending ? null : () => _challenge(),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: SqGhostButton(
+                label: l10n.resultHome,
+                onPressed: _sending ? null : () => context.go(Routes.home),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
