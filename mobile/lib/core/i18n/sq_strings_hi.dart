@@ -1205,12 +1205,15 @@ class SqStringsHi extends SqStrings {
   @override
   String get battleOffline => 'ऑफ़लाइन — आपके जवाब फिर भी गिने जाएंगे';
   @override
-  String get battleLeaveTitle => 'मैच छोड़ें?';
+  String get battleAbandonAction => 'मैच छोड़ें';
   @override
-  String get battleLeaveBody =>
-      'अब तक का स्कोर बना रहेगा और जीत प्रतिद्वंद्वी को मिलेगी। इसे बदला नहीं जा सकता।';
+  String get battleAbandonTitle => 'मैच छोड़ दें?';
   @override
-  String get battleLeaveConfirm => 'छोड़ें';
+  String get battleAbandonBody =>
+      'मैच अभी खत्म हो जाएगा और प्रतिद्वंद्वी को वॉकओवर से जीत मिलेगी। अब तक का '
+      'स्कोर स्कोरबोर्ड पर रहेगा, पर उससे जीत नहीं मिलेगी। इसे बदला नहीं जा सकता।';
+  @override
+  String get battleAbandonConfirm => 'छोड़ें';
   @override
   String get battleAsyncNotice =>
       'अपनी गति से खेलें — प्रतिद्वंद्वी को यही सवाल मिलेंगे।';
@@ -1243,6 +1246,12 @@ class SqStringsHi extends SqStrings {
   String get resultLossBody => 'बहुत करीबी। फिर से खेलें?';
   @override
   String get resultDrawBody => 'वही स्कोर, वही समय। कोई नहीं झुका।';
+  @override
+  String get resultWinByAbandonBody => 'प्रतिद्वंद्वी ने मैच बीच में छोड़ दिया।';
+  @override
+  String get resultLossByAbandonBody => 'आपने मैच बीच में छोड़ दिया।';
+  @override
+  String get resultAbandoned => 'छोड़ा';
   @override
   String get resultAwaitingOpponent => 'आपका स्कोर दर्ज हो गया';
   @override

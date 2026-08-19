@@ -1198,12 +1198,15 @@ class SqStringsEn extends SqStrings {
   @override
   String get battleOffline => 'Offline — your answers still count';
   @override
-  String get battleLeaveTitle => 'Leave the match?';
+  String get battleAbandonAction => 'Abandon';
   @override
-  String get battleLeaveBody =>
-      'Your score so far stands and your opponent gets the win. This cannot be undone.';
+  String get battleAbandonTitle => 'Abandon the match?';
   @override
-  String get battleLeaveConfirm => 'LEAVE';
+  String get battleAbandonBody =>
+      'It ends now and your opponent wins by abandonment. Your score so far is '
+      'kept on the scoreboard but cannot win. This cannot be undone.';
+  @override
+  String get battleAbandonConfirm => 'ABANDON';
   @override
   String get battleAsyncNotice =>
       'Playing at your own pace — your opponent plays the same questions.';
@@ -1236,6 +1239,12 @@ class SqStringsEn extends SqStrings {
   String get resultLossBody => 'Close one. Run it back?';
   @override
   String get resultDrawBody => 'Same score, same clock. Nobody blinked.';
+  @override
+  String get resultWinByAbandonBody => 'Your opponent abandoned the match.';
+  @override
+  String get resultLossByAbandonBody => 'You abandoned the match.';
+  @override
+  String get resultAbandoned => 'Left';
   @override
   String get resultAwaitingOpponent => 'Your score is in';
   @override

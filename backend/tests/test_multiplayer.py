@@ -25,6 +25,7 @@ from app.models import (
     Match,
     MatchDelivery,
     MatchFormat,
+    MatchKind,
     MatchOutcome,
     MatchParticipant,
     MatchStatus,
@@ -297,6 +298,249 @@ def test_accuracy_breaks_a_tied_score_and_clock():
     accurate = _participant(400, 5000, correct=5)
     lucky = _participant(400, 5000, correct=3)
     assert matches._rank_participants([lucky, accurate])[0] is accurate
+
+
+# --- Abandonment ------------------------------------------------------------
+
+
+def _scored_seat(
+    status: ParticipantStatus, *, score: int, ms: int = 1000
+) -> MatchParticipant:
+    seat = _seat(status)
+    seat.score = score
+    seat.total_answer_ms = ms
+    return seat
+
+
+async def _settle(match: Match, monkeypatch) -> None:
+    """Run `finalize` with the payout and broadcast halves stubbed out."""
+    monkeypatch.setattr(matches, "_award_progression", _noop)
+    monkeypatch.setattr(matches, "_notify_result", _noop)
+    monkeypatch.setattr(matches.realtime, "publish", _noop)
+    await matches.finalize(_SettlementDb(), match)
+
+
+def test_a_quitter_ranks_below_the_player_who_stayed_even_when_ahead():
+    """What makes the abandon button safe to ship. Ranking a forfeit on points
+    would mean quitting while ahead still won the match — the one move the
+    feature must never reward."""
+    ahead = _scored_seat(ParticipantStatus.FORFEITED, score=900)
+    behind = _scored_seat(ParticipantStatus.PLAYING, score=100)
+    assert matches._rank_participants([ahead, behind]) == [behind, ahead]
+
+
+async def test_abandoning_hands_the_opponent_the_win_and_the_quitter_the_loss(
+    monkeypatch,
+):
+    monkeypatch.setattr(matches, "_apply_ratings", _noop)
+    quitter = _scored_seat(ParticipantStatus.FORFEITED, score=900)
+    stayer = _scored_seat(ParticipantStatus.PLAYING, score=100)
+
+    await _settle(_duel(quitter, stayer), monkeypatch)
+
+    assert stayer.outcome is MatchOutcome.WIN and stayer.placement == 1
+    assert quitter.outcome is MatchOutcome.LOSS and quitter.placement == 2
+
+
+async def test_a_forfeit_is_still_a_forfeit_after_settlement(monkeypatch):
+    """The result screen reads this to say *why* the match ended. Overwriting it
+    with FINISHED, as settlement does to every other seat, would leave a win by
+    abandonment indistinguishable from a win on points."""
+    monkeypatch.setattr(matches, "_apply_ratings", _noop)
+    quitter = _scored_seat(ParticipantStatus.FORFEITED, score=0)
+
+    await _settle(_duel(quitter, _scored_seat(ParticipantStatus.PLAYING, score=10)), monkeypatch)
+
+    assert quitter.status is ParticipantStatus.FORFEITED
+
+
+async def test_a_quitter_on_the_leaders_score_does_not_draw_into_the_win(monkeypatch):
+    """Two players on nil one round in is the ordinary case, and the tie check
+    compared score and clock alone — so the player who walked out would have
+    tied their way to a draw."""
+    monkeypatch.setattr(matches, "_apply_ratings", _noop)
+    quitter = _scored_seat(ParticipantStatus.FORFEITED, score=0, ms=0)
+    stayer = _scored_seat(ParticipantStatus.PLAYING, score=0, ms=0)
+
+    await _settle(_duel(quitter, stayer), monkeypatch)
+
+    assert stayer.outcome is MatchOutcome.WIN
+    assert quitter.outcome is MatchOutcome.LOSS
+
+
+async def test_an_ordinary_tie_still_draws(monkeypatch):
+    """The forfeit rule must not swallow the draw it sits next to."""
+    monkeypatch.setattr(matches, "_apply_ratings", _noop)
+    a = _scored_seat(ParticipantStatus.PLAYING, score=200)
+    b = _scored_seat(ParticipantStatus.PLAYING, score=200)
+
+    await _settle(_duel(a, b), monkeypatch)
+
+    assert a.outcome is MatchOutcome.DRAW and b.outcome is MatchOutcome.DRAW
+
+
+async def test_walking_out_of_a_ranked_duel_still_moves_elo(monkeypatch):
+    """Dropping quitters from the standings left one player to rate, and a pair
+    is what `_apply_ratings` needs — so a ranked rage-quit cost nothing at all.
+    The docstring on `leave_match` claimed the opposite for a while."""
+    rated: list[list[MatchParticipant]] = []
+
+    async def _capture(_db, _match, ordered) -> None:
+        rated.append(list(ordered))
+
+    monkeypatch.setattr(matches, "_apply_ratings", _capture)
+    quitter = _scored_seat(ParticipantStatus.FORFEITED, score=0)
+    stayer = _scored_seat(ParticipantStatus.PLAYING, score=10)
+    match = _duel(quitter, stayer)
+    match.kind = MatchKind.RANKED
+
+    await _settle(match, monkeypatch)
+
+    assert rated == [[stayer, quitter]]
+
+
+def _leaving(match: Match, monkeypatch):
+    async def _load(_db, _match_id):
+        return match
+
+    monkeypatch.setattr(matches, "load_match", _load)
+    monkeypatch.setattr(matches, "_publish_participants", _noop)
+
+
+async def test_leaving_mid_board_forfeits_and_ends_the_duel_there_and_then(monkeypatch):
+    settled: list[Match] = []
+    quitter = _seat(ParticipantStatus.PLAYING, rounds_answered=1)
+    match = _duel(quitter, _seat(ParticipantStatus.PLAYING, rounds_answered=1))
+    _leaving(match, monkeypatch)
+    monkeypatch.setattr(matches, "finalize", lambda db, m: _record(settled, m))
+
+    await matches.leave_match(
+        _SettlementDb(), SimpleNamespace(id=quitter.user_id), uuid4()
+    )
+
+    assert quitter.status is ParticipantStatus.FORFEITED
+    assert settled == [match], "there is nobody left to play, so it settles now"
+
+
+async def test_leaving_after_finishing_your_board_is_not_a_forfeit(monkeypatch):
+    """FINISHED is only set at settlement, so a player who has answered every
+    question still reads PLAYING while an async opponent catches up. Forfeiting
+    them for closing the screen would turn a completed game into a loss — and
+    now that a forfeit is ranked and rated, into a rated one."""
+    settled: list[Match] = []
+    done = _seat(ParticipantStatus.PLAYING, rounds_answered=3)
+    match = _duel(done, _seat(ParticipantStatus.PLAYING, rounds_answered=1))
+    match.status = MatchStatus.AWAITING_OPPONENT
+    _leaving(match, monkeypatch)
+    monkeypatch.setattr(matches, "finalize", lambda db, m: _record(settled, m))
+
+    await matches.leave_match(_SettlementDb(), SimpleNamespace(id=done.user_id), uuid4())
+
+    assert done.status is ParticipantStatus.PLAYING
+    assert settled == [], "and the opponent still owes their board"
+
+
+async def test_backing_out_of_a_lobby_does_not_settle_anything(monkeypatch):
+    """A room seat freed before the first question is not a win for whoever is
+    left. Settling on "one player remains" alone completed a match nobody had
+    played a question of."""
+    settled: list[Match] = []
+    leaver = _seat(ParticipantStatus.JOINED)
+    match = _duel(leaver, _seat(ParticipantStatus.JOINED), _seat(ParticipantStatus.INVITED))
+    match.format = MatchFormat.ROOM
+    match.status = MatchStatus.LOBBY
+    _leaving(match, monkeypatch)
+    monkeypatch.setattr(matches, "finalize", lambda db, m: _record(settled, m))
+
+    await matches.leave_match(
+        _SettlementDb(), SimpleNamespace(id=leaver.user_id), uuid4()
+    )
+
+    assert leaver.status is ParticipantStatus.DECLINED
+    assert settled == []
+
+
+# --- The simultaneous rematch -----------------------------------------------
+
+
+class _FoldDb:
+    """Answers what `_fold_into_open_duel` asks: the advisory lock, then the
+    lookup for a duel these two already have open."""
+
+    def __init__(self, existing: Match | None = None) -> None:
+        self.existing = existing
+        self.locked = False
+        self.flushed = 0
+
+    async def execute(self, _statement):
+        self.locked = True
+        return None
+
+    async def scalar(self, _statement):
+        return self.existing
+
+    async def flush(self) -> None:
+        self.flushed += 1
+
+
+def _waiting_duel(caller: object, seat_status: ParticipantStatus) -> tuple[Match, MatchParticipant]:
+    seat = _seat(seat_status)
+    seat.user_id = caller
+    match = _duel(seat, _seat(ParticipantStatus.JOINED))
+    match.status = MatchStatus.PENDING
+    return match, seat
+
+
+async def test_a_reciprocal_challenge_joins_the_waiting_match(monkeypatch):
+    """The reported bug: both players tap REMATCH in the same second, two
+    matches are created, and each ends up in their own lobby holding an
+    unanswered invite to the other's — so neither can start."""
+    monkeypatch.setattr(matches, "_publish_participants", _noop)
+    caller = uuid4()
+    waiting, seat = _waiting_duel(caller, ParticipantStatus.INVITED)
+    db = _FoldDb(existing=waiting)
+
+    folded = await matches._fold_into_open_duel(db, SimpleNamespace(id=caller), uuid4())
+
+    assert folded is waiting, "the second challenge folds into the first"
+    assert seat.status is ParticipantStatus.JOINED, "and *is* the acceptance of it"
+    assert db.locked, "unserialized, both requests still look, find nothing and create"
+
+
+async def test_a_first_challenge_is_left_to_create_a_match():
+    db = _FoldDb(existing=None)
+    folded = await matches._fold_into_open_duel(db, SimpleNamespace(id=uuid4()), uuid4())
+    assert folded is None
+
+
+async def test_challenging_the_same_player_twice_returns_the_one_match(monkeypatch):
+    """A double tap on a slow connection rather than a mutual rematch. The
+    caller is already seated, so there is nothing to accept — and still nothing
+    to create."""
+    monkeypatch.setattr(matches, "_publish_participants", _noop)
+    caller = uuid4()
+    waiting, seat = _waiting_duel(caller, ParticipantStatus.JOINED)
+
+    folded = await matches._fold_into_open_duel(
+        _FoldDb(existing=waiting), SimpleNamespace(id=caller), uuid4()
+    )
+
+    assert folded is waiting
+    assert seat.status is ParticipantStatus.JOINED
+
+
+def test_the_pair_lock_key_does_not_depend_on_who_asked():
+    """The entire point: A challenging B and B challenging A must contend for
+    the same lock, or the race is still open."""
+    a, b = uuid4(), uuid4()
+    assert matches._duel_lock_key(a, b) == matches._duel_lock_key(b, a)
+    assert matches._duel_lock_key(a, b) != matches._duel_lock_key(a, uuid4())
+
+
+def test_the_pair_lock_key_fits_a_postgres_bigint():
+    for _ in range(200):
+        key = matches._duel_lock_key(uuid4(), uuid4())
+        assert -(2**63) <= key < 2**63
 
 
 # --- Option ordering --------------------------------------------------------

@@ -619,9 +619,12 @@ abstract class SqStrings {
   /// Multiplier chip, e.g. "x2".
   String battleMultiplier(String value);
   String get battleOffline;
-  String get battleLeaveTitle;
-  String get battleLeaveBody;
-  String get battleLeaveConfirm;
+
+  /// The in-round abandon control, and the confirmation behind it.
+  String get battleAbandonAction;
+  String get battleAbandonTitle;
+  String get battleAbandonBody;
+  String get battleAbandonConfirm;
   String get battleAsyncNotice;
 
   // --- Battle: result ----------------------------------------------------
@@ -640,6 +643,15 @@ abstract class SqStrings {
   String get resultWinBody;
   String get resultLossBody;
   String get resultDrawBody;
+
+  /// Why the match ended, when it ended because somebody walked out. The
+  /// scoreline alone cannot say it — a win by abandonment can look like a
+  /// narrow win, or like a loss the winner was heading for.
+  String get resultWinByAbandonBody;
+  String get resultLossByAbandonBody;
+
+  /// Badge on the standings row of whoever left.
+  String get resultAbandoned;
   String get resultAwaitingOpponent;
   String get resultAwaitingOpponentBody;
   String get resultRematch;

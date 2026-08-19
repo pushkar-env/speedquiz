@@ -27,6 +27,7 @@ down, which is late but never wrong.
 
 from __future__ import annotations
 
+import hashlib
 import random
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -450,6 +451,98 @@ def require_participant(match: Match, user_id: UUID) -> MatchParticipant:
 # --- Creation ---------------------------------------------------------------
 
 
+def _duel_lock_key(a: UUID, b: UUID) -> int:
+    """A stable advisory-lock key for an unordered pair of players.
+
+    Order independent on purpose: A challenging B and B challenging A have to
+    contend for the *same* lock, because that simultaneous pair is the entire
+    race being closed.
+    """
+    low, high = sorted((a, b), key=lambda value: value.int)
+    digest = hashlib.blake2b(f"{low}:{high}".encode(), digest_size=8).digest()
+    # Postgres advisory locks are keyed by a bigint, hence the signed 8 bytes.
+    return int.from_bytes(digest, "big", signed=True)
+
+
+async def _open_duel_between(db: AsyncSession, a: UUID, b: UUID) -> Optional[Match]:
+    """The friendly duel these two already have open, if any."""
+    seats = {
+        player: select(MatchParticipant.match_id).where(
+            MatchParticipant.user_id == player,
+            MatchParticipant.status != ParticipantStatus.DECLINED,
+        )
+        for player in (a, b)
+    }
+    return await db.scalar(
+        select(Match)
+        .options(selectinload(Match.participants))
+        .where(
+            Match.kind == MatchKind.FRIENDLY,
+            Match.format == MatchFormat.DUEL,
+            # Only a match that has not started. A live game is not something to
+            # fold a new challenge into, and a finished one is history.
+            Match.status.in_((MatchStatus.PENDING, MatchStatus.LOBBY)),
+            Match.id.in_(seats[a]),
+            Match.id.in_(seats[b]),
+        )
+        .order_by(Match.created_at.desc())
+        .limit(1)
+    )
+
+
+async def _fold_into_open_duel(
+    db: AsyncSession, user: User, opponent_id: UUID
+) -> Optional[Match]:
+    """Treat a challenge as accepting the one already waiting from that player.
+
+    Both players tapping REMATCH in the same second used to create two matches.
+    Each then sat in the lobby they had just made, holding an unanswered invite
+    to the other's, and neither lobby could start — the pair had to work out
+    what had happened and back out of one.
+
+    Reading the second challenge as an *acceptance* of the first is what both
+    players meant by it: they asked for the same thing, against each other, at
+    the same moment. So it collapses to a single lobby with both already
+    seated, and whoever was a fraction of a second slower simply finds
+    themselves in the game they asked for.
+
+    Folding regardless of topic is deliberate. The invariant worth having is
+    "two players never have two duels open at once" — the alternative, matching
+    on topic too, leaves the mutual-challenge-on-different-topics case in
+    exactly the broken state this exists to prevent. The cost is that the
+    slower player can land on the topic the faster one picked, which the lobby
+    names plainly and which they can leave.
+
+    The advisory lock is what makes this safe rather than merely likely:
+    without it two simultaneous requests both look, both find nothing, and both
+    create. It is transaction scoped, so the commit that writes the match
+    releases it either way.
+    """
+    await db.execute(
+        select(func.pg_advisory_xact_lock(_duel_lock_key(user.id, opponent_id)))
+    )
+
+    existing = await _open_duel_between(db, user.id, opponent_id)
+    if existing is None:
+        return None
+
+    seat = participant_of(existing, user.id)
+    if seat is None:  # pragma: no cover - the pair query guarantees a seat
+        return None
+    if seat.status is ParticipantStatus.INVITED:
+        seat.status = ParticipantStatus.JOINED
+        seat.joined_at = _now()
+        await db.flush()
+        await _publish_participants(db, existing)
+    logger.info(
+        "duel_challenge_folded",
+        match_id=str(existing.id),
+        user_id=str(user.id),
+        opponent_id=str(opponent_id),
+    )
+    return existing
+
+
 async def create_match(
     db: AsyncSession,
     user: User,
@@ -499,6 +592,18 @@ async def create_match(
             raise _err("user_not_found", "Player not found.", status.HTTP_404_NOT_FOUND)
 
     is_duel = payload.format is MatchFormat.DUEL or kind is MatchKind.RANKED
+
+    # Checked before the question set is drawn: a fold returns a match that
+    # already has a board, so building one here would be work thrown away — and
+    # `_build_question_set` is the expensive half of creating a match.
+    #
+    # Ranked is exempt. Its pairs come from the matchmaker rather than from two
+    # people choosing each other, so there is no mutual challenge to collapse.
+    if kind is MatchKind.FRIENDLY and is_duel and len(invitees) == 1:
+        folded = await _fold_into_open_duel(db, user, invitees[0])
+        if folded is not None:
+            return folded
+
     max_players = 2 if is_duel else max(2, min(payload.max_players or 4, settings.match_max_players))
     question_count = payload.question_count or settings.match_default_question_count
     question_count = max(
@@ -1374,16 +1479,25 @@ async def _notify_waiting_players(
 
 
 def _rank_participants(participants: Sequence[MatchParticipant]) -> list[MatchParticipant]:
-    """Standings order: score, then speed, then accuracy.
+    """Standings order: forfeits last, then score, then speed, then accuracy.
 
     Total answer time breaks ties because on a seven-question board two players
     drawing on score is common, and "you were quicker" is a result both of them
     accept. Accuracy is the third key for the rare case where the clock is also
     tied.
+
+    Walking out sorts below every player who stayed, *whatever the score was*.
+    Ranking a quitter on points would mean abandoning while ahead still won the
+    match — which is precisely the move the button would otherwise teach.
     """
     return sorted(
         participants,
-        key=lambda p: (-p.score, p.total_answer_ms, -p.correct_count),
+        key=lambda p: (
+            p.status is ParticipantStatus.FORFEITED,
+            -p.score,
+            p.total_answer_ms,
+            -p.correct_count,
+        ),
     )
 
 
@@ -1398,23 +1512,41 @@ async def finalize(db: AsyncSession, match: Match) -> None:
         return
 
     now = _now()
+    # A forfeit is settled, not skipped. Leaving quitters out of the standings
+    # is how walking out of a ranked duel used to cost nothing at all: with one
+    # player left there was no pair to move Elo between, and the row kept a
+    # NULL outcome, so the match was missing from the record on both counts.
     scored = [
         p for p in match.participants
-        if p.status in ACTIVE_PARTICIPANT_STATUSES or p.status is ParticipantStatus.FINISHED
+        if p.status in ACTIVE_PARTICIPANT_STATUSES
+        or p.status in (ParticipantStatus.FINISHED, ParticipantStatus.FORFEITED)
     ]
     ordered = _rank_participants(scored)
 
-    top_score = ordered[0].score if ordered else 0
-    top_time = ordered[0].total_answer_ms if ordered else 0
-    winners = [p for p in ordered if p.score == top_score and p.total_answer_ms == top_time]
+    # The win is contested only between the players who saw it out. A quitter
+    # cannot draw into first place by having matched the leader's score at the
+    # moment they left — which two players on nil after one round otherwise do.
+    contenders = [p for p in ordered if p.status is not ParticipantStatus.FORFEITED]
+    top_score = contenders[0].score if contenders else 0
+    top_time = contenders[0].total_answer_ms if contenders else 0
+    winners = [
+        p for p in contenders if p.score == top_score and p.total_answer_ms == top_time
+    ]
 
     for position, participant in enumerate(ordered, start=1):
+        forfeited = participant.status is ParticipantStatus.FORFEITED
         participant.placement = position
-        participant.status = ParticipantStatus.FINISHED
+        if not forfeited:
+            # FORFEITED survives settlement deliberately. It is the only record
+            # that this player walked out rather than played to the end, and the
+            # result screen reads it to tell the winner *why* they won.
+            participant.status = ParticipantStatus.FINISHED
         participant.finished_at = participant.finished_at or now
-        if len(winners) > 1 and participant in winners:
+        if forfeited:
+            participant.outcome = MatchOutcome.LOSS
+        elif len(winners) > 1 and participant in winners:
             participant.outcome = MatchOutcome.DRAW
-        elif participant is ordered[0]:
+        elif participant in winners:
             participant.outcome = MatchOutcome.WIN
         else:
             participant.outcome = MatchOutcome.LOSS
@@ -1589,11 +1721,25 @@ async def _award_progression(
 
 
 async def leave_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
-    """Walk out. Keeps whatever was scored so far.
+    """Abandon a match in progress, or back out of one that has not started.
+
+    Two different acts behind one door, told apart by status:
+
+    * **Before the first question** — a lobby or an unanswered invite — nothing
+      has happened yet, so the seat is simply given up. A duel dies with it;
+      a room seat just frees the chair.
+    * **Mid-match** — the player forfeits. Their score stands on the scoreboard
+      but ranks below everyone who stayed (see [_rank_participants]), so the
+      opponent wins by abandonment whether they were ahead or behind, and the
+      quitter takes the recorded loss and the Elo that goes with it.
 
     Forfeiting rather than deleting the row: the opponent played a real game
     and is owed a real result, and in a ranked duel a rage-quit that erased the
     match would be a free escape from a loss.
+
+    A duel settles the moment one side walks — there is nobody left to play
+    against, so making the winner wait out the clock would be theatre. A room
+    keeps going until only one player remains.
     """
     match = await load_match(db, match_id)
     participant = require_participant(match, user.id)
@@ -1606,6 +1752,14 @@ async def leave_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
         if match.format is MatchFormat.DUEL or participant.is_host:
             match.status = MatchStatus.CANCELLED
             match.finished_at = _now()
+    elif participant.rounds_answered >= match.question_count:
+        # Nothing left to abandon. This player has answered every question and
+        # is only waiting to see the other side's board — FINISHED is not set
+        # until settlement, so their seat still reads PLAYING and the branch
+        # below would forfeit a completed game for closing the screen. It cost
+        # them their place in the standings before; now that a forfeit is
+        # ranked and rated, it would cost them the match and the Elo with it.
+        return match
     else:
         participant.status = ParticipantStatus.FORFEITED
         participant.finished_at = _now()
@@ -1615,9 +1769,12 @@ async def leave_match(db: AsyncSession, user: User, match_id: UUID) -> Match:
 
     if match.status is MatchStatus.CANCELLED:
         await realtime.publish(match.id, realtime.EVENT_CANCELLED, {"reason": "host_left"})
-    else:
-        remaining = _live_players(match)
-        if len(remaining) <= 1:
+    elif participant.status is ParticipantStatus.FORFEITED:
+        # Gated on the leaver having actually forfeited, which only happens once
+        # the match is in progress. Settling on "one player left" alone also
+        # fired for a *lobby* emptying out, which completed a room nobody had
+        # played a question of and handed its last occupant a win over nobody.
+        if match.format is MatchFormat.DUEL or len(_live_players(match)) <= 1:
             await finalize(db, match)
     return match
 

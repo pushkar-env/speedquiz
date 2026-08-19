@@ -493,10 +493,18 @@ class BattleController extends StateNotifier<BattleState> {
     }
   }
 
+  /// Forfeit this match, or give up a seat in one that has not started.
+  ///
+  /// Abandoning a duel settles it on the spot, so the returned match comes back
+  /// already over and this screen falls through to the result view. The result
+  /// is fetched to go with it: without it the player who just walked out lands
+  /// on a scoreboard missing the XP line and the rating change — the two
+  /// numbers that tell them what abandoning actually cost.
   Future<void> leave() async {
     try {
       final match = await _repository.leave(matchId);
       state = state.copyWith(match: match);
+      if (match.isOver) await _loadResult();
     } catch (_) {
       // Leaving is best-effort — the server forfeits an absent player anyway.
     }

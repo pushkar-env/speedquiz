@@ -44,12 +44,17 @@ class BattleScreen extends ConsumerWidget {
       canPop: match == null || match.isOver,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        // Only a round in progress is worth a confirmation: that one forfeits
-        // and cannot be undone. Walking out of a lobby costs nothing, and
-        // making someone confirm it is how you train them to confirm the one
-        // that matters without reading it.
-        if (match!.isPlayable) {
-          final confirmed = await _confirmLeave(context);
+        // Only a board this player still owes turns to is worth a confirmation:
+        // that one forfeits and cannot be undone. Walking out of a lobby costs
+        // nothing, and making someone confirm it is how you train them to
+        // confirm the one that matters without reading it.
+        //
+        // `isMyTurn` rather than `isPlayable`, which is also true while waiting
+        // on an async opponent — there is nothing left to forfeit once your own
+        // board is done, so the warning promised a consequence that the server
+        // (rightly) refuses to apply.
+        if (match!.isMyTurn) {
+          final confirmed = await _confirmAbandon(context);
           if (!confirmed || !context.mounted) return;
         }
         await controller.leave();
@@ -72,24 +77,44 @@ class BattleScreen extends ConsumerWidget {
       ),
     );
   }
+}
 
-  static Future<bool> _confirmLeave(BuildContext context) async {
-    final l10n = context.l10n;
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => SqDialog(
-        title: l10n.battleLeaveTitle,
-        message: l10n.battleLeaveBody,
-        tone: SqDialogTone.danger,
-        glyph: '🚪',
-        primaryLabel: l10n.battleLeaveConfirm,
-        onPrimary: () => Navigator.of(dialogContext).pop(true),
-        secondaryLabel: l10n.cancel,
-        onSecondary: () => Navigator.of(dialogContext).pop(false),
-      ),
-    );
-    return result ?? false;
-  }
+/// The one warning before a forfeit, shared by the back gesture and the
+/// in-round Abandon button.
+///
+/// Deliberately the same dialog for both. A second, quieter way out that
+/// skipped the warning would be the one players hit by accident.
+Future<bool> _confirmAbandon(BuildContext context) async {
+  final l10n = context.l10n;
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => SqDialog(
+      title: l10n.battleAbandonTitle,
+      message: l10n.battleAbandonBody,
+      tone: SqDialogTone.danger,
+      glyph: '🏳️',
+      primaryLabel: l10n.battleAbandonConfirm,
+      onPrimary: () => Navigator.of(dialogContext).pop(true),
+      secondaryLabel: l10n.cancel,
+      onSecondary: () => Navigator.of(dialogContext).pop(false),
+    ),
+  );
+  return result ?? false;
+}
+
+/// Abandon from inside a round: confirm, then forfeit.
+///
+/// Stays on the screen rather than popping, unlike the back gesture. Back means
+/// "get me out of here"; this button means "end this match" — and the match
+/// settles immediately, so staying put lands the player on the result they just
+/// caused, with the rematch button right there.
+Future<void> _abandonFromPlay(
+  BuildContext context,
+  BattleController controller,
+) async {
+  if (!await _confirmAbandon(context)) return;
+  Haptics.tap();
+  await controller.leave();
 }
 
 class _Body extends ConsumerWidget {
@@ -399,6 +424,17 @@ class _PlayView extends ConsumerWidget {
                       color: AppColors.warning,
                       dense: true,
                     ),
+                  // Quiet by design: a way out has to exist — a duel against
+                  // someone who has stopped playing is otherwise a wait with no
+                  // exit but the back gesture, which players do not think to
+                  // try mid-round — without being an invitation to take it.
+                  IconButton(
+                    icon: const Icon(Icons.flag_outlined, size: 20),
+                    tooltip: l10n.battleAbandonAction,
+                    color: context.sq.textFaint,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => _abandonFromPlay(context, controller),
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -783,9 +819,25 @@ class _ResultViewState extends ConsumerState<_ResultView> {
     final standings = result?.standings ?? match.participants;
     final outcome = result?.myOutcome ?? match.myOutcome;
 
+    // Who walked out, if anyone. `forfeited` survives settlement precisely so
+    // the result can explain itself: a win by abandonment otherwise reads as a
+    // narrow win, or — when the player who quit was ahead at the time — as a
+    // win the scoreline flatly contradicts.
+    final quitter = standings
+        .where((p) => p.status == ParticipantStatus.forfeited)
+        .firstOrNull;
+
     final (String title, String body, Color tint) = switch (outcome) {
-      MatchOutcome.win => (l10n.resultWin, l10n.resultWinBody, AppColors.success),
-      MatchOutcome.loss => (l10n.resultLoss, l10n.resultLossBody, AppColors.danger),
+      MatchOutcome.win => (
+          l10n.resultWin,
+          quitter == null ? l10n.resultWinBody : l10n.resultWinByAbandonBody,
+          AppColors.success,
+        ),
+      MatchOutcome.loss => (
+          l10n.resultLoss,
+          quitter?.isMe ?? false ? l10n.resultLossByAbandonBody : l10n.resultLossBody,
+          AppColors.danger,
+        ),
       MatchOutcome.draw => (l10n.resultDraw, l10n.resultDrawBody, AppColors.warning),
       null => (l10n.resultStandings, '', theme.sq.accent),
     };
@@ -836,17 +888,29 @@ class _ResultViewState extends ConsumerState<_ResultView> {
                             player: participant.player,
                             subtitle:
                                 '${participant.correctCount}/${match.questionCount} · ${participant.scoreLabel}',
-                            trailing: participant.placement == null
-                                ? null
-                                : SqBadge(
-                                    label: l10n.resultPlacement(
-                                      participant.placement!,
-                                    ),
+                            // "Left" replaces the placement for whoever
+                            // abandoned. Their placement is last by
+                            // construction, so the number says nothing the
+                            // ordering has not already said, while the reason
+                            // is the one thing the row cannot otherwise show.
+                            trailing: participant.status ==
+                                    ParticipantStatus.forfeited
+                                ? SqBadge(
+                                    label: l10n.resultAbandoned,
                                     dense: true,
-                                    color: participant.placement == 1
-                                        ? AppColors.success
-                                        : null,
-                                  ),
+                                    color: AppColors.danger,
+                                  )
+                                : participant.placement == null
+                                    ? null
+                                    : SqBadge(
+                                        label: l10n.resultPlacement(
+                                          participant.placement!,
+                                        ),
+                                        dense: true,
+                                        color: participant.placement == 1
+                                            ? AppColors.success
+                                            : null,
+                                      ),
                           ),
                       ],
                     ),
