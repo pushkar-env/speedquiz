@@ -7,6 +7,7 @@ import 'package:speedquiz/core/feedback/audio_service.dart';
 import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/multiplayer/domain/multiplayer_models.dart';
 import 'package:speedquiz/features/multiplayer/presentation/battle_controller.dart';
@@ -35,15 +36,36 @@ class BattleScreen extends ConsumerWidget {
     final match = state.match;
 
     return PopScope(
-      // Back is intercepted for anything still open, not only a live round.
+      // Never `true`, and this screen routes every exit itself.
       //
-      // It used to pop freely whenever the match was not *playable*, which is
-      // true of a lobby — so backing out of one never told the server, and the
-      // match sat there PENDING, still listed on the Battle tab as something
-      // waiting on the player, until the lobby timeout eventually swept it.
-      canPop: match == null || match.isOver,
+      // Not a style choice — a `PopScope` registers against the *route*, and
+      // Flutter invokes every entry registered on it for a single back press
+      // (`ModalRoute.onPopInvokedWithResult` iterates `_popEntries`; one entry
+      // saying `canPop: false` blocks the pop for all of them). This route used
+      // to wrap the screen in an [SqBackGuard] as well, so back fired two
+      // callbacks: the guard's ran first and walked to the Battle list, then
+      // this one opened the abandon dialog on top of a screen the player had
+      // already been carried off. The forfeit still reached the server, so the
+      // *opponent* got the result screen while the player who quit — the one
+      // who just took a loss and the rating with it — was left looking at the
+      // match list. One owner of back, or neither works.
+      //
+      // Being the only owner also means covering what the guard did: a match
+      // reached by `context.go` (a deep link, a push notification, a rematch
+      // replacing this route) is the bottom of the stack, where a real pop
+      // closes the app. Hence `popOrGo` at every exit below rather than `pop`.
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+
+        // Nothing to settle: a finished match, or one that never loaded. This
+        // is also the way *out* of the result screen — the second back press
+        // after abandoning, which should leave and not re-ask anything.
+        if (match == null || match.isOver) {
+          context.popOrGo(Routes.battle);
+          return;
+        }
+
         // Only a board this player still owes turns to is worth a confirmation:
         // that one forfeits and cannot be undone. Walking out of a lobby costs
         // nothing, and making someone confirm it is how you train them to
@@ -55,14 +77,11 @@ class BattleScreen extends ConsumerWidget {
         // (rightly) refuses to apply.
         //
         // Mid-board, back *is* the abandon button and behaves like it: the
-        // match settles and the screen stays put on the result. It used to pop
-        // straight out to the Battle list, so the player who had just ended a
-        // match — and taken a loss and a rating hit for it — was shown nothing
-        // at all, and the match looked to them like it had simply vanished
-        // rather than concluded. What they confirmed was "end this match", not
-        // "navigate away"; `canPop` is true once it is over, so the next back
-        // press leaves freely.
-        if (match!.isMyTurn) {
+        // match settles and the screen stays put on the result. What the player
+        // confirmed was "end this match", not "navigate away", and the result
+        // is the thing they just caused — their loss, the rating it moved, and
+        // the rematch button.
+        if (match.isMyTurn) {
           final abandoned = await _abandonMatch(context, controller);
           if (!abandoned || !context.mounted) return;
           // `leave` is best-effort and swallows a network failure, so a forfeit
@@ -71,12 +90,13 @@ class BattleScreen extends ConsumerWidget {
           // which is what was asked for — the server forfeits an absent player
           // anyway.
           final settled = ref.read(battleControllerProvider(matchId)).match?.isOver;
-          if (settled == false) context.pop();
+          if (settled == false) context.popOrGo(Routes.battle);
           return;
         }
+
         // A lobby has no result to show, so backing out of one still leaves.
         await controller.leave();
-        if (context.mounted) context.pop();
+        if (context.mounted) context.popOrGo(Routes.battle);
       },
       child: Scaffold(
         backgroundColor: context.sq.background,

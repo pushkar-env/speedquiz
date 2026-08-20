@@ -354,12 +354,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         parentNavigatorKey: _rootNavigatorKey,
         path: '/battle/match/:matchId',
+        // No SqBackGuard here, unlike every other root route. BattleScreen
+        // registers its own PopScope — back mid-match has to confirm a forfeit
+        // and then *stay* on the result — and two PopScopes on one route both
+        // fire, so the guard walked the player out from under the dialog. The
+        // screen does the guard's `popOrGo` itself instead; see its PopScope.
         pageBuilder: (context, state) => sqSharedAxisPage(
           state: state,
-          child: SqBackGuard(
-            fallback: Routes.battle,
-            child: BattleScreen(matchId: state.pathParameters['matchId']!),
-          ),
+          child: BattleScreen(matchId: state.pathParameters['matchId']!),
         ),
       ),
       GoRoute(
