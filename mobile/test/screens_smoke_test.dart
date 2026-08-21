@@ -33,6 +33,8 @@ import 'package:speedquiz/features/profile/presentation/stats_screen.dart';
 import 'package:speedquiz/features/quiz/domain/quiz_models.dart';
 import 'package:speedquiz/features/quiz/presentation/quiz_results_screen.dart';
 import 'package:speedquiz/features/quiz/presentation/quiz_setup_screen.dart';
+import 'package:speedquiz/features/studio/data/custom_quiz_repository.dart';
+import 'package:speedquiz/features/studio/domain/custom_quiz_models.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
@@ -258,6 +260,52 @@ class _SignedInController extends AuthController {
   Future<void> bootstrap() async => state = const AuthAuthenticated(_user);
 }
 
+/// Two quizzes the viewer owns, for Explore's custom-quiz section.
+///
+/// Explore watches the studio library now, so without an override it reaches
+/// for the network mid-test. An empty default would also work but would leave
+/// the section untested on every screen that renders Explore.
+CustomQuiz _ownedQuiz({
+  required String id,
+  required String title,
+  String status = 'published',
+}) {
+  return CustomQuiz.fromJson({
+    'id': id,
+    'topic_id': 'topic-$id',
+    'title': title,
+    'description': null,
+    'icon': '🎬',
+    'language': 'en',
+    'visibility': 'private',
+    'status': status,
+    'code': null,
+    'question_count': 6,
+    'default_mode': 'casual',
+    'default_difficulty': 'medium',
+    'play_count': 0,
+    'player_count': 0,
+    'top_score': 0,
+    'author': <String, dynamic>{'user_id': 'u1', 'username': 'player_test'},
+    'is_owner': true,
+    'my_best_score': null,
+    'publish_blockers': <String>[],
+    'created_at': '2026-08-01T10:00:00Z',
+    'updated_at': '2026-08-20T10:00:00Z',
+    'published_at': '2026-08-02T10:00:00Z',
+  });
+}
+
+final _library = CustomQuizLibrary(
+  mine: [
+    _ownedQuiz(id: 'cq1', title: 'My Bollywood Quiz'),
+    _ownedQuiz(id: 'cq2', title: 'Unfinished Draft', status: 'draft'),
+  ],
+  shared: const [],
+  remainingSlots: 1,
+  maxQuestions: 20,
+);
+
 Widget _app(
   Widget screen, {
   Brightness brightness = Brightness.dark,
@@ -272,6 +320,7 @@ Widget _app(
       entitlementsProvider.overrideWith((ref) async => _entitlements),
       leaderboardProvider.overrideWith((ref, scope) async => _board),
       profileProvider.overrideWith((ref) async => _profile),
+      customQuizLibraryProvider.overrideWith((ref) async => _library),
     ],
     child: MaterialApp(
       theme: brightness == Brightness.dark
@@ -368,6 +417,44 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Bank filling up'), findsOneWidget);
+  });
+
+  testWidgets('explore lists the quizzes you wrote alongside the catalog',
+      (tester) async {
+    await _expectBuilds(tester, const ExploreScreen());
+
+    expect(find.text('Custom quizzes'), findsOneWidget);
+    expect(find.text('My Bollywood Quiz'), findsOneWidget);
+    // Drafts belong here too: their author is the only one who can see them,
+    // the card badges them, and tapping through is how they get published.
+    expect(find.text('Unfinished Draft'), findsOneWidget);
+    expect(find.text('Draft'), findsOneWidget);
+  });
+
+  testWidgets('a category filter hides the custom quizzes rather than ignoring it',
+      (tester) async {
+    // They have no category, so a filtered catalog cannot answer for them.
+    await _expectBuilds(tester, const ExploreScreen());
+    expect(find.text('My Bollywood Quiz'), findsOneWidget);
+
+    await tester.tap(find.text('Technology').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Custom quizzes'), findsNothing);
+    expect(find.text('My Bollywood Quiz'), findsNothing);
+  });
+
+  testWidgets('searching matches custom quizzes by title', (tester) async {
+    await _expectBuilds(tester, const ExploreScreen());
+
+    await tester.enterText(find.byType(TextField).first, 'bollywood');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('My Bollywood Quiz'), findsOneWidget);
+    // The catalog has nothing by that name; the section still stands.
+    expect(find.text('Unfinished Draft'), findsNothing);
   });
 
   testWidgets('explore filters to a single category when one is picked',

@@ -835,6 +835,9 @@ abstract class SqStrings {
   String quizByAuthor(String name);
   String get quizNoPlaysYet;
 
+  /// Explore's section of quizzes the player wrote or was sent.
+  String get exploreCustomQuizzes;
+
   // Editor
   String get editorNewTitle;
   String get editorEditTitle;
@@ -843,6 +846,7 @@ abstract class SqStrings {
   String get editorDescriptionLabel;
   String get editorDescriptionHint;
   String get editorIconLabel;
+  String get editorIdentityHint;
   String get editorVisibilityLabel;
   String get editorDefaultsLabel;
   String get editorDefaultsSubtitle;

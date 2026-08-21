@@ -1607,6 +1607,8 @@ class SqStringsEn extends SqStrings {
   String quizByAuthor(String name) => 'by $name';
   @override
   String get quizNoPlaysYet => 'No plays yet';
+  @override
+  String get exploreCustomQuizzes => 'Custom quizzes';
 
   @override
   String get editorNewTitle => 'New quiz';
@@ -1622,6 +1624,8 @@ class SqStringsEn extends SqStrings {
   String get editorDescriptionHint => 'What is this quiz about? (optional)';
   @override
   String get editorIconLabel => 'Icon';
+  @override
+  String get editorIdentityHint => 'Tap the icon to change it';
   @override
   String get editorVisibilityLabel => 'Who can play it';
   @override

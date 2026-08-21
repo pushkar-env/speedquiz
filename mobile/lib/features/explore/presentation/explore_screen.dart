@@ -8,6 +8,9 @@ import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/shell/presentation/main_shell.dart';
+import 'package:speedquiz/features/studio/data/custom_quiz_repository.dart';
+import 'package:speedquiz/features/studio/domain/custom_quiz_models.dart';
+import 'package:speedquiz/features/studio/presentation/widgets/quiz_widgets.dart';
 import 'package:speedquiz/features/topics/data/topics_repository.dart';
 import 'package:speedquiz/features/topics/presentation/topic_tile.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
@@ -45,6 +48,91 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       return topic.name.toLowerCase().contains(needle) ||
           (topic.description?.toLowerCase().contains(needle) ?? false);
     }).toList();
+  }
+
+  /// Custom quizzes worth showing next to the catalog.
+  ///
+  /// Fed by the viewer's own library, which is the only safe source: these
+  /// have no public tier, so the list must never be anything but "quizzes I
+  /// wrote" plus "quizzes shared with me". Reusing that provider makes the
+  /// entitlement check structural rather than something this screen has to
+  /// remember to repeat.
+  List<CustomQuiz> _customQuizzes(CustomQuizLibrary library) {
+    // A category filter is asking the catalog a question these cannot answer —
+    // they have no category — so the section steps aside rather than ignoring
+    // the filter the player just set.
+    if (_categorySlug != null) return const [];
+
+    final needle = _query.toLowerCase();
+    bool matches(CustomQuiz quiz) {
+      if (needle.isEmpty) return true;
+      return quiz.title.toLowerCase().contains(needle) ||
+          (quiz.description?.toLowerCase().contains(needle) ?? false);
+    }
+
+    return [
+      // Drafts stay in: the author is the only one who sees them, the card
+      // badges them, and tapping through is how they get published. Archived
+      // and under-review quizzes do not — neither is actionable here, and the
+      // studio is where you manage those.
+      ...library.mine.where(
+        (q) => q.status == QuizStatus.published || q.status == QuizStatus.draft,
+      ),
+      ...library.shared,
+    ].where(matches).toList(growable: false);
+  }
+
+  void _openQuiz(CustomQuiz quiz) {
+    Haptics.tap();
+    context.push(Routes.quizDetailPath(quiz.id));
+  }
+
+  /// The custom-quiz section, or nothing at all.
+  ///
+  /// Degrades silently while the library loads or if it fails: this is a
+  /// secondary section on a browse screen, and an error block here would sit
+  /// on top of a catalog that is working perfectly well. The studio tab is
+  /// where a failure to load your quizzes is worth reporting.
+  List<Widget> _customQuizSlivers(SqStrings l10n) {
+    final library = ref.watch(customQuizLibraryProvider).valueOrNull;
+    if (library == null) return const [];
+
+    final quizzes = _customQuizzes(library);
+    if (quizzes.isEmpty) return const [];
+
+    // Capped: this is a pointer into the studio, not a second copy of it.
+    const shown = 4;
+    final visible = quizzes.take(shown).toList(growable: false);
+
+    return [
+      _SectionLabel(
+        title: l10n.exploreCustomQuizzes,
+        glyph: '✍️',
+        count: quizzes.length,
+      ),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Column(
+            children: [
+              for (final quiz in visible)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: QuizCard(quiz: quiz, onTap: () => _openQuiz(quiz)),
+                ),
+              if (quizzes.length > shown)
+                SqButton(
+                  label: l10n.studioTitle,
+                  icon: Icons.edit_note_rounded,
+                  variant: SqButtonVariant.ghost,
+                  height: 46,
+                  onPressed: () => context.push(Routes.studio),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ];
   }
 
   void _open(TopicItem topic) {
@@ -103,7 +191,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
               return RefreshIndicator(
                 onRefresh: () async {
-                  ref.invalidate(topicsProvider);
+                  ref
+                    ..invalidate(topicsProvider)
+                    ..invalidate(customQuizLibraryProvider);
                   await ref.read(topicsProvider.future);
                 },
                 color: p.accent,
@@ -160,6 +250,10 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         },
                       ),
                     ),
+                    // Above the catalog, and outside the "no topics match"
+                    // branch below: a search that finds nothing curated should
+                    // still surface the quiz of yours that does match.
+                    ..._customQuizSlivers(l10n),
                     if (visible.isEmpty)
                       SliverFillRemaining(
                         hasScrollBody: false,

@@ -7,6 +7,7 @@ import 'package:speedquiz/core/feedback/haptics.dart';
 import 'package:speedquiz/core/i18n/l10n.dart';
 import 'package:speedquiz/core/i18n/language_providers.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
+import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/entitlements/presentation/premium_paywall_sheet.dart';
 import 'package:speedquiz/features/studio/data/custom_quiz_repository.dart';
@@ -59,6 +60,14 @@ class _QuizEditorScreenState extends ConsumerState<QuizEditorScreen> {
 
   bool _loading = false;
   bool _busy = false;
+
+  /// Whether the visibility + defaults block is open.
+  ///
+  /// Open when writing a new quiz, because those are decisions you are making
+  /// for the first time. Closed when editing an existing one, where the
+  /// questions are what you came for and a screenful of settings in front of
+  /// them is just something to scroll past.
+  late bool _settingsOpen;
   bool _metaDirty = false;
   Timer? _saveTimer;
   Object? _loadError;
@@ -68,6 +77,7 @@ class _QuizEditorScreenState extends ConsumerState<QuizEditorScreen> {
   @override
   void initState() {
     super.initState();
+    _settingsOpen = widget.quizId == null;
     if (widget.quizId != null) _load(widget.quizId!);
   }
 
@@ -634,8 +644,18 @@ class _QuizEditorScreenState extends ConsumerState<QuizEditorScreen> {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
+        // Labelled the way every other form in the app is: a section header
+        // above, a bare hint inside. Material's floating `labelText` was the
+        // odd one out here and it misbehaved — over a two-line field the label
+        // sits vertically centred and then jumps to the border on focus, and
+        // the space it reserves inside the box is what stopped the icon and
+        // the title text from lining up.
+        SqSectionHeader(
+          title: l10n.editorTitleLabel,
+          subtitle: _locked ? null : l10n.editorIdentityHint,
+        ),
+        const SizedBox(height: AppSpacing.sm),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SqPressable(
               onTap: _locked ? null : _pickIcon,
@@ -650,18 +670,23 @@ class _QuizEditorScreenState extends ConsumerState<QuizEditorScreen> {
                 enabled: !_locked,
                 maxLength: 80,
                 textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
                 style: theme.textTheme.titleMedium,
                 onChanged: (_) => _touchMeta(),
                 onEditingComplete: () => _flushMeta(),
                 decoration: InputDecoration(
-                  labelText: l10n.editorTitleLabel,
                   hintText: l10n.editorTitleHint,
+                  // Eighty characters is not a limit anyone writing a quiz
+                  // title runs into, and the counter would push the field out
+                  // of alignment with the icon beside it.
                   counterText: '',
                 ),
               ),
             ),
           ],
         ),
+        const SizedBox(height: AppSpacing.md),
+        SqSectionHeader(title: l10n.editorDescriptionLabel),
         const SizedBox(height: AppSpacing.sm),
         TextField(
           controller: _descriptionController,
@@ -673,94 +698,119 @@ class _QuizEditorScreenState extends ConsumerState<QuizEditorScreen> {
           onChanged: (_) => _touchMeta(),
           onEditingComplete: () => _flushMeta(),
           decoration: InputDecoration(
-            labelText: l10n.editorDescriptionLabel,
             hintText: l10n.editorDescriptionHint,
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
-        SqSectionHeader(title: l10n.editorVisibilityLabel),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final option in QuizVisibility.values)
-              QuizChip(
-                label: quizVisibilityLabel(l10n, option),
-                icon: quizVisibilityIcon(option),
-                selected: _visibility == option,
-                tint: AppColors.gold,
-                onTap: _locked
-                    ? () {}
-                    : () {
-                        Haptics.tap();
-                        setState(() => _visibility = option);
-                        _touchMeta();
-                        // A visibility change is the one metadata edit with a
-                        // real consequence, so it writes through at once
-                        // rather than waiting out the debounce.
-                        _flushMeta();
-                      },
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          quizVisibilityBody(l10n, _visibility),
-          style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        SqSectionHeader(
+        // Smaller than the usual gap: this field keeps its counter — 280
+        // characters is a limit you can actually hit, and silently swallowing
+        // keystrokes is worse than a number — and the counter already occupies
+        // most of a row underneath.
+        const SizedBox(height: AppSpacing.xs),
+        _SettingsDisclosure(
           title: l10n.editorDefaultsLabel,
-          subtitle: l10n.editorDefaultsSubtitle,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final (value, label) in [
-              ('casual', l10n.setupModeCasual),
-              ('speedrun', l10n.setupModeSpeedrun),
-              ('survival', l10n.setupModeSurvival),
-            ])
-              QuizChip(
-                label: label,
-                selected: _mode == value,
-                onTap: _locked
-                    ? () {}
-                    : () {
-                        Haptics.tap();
-                        setState(() => _mode = value);
-                        _touchMeta();
-                      },
+          summary: [
+            quizVisibilityLabel(l10n, _visibility),
+            _modeLabel(l10n, _mode),
+            _difficultyLabel(l10n, _difficulty),
+          ].join(' · '),
+          expanded: _settingsOpen,
+          onToggle: () {
+            Haptics.tap();
+            setState(() => _settingsOpen = !_settingsOpen);
+          },
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FieldCaption(l10n.editorVisibilityLabel),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in QuizVisibility.values)
+                    QuizChip(
+                      label: quizVisibilityLabel(l10n, option),
+                      icon: quizVisibilityIcon(option),
+                      selected: _visibility == option,
+                      tint: AppColors.gold,
+                      onTap: _locked
+                          ? () {}
+                          : () {
+                              Haptics.tap();
+                              setState(() => _visibility = option);
+                              _touchMeta();
+                              // A visibility change is the one metadata edit
+                              // with a real consequence, so it writes through
+                              // at once rather than waiting out the debounce.
+                              _flushMeta();
+                            },
+                    ),
+                ],
               ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final (value, label) in [
-              ('easy', l10n.difficultyEasy),
-              ('medium', l10n.difficultyMedium),
-              ('hard', l10n.difficultyHard),
-              ('expert', l10n.difficultyExpert),
-            ])
-              QuizChip(
-                label: label,
-                selected: _difficulty == value,
-                tint: AppColors.cyan,
-                onTap: _locked
-                    ? () {}
-                    : () {
-                        Haptics.tap();
-                        setState(() => _difficulty = value);
-                        _touchMeta();
-                      },
+              const SizedBox(height: 6),
+              Text(
+                quizVisibilityBody(l10n, _visibility),
+                style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
               ),
-          ],
+              const SizedBox(height: AppSpacing.md),
+              _FieldCaption(l10n.customMode),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final (value, label) in [
+                    ('casual', l10n.setupModeCasual),
+                    ('speedrun', l10n.setupModeSpeedrun),
+                    ('survival', l10n.setupModeSurvival),
+                  ])
+                    QuizChip(
+                      label: label,
+                      selected: _mode == value,
+                      onTap: _locked
+                          ? () {}
+                          : () {
+                              Haptics.tap();
+                              setState(() => _mode = value);
+                              _touchMeta();
+                            },
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _FieldCaption(l10n.customDifficulty),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final (value, label) in [
+                    ('easy', l10n.difficultyEasy),
+                    ('medium', l10n.difficultyMedium),
+                    ('hard', l10n.difficultyHard),
+                    ('expert', l10n.difficultyExpert),
+                  ])
+                    QuizChip(
+                      label: label,
+                      selected: _difficulty == value,
+                      tint: AppColors.cyan,
+                      onTap: _locked
+                          ? () {}
+                          : () {
+                              Haptics.tap();
+                              setState(() => _difficulty = value);
+                              _touchMeta();
+                            },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                l10n.editorDefaultsSubtitle,
+                style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: AppSpacing.lg),
         Row(
@@ -939,6 +989,128 @@ class _QuizEditorScreenState extends ConsumerState<QuizEditorScreen> {
     setState(() => _icon = picked);
     _touchMeta();
     _flushMeta();
+  }
+}
+
+/// Human label for a mode value, for the collapsed settings summary.
+String _modeLabel(SqStrings l10n, String mode) => switch (mode) {
+  'speedrun' => l10n.setupModeSpeedrun,
+  'survival' => l10n.setupModeSurvival,
+  _ => l10n.setupModeCasual,
+};
+
+String _difficultyLabel(SqStrings l10n, String difficulty) => switch (difficulty) {
+  'easy' => l10n.difficultyEasy,
+  'hard' => l10n.difficultyHard,
+  'expert' => l10n.difficultyExpert,
+  _ => l10n.difficultyMedium,
+};
+
+/// Collapsible block holding the choices that are not the quiz's content.
+///
+/// Collapsed it still states what is set, so folding the settings away never
+/// costs the author the ability to check them at a glance — which is the usual
+/// failure of a disclosure and the reason they get left open by default.
+class _SettingsDisclosure extends StatelessWidget {
+  const _SettingsDisclosure({
+    required this.title,
+    required this.summary,
+    required this.expanded,
+    required this.onToggle,
+    required this.child,
+  });
+
+  final String title;
+  final String summary;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    return SqSurface(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SqPressable(
+            onTap: onToggle,
+            pressedScale: 0.99,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 2),
+                      Text(
+                        summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: p.textFaint,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: AppMotion.fast,
+                  child: Icon(
+                    Icons.expand_more_rounded,
+                    color: p.textFaint,
+                    size: 22,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          AnimatedSize(
+            duration: AppMotion.normal,
+            curve: AppMotion.enter,
+            alignment: Alignment.topCenter,
+            child: expanded
+                ? Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.md),
+                    child: child,
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small caption above a row of chips.
+///
+/// Quieter than [SqSectionHeader], which would imply a new section — these
+/// label two choices that belong to the same one.
+class _FieldCaption extends StatelessWidget {
+  const _FieldCaption(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      label,
+      style: theme.textTheme.labelSmall?.copyWith(
+        color: theme.sq.textSecondary,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.4,
+      ),
+    );
   }
 }
 

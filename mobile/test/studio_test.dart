@@ -492,6 +492,94 @@ void main() {
       expect(find.text('Black'), findsOneWidget);
     });
 
+    testWidgets('labels its fields the way the rest of the app does', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const QuizEditorScreen(),
+        library: const CustomQuizLibrary(
+          mine: [],
+          shared: [],
+          remainingSlots: 3,
+          maxQuestions: 20,
+        ),
+      );
+
+      // Section headers above, bare hints inside. Material's floating
+      // `labelText` was the odd one out on this screen: over the two-line
+      // description it sits vertically centred and jumps to the border on
+      // focus, and the space it reserves is what stopped the icon lining up
+      // with the title text.
+      expect(find.text('Title'), findsOneWidget);
+      expect(find.text('Description'), findsOneWidget);
+      for (final field in tester.widgetList<TextField>(find.byType(TextField))) {
+        expect(
+          field.decoration?.labelText,
+          isNull,
+          reason: 'the studio should label with SqSectionHeader, not labelText',
+        );
+      }
+    });
+
+    testWidgets('a new quiz opens with its settings expanded', (tester) async {
+      await _pump(
+        tester,
+        const QuizEditorScreen(),
+        library: const CustomQuizLibrary(
+          mine: [],
+          shared: [],
+          remainingSlots: 3,
+          maxQuestions: 20,
+        ),
+      );
+      // Writing a quiz means making these choices for the first time.
+      expect(find.text('Who can play it'), findsOneWidget);
+      expect(find.text('Mode'), findsOneWidget);
+      expect(find.text('Difficulty'), findsOneWidget);
+    });
+
+    testWidgets('editing an existing quiz folds the settings away', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const QuizEditorScreen(quizId: 'q1'),
+        library: const CustomQuizLibrary(
+          mine: [],
+          shared: [],
+          remainingSlots: 2,
+          maxQuestions: 20,
+        ),
+        quiz: CustomQuiz.fromJson({
+          ..._quizJson(status: 'draft', questionCount: 1),
+          'questions': [
+            {
+              'id': 'qq1',
+              'position': 0,
+              'prompt': 'A question you came here to edit',
+              'options': ['A', 'B', 'C', 'D'],
+              'correct_option_index': 0,
+              'difficulty': 'medium',
+            },
+          ],
+        }),
+      );
+
+      // Collapsed, so the questions are not behind a screenful of settings.
+      expect(find.text('Who can play it'), findsNothing);
+      expect(find.text('A question you came here to edit'), findsOneWidget);
+
+      // But what is set stays readable — that is the usual failure of a
+      // disclosure and the reason they end up left open.
+      expect(find.textContaining('Casual'), findsWidgets);
+
+      await tester.tap(find.text('Suggested setup'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Who can play it'), findsOneWidget);
+    });
+
     testWidgets('lays out in Hindi', (tester) async {
       await _pump(
         tester,

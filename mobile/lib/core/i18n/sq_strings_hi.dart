@@ -1608,6 +1608,8 @@ class SqStringsHi extends SqStrings {
   String quizByAuthor(String name) => '$name की बनाई';
   @override
   String get quizNoPlaysYet => 'अभी किसी ने नहीं खेली';
+  @override
+  String get exploreCustomQuizzes => 'अपनी क्विज़';
 
   @override
   String get editorNewTitle => 'नई क्विज़';
@@ -1623,6 +1625,8 @@ class SqStringsHi extends SqStrings {
   String get editorDescriptionHint => 'यह क्विज़ किस बारे में है? (वैकल्पिक)';
   @override
   String get editorIconLabel => 'आइकन';
+  @override
+  String get editorIdentityHint => 'आइकन बदलने के लिए उस पर टैप करें';
   @override
   String get editorVisibilityLabel => 'कौन खेल सकता है';
   @override
