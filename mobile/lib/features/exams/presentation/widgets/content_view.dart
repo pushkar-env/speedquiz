@@ -83,8 +83,32 @@ class _MathText extends StatelessWidget {
   /// in chemistry and economics questions — and must not open a maths span.
   static final _delimiter = RegExp(r'(?<!\\)\$');
 
+  /// `\(..\)`, `\[..\]` and `$$..$$` all mean the same thing as `$..$`.
+  ///
+  /// Content is canonicalised to `$` on the way into the database, so this is
+  /// belt and braces — but it is the difference between a formula and a line
+  /// of visible LaTeX source if anything ever slips through, and a reader
+  /// cannot work around it.
+  static final _altDelimiters = [
+    RegExp(r'\\\((.*?)\\\)', dotAll: true),
+    RegExp(r'\\\[(.*?)\\\]', dotAll: true),
+    RegExp(r'\$\$(.+?)\$\$', dotAll: true),
+  ];
+
+  static String _canonicalize(String raw) {
+    var out = raw;
+    for (final pattern in _altDelimiters) {
+      out = out.replaceAllMapped(pattern, (m) {
+        final body = (m.group(1) ?? '').trim();
+        return body.isEmpty ? '' : '\$$body\$';
+      });
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final text = _canonicalize(this.text);
     final pieces = text.split(_delimiter);
     if (pieces.length < 3) {
       // No complete maths span. Unescape and render as plain prose.

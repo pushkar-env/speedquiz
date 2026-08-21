@@ -56,7 +56,7 @@ from app.schemas.exams import (
     ResponseIn,
     SectionOut,
 )
-from app.services import exam_scoring
+from app.services import exam_scoring, notebook_service
 
 logger = get_logger(__name__)
 
@@ -64,6 +64,20 @@ logger = get_logger(__name__)
 #: out. Shorter than any question is worth answering, long enough that a slow
 #: network does not cost a candidate their last answer.
 SUBMIT_GRACE = timedelta(seconds=30)
+
+#: A custom duration has to stay sane: a five-minute full mock is a mis-tap and
+#: a twelve-hour one keeps an attempt (and its clock) alive for no reason.
+MIN_DURATION_MINUTES = 5
+MAX_DURATION_MINUTES = 6 * 60
+
+#: Per-question limits for Timed pacing.
+MIN_QUESTION_SECONDS = 10
+MAX_QUESTION_SECONDS = 30 * 60
+
+#: Pacing is configuration, not a schema concept -- see MockTestAttempt.config.
+PACING_CASUAL = "casual"
+PACING_TIMED = "timed"
+VALID_PACING = {PACING_CASUAL, PACING_TIMED}
 
 
 def _now() -> datetime:
@@ -318,6 +332,9 @@ def _attempt_out(attempt: MockTestAttempt, responses: list[MockTestResponse]) ->
         remaining_ms=_remaining_ms(attempt, now),
         server_now=now,
         submitted_at=_aware(attempt.submitted_at) if attempt.submitted_at else None,
+        pacing=(attempt.config or {}).get("pacing", PACING_CASUAL),
+        per_question_seconds=(attempt.config or {}).get("per_question_seconds"),
+        counts_for_rank=attempt.counts_for_rank,
         responses=[
             {
                 "exam_question_id": str(r.exam_question_id),
@@ -335,7 +352,15 @@ def _attempt_out(attempt: MockTestAttempt, responses: list[MockTestResponse]) ->
 
 
 async def start_attempt(
-    db: AsyncSession, user: User, paper_id: UUID, *, mode: str, section_id: Optional[UUID]
+    db: AsyncSession,
+    user: User,
+    paper_id: UUID,
+    *,
+    mode: str,
+    section_id: Optional[UUID],
+    pacing: str = PACING_CASUAL,
+    duration_minutes: Optional[int] = None,
+    per_question_seconds: Optional[int] = None,
 ) -> AttemptOut:
     paper = await _load_paper(db, paper_id)
     if _is_locked(paper, user):
@@ -357,14 +382,36 @@ async def start_attempt(
         await _finalize(db, existing, auto=True)
         await db.flush()
 
-    duration = paper.duration_minutes
+    duration = duration_minutes or paper.duration_minutes
     if mode == "sectional" and section_id:
         section = await db.get(ExamSection, section_id)
         if section is None or section.paper_id != paper.id:
             raise _err("section_not_found", "No such section on this paper.", status.HTTP_404_NOT_FOUND)
-        duration = section.time_limit_minutes or max(
-            1, round(paper.duration_minutes * section.question_count / max(1, paper.question_count))
+        if duration_minutes is None:
+            # Proportional to the section's share of the paper, which is what a
+            # candidate practising one subject expects to be given.
+            duration = section.time_limit_minutes or max(
+                1,
+                round(paper.duration_minutes * section.question_count
+                      / max(1, paper.question_count)),
+            )
+
+    duration = max(MIN_DURATION_MINUTES, min(MAX_DURATION_MINUTES, int(duration)))
+
+    if pacing not in VALID_PACING:
+        pacing = PACING_CASUAL
+    if pacing == PACING_TIMED:
+        # Default: an even split of the paper's own time budget, which is the
+        # pace the exam itself expects.
+        per_question_seconds = per_question_seconds or max(
+            MIN_QUESTION_SECONDS,
+            round(duration * 60 / max(1, paper.question_count)),
         )
+        per_question_seconds = max(
+            MIN_QUESTION_SECONDS, min(MAX_QUESTION_SECONDS, int(per_question_seconds))
+        )
+    else:
+        per_question_seconds = None
 
     now = _now()
     attempt = MockTestAttempt(
@@ -376,6 +423,14 @@ async def start_attempt(
         started_at=now,
         server_deadline_at=now + timedelta(minutes=duration),
         max_score=paper.total_marks,
+        # Practice reveals the answers as you go, so its score is not
+        # comparable with a sat paper and must stay out of the ladder.
+        counts_for_rank=mode != "practice",
+        config={
+            "pacing": pacing,
+            "per_question_seconds": per_question_seconds,
+            "duration_minutes": duration,
+        },
     )
     db.add(attempt)
     paper.attempt_count += 1
@@ -582,6 +637,34 @@ async def _finalize(db: AsyncSession, attempt: MockTestAttempt, *, auto: bool) -
     attempt.status = AttemptStatus.AUTO_SUBMITTED if auto else AttemptStatus.SUBMITTED
     attempt.submitted_at = _now()
 
+    # The notebook is written here rather than derived on read: this is the one
+    # moment where every question's verdict, chapter and chosen answer are all
+    # already in hand.
+    link_by_id = {str(link.id): link for link in links}
+    wrong: list[dict] = []
+    recovered: list[UUID] = []
+    for response in responses:
+        link = link_by_id.get(str(response.exam_question_id))
+        if link is None or link.question is None:
+            continue
+        meta = link.question.generation_meta or {}
+        if response.is_correct is False:
+            wrong.append({
+                "question_id": link.question_id,
+                "exam_question_id": link.id,
+                "chapter": meta.get("chapter"),
+                "subject": meta.get("subject") or "",
+                "selected": response.selected or [],
+                "numeric_value": response.numeric_value,
+            })
+        elif response.is_correct is True:
+            recovered.append(link.question_id)
+
+    await notebook_service.record_mistakes(db, user_id=attempt.user_id, wrong=wrong)
+    await notebook_service.mark_recovered(
+        db, user_id=attempt.user_id, question_ids=recovered
+    )
+
     logger.info(
         "mock_attempt_finalized",
         attempt=str(attempt.id), score=attempt.score, auto=auto,
@@ -656,24 +739,21 @@ async def get_result(db: AsyncSession, user: User, attempt_id: UUID) -> AttemptR
     # Percentile against everyone who has finished this paper. Cheap enough as
     # a query at this size; a Redis sorted set is the move once a paper carries
     # a large number of attempts.
-    total_attempts = await db.scalar(
-        select(func.count(MockTestAttempt.id)).where(
-            MockTestAttempt.paper_id == attempt.paper_id,
-            MockTestAttempt.status.in_(
-                [AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED]
-            ),
-        )
-    ) or 0
+    # The ladder is built only from attempts that count -- practice runs reveal
+    # the answers as they go, so including them would make every percentile on
+    # the paper meaningless for the people sitting it properly.
+    ranked = [
+        MockTestAttempt.paper_id == attempt.paper_id,
+        MockTestAttempt.status.in_([AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED]),
+        MockTestAttempt.counts_for_rank.is_(True),
+    ]
+    total_attempts = await db.scalar(select(func.count(MockTestAttempt.id)).where(*ranked)) or 0
     percentile = None
     rank = None
-    if total_attempts > 1:
+    if attempt.counts_for_rank and total_attempts > 1:
         below = await db.scalar(
             select(func.count(MockTestAttempt.id)).where(
-                MockTestAttempt.paper_id == attempt.paper_id,
-                MockTestAttempt.status.in_(
-                    [AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED]
-                ),
-                MockTestAttempt.score < attempt.score,
+                *ranked, MockTestAttempt.score < attempt.score
             )
         ) or 0
         percentile = round(100.0 * below / total_attempts, 2)
@@ -694,3 +774,118 @@ async def get_result(db: AsyncSession, user: User, attempt_id: UUID) -> AttemptR
         questions=questions,
         chapters=chapters,
     )
+
+
+async def check_answer(
+    db: AsyncSession,
+    user: User,
+    attempt_id: UUID,
+    *,
+    exam_question_id: UUID,
+    selected: list[int],
+    numeric_value: Optional[float],
+) -> dict:
+    """Practice mode: grade one question immediately and reveal the answer.
+
+    Only reachable on a practice attempt. On a full mock this endpoint would be
+    an answer-key oracle -- a candidate could probe every question before
+    committing -- which is why the mode check is a hard refusal rather than a
+    flag on the response.
+
+    The answer is recorded as it is checked, so a practice run still produces a
+    real score and still feeds the notebook at submission.
+    """
+    attempt = await _load_attempt(db, user, attempt_id)
+    if attempt.mode is not AttemptMode.PRACTICE:
+        raise _err(
+            "not_practice_mode",
+            "Answers can only be revealed in practice mode.",
+            status.HTTP_409_CONFLICT,
+        )
+    if attempt.status != AttemptStatus.IN_PROGRESS:
+        raise _err("attempt_closed", "This attempt is already finished.", status.HTTP_409_CONFLICT)
+
+    link = await db.scalar(
+        select(ExamQuestion)
+        .where(
+            ExamQuestion.id == exam_question_id,
+            ExamQuestion.paper_id == attempt.paper_id,
+        )
+        .options(selectinload(ExamQuestion.question))
+    )
+    if link is None or link.question is None:
+        raise _err("question_not_found", "No such question on this paper.", status.HTTP_404_NOT_FOUND)
+
+    question = link.question
+    spec = question.answer_spec or {}
+    answer_type = question.answer_type.value
+
+    verdict = exam_scoring.grade_question(
+        response={"selected": selected, "numeric_value": numeric_value},
+        answer_type=answer_type,
+        answer_spec=spec,
+        accepted_answers=link.accepted_answers or [],
+        is_dropped=link.is_dropped,
+    )
+
+    section = None
+    if link.section_id:
+        section = await db.get(ExamSection, link.section_id)
+    marks = exam_scoring.marks_for(
+        verdict,
+        (section.marking if section else {}) or {},
+        link.marks,
+        link.negative_marks,
+    )
+
+    now = _now()
+    state = ResponseState.ANSWERED if (selected or numeric_value is not None) else ResponseState.NOT_ANSWERED
+    statement = pg_insert(MockTestResponse).values([{
+        "attempt_id": attempt.id,
+        "exam_question_id": link.id,
+        "state": state,
+        "selected": [int(i) for i in selected][:8],
+        "numeric_value": numeric_value,
+        "time_spent_ms": 0,
+        "visit_count": 1,
+        "client_revision": 0,
+        "is_correct": verdict,
+        "marks_awarded": marks,
+        "first_seen_at": now,
+        "last_updated_at": now,
+    }])
+    statement = statement.on_conflict_do_update(
+        index_elements=[MockTestResponse.attempt_id, MockTestResponse.exam_question_id],
+        set_={
+            "state": statement.excluded.state,
+            "selected": statement.excluded.selected,
+            "numeric_value": statement.excluded.numeric_value,
+            "is_correct": statement.excluded.is_correct,
+            "marks_awarded": statement.excluded.marks_awarded,
+            "last_updated_at": statement.excluded.last_updated_at,
+        },
+    )
+    await db.execute(statement)
+    await db.flush()
+
+    # A withheld or unverified solution stays withheld here too. Practice mode
+    # is exactly where a plausible wrong method would do the most damage.
+    solution = (
+        question.explanation or ""
+        if question.solution_status is SolutionStatus.VERIFIED
+        else ""
+    )
+    meta = question.generation_meta or {}
+
+    return {
+        "exam_question_id": str(link.id),
+        "is_correct": bool(verdict),
+        "marks_awarded": marks,
+        "correct_option_index": spec.get("option"),
+        "correct_value": spec.get("value"),
+        "answer_type": answer_type,
+        "solution": solution,
+        "solution_available": bool(solution),
+        "chapter": meta.get("chapter"),
+        "key_concept": meta.get("key_concept"),
+    }

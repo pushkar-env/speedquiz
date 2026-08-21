@@ -106,6 +106,14 @@ class PaperManifestOut(BaseModel):
 class StartAttemptRequest(BaseModel):
     mode: str = Field(default="full", pattern="^(full|sectional|practice)$")
     section_id: Optional[UUID] = None
+    #: "casual" leaves the paper clock as the only limit; "timed" adds a
+    #: per-question one. Orthogonal to `mode`, so practice can be either.
+    pacing: str = Field(default="casual", pattern="^(casual|timed)$")
+    #: Overall limit. None uses the paper's own duration.
+    duration_minutes: Optional[int] = Field(default=None, ge=5, le=360)
+    #: Only meaningful when pacing is "timed". None derives an even split of
+    #: the overall budget.
+    per_question_seconds: Optional[int] = Field(default=None, ge=10, le=1800)
 
 
 class ResponseIn(BaseModel):
@@ -139,6 +147,10 @@ class AttemptOut(BaseModel):
     remaining_ms: int
     server_now: datetime
     submitted_at: Optional[datetime] = None
+    pacing: str = "casual"
+    per_question_seconds: Optional[int] = None
+    #: False for practice runs, which stay out of the paper's percentile.
+    counts_for_rank: bool = True
     responses: list[dict] = Field(default_factory=list)
 
 
@@ -183,3 +195,65 @@ class AttemptResultOut(BaseModel):
     questions: list[QuestionResultOut] = Field(default_factory=list)
     #: Chapter -> {correct, total, marks}. The weak-area engine.
     chapters: dict[str, Any] = Field(default_factory=dict)
+
+
+class CheckAnswerRequest(BaseModel):
+    exam_question_id: UUID
+    selected: list[int] = Field(default_factory=list, max_length=8)
+    numeric_value: Optional[float] = None
+
+
+class CheckAnswerOut(BaseModel):
+    """Instant feedback on one practice question."""
+
+    exam_question_id: UUID
+    is_correct: bool
+    marks_awarded: float
+    answer_type: str
+    correct_option_index: Optional[int] = None
+    correct_value: Optional[float] = None
+    #: Empty when the solution has not passed verification. `solution_available`
+    #: lets the client say "being checked" rather than show a blank panel.
+    solution: str = ""
+    solution_available: bool = False
+    chapter: Optional[str] = None
+    key_concept: Optional[str] = None
+
+
+class NotebookEntryOut(BaseModel):
+    id: UUID
+    question_id: UUID
+    chapter: str
+    subject: str = ""
+    status: str
+    wrong_count: int
+    last_wrong_at: datetime
+    #: "JEE Main 2025 January Shift 1 · Q28"
+    source: Optional[str] = None
+    answer_type: str
+    stem: list[dict] = Field(default_factory=list)
+    options: list[list[dict]] = Field(default_factory=list)
+    option_text: list[str] = Field(default_factory=list)
+    figures: dict[str, str] = Field(default_factory=dict)
+    correct_option_index: Optional[int] = None
+    correct_value: Optional[float] = None
+    your_selected: list[int] = Field(default_factory=list)
+    your_numeric: Optional[float] = None
+    solution: str = ""
+
+
+class NotebookChapterOut(BaseModel):
+    name: str
+    count: int
+
+
+class NotebookOut(BaseModel):
+    total: int
+    open_count: int
+    items: list[NotebookEntryOut] = Field(default_factory=list)
+    assets: list[AssetOut] = Field(default_factory=list)
+    chapters: list[NotebookChapterOut] = Field(default_factory=list)
+
+
+class SetNotebookStatusRequest(BaseModel):
+    status: str = Field(pattern="^(open|reviewed|recovered)$")

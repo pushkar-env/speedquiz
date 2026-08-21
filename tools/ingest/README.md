@@ -24,6 +24,7 @@ and the papers appear in the app under **Mock Tests**.
 | **Solve** | Solves each question *blind*, then compares against the key | **yes** |
 | **Gates** | Blocks anything unanswerable; flags anything doubtful | no |
 | **Emit** | Writes `data/out/<paper-key>/paper.json` plus its assets | no |
+| **Normalise** | At *import*: canonicalises every maths delimiter (see below) | no |
 
 Everything a PDF can answer deterministically is answered deterministically. A
 model that never sees a question boundary can never get one wrong.
@@ -48,6 +49,39 @@ Reconstructing that from glyph positions is a maths-OCR problem, and any
 heuristic tuned to one publisher's renderer breaks on the next one. Reading the
 rendered image is the only approach that survives an unfamiliar PDF — which is
 the whole point of "drop any new PDF in the folder".
+
+## Maths canonicalisation
+
+Extraction records what the model wrote. Import canonicalises it, which is the
+one choke point every question passes through — so there is a single
+implementation rather than one in the pipeline, one in the importer and a third
+in the client.
+
+Three things get fixed, all of them seen on the first real paper:
+
+| Problem | Example | Becomes |
+|---|---|---|
+| The other inline delimiters | `\( \text{CH}_3 \)` | `$\text{CH}_3$` |
+| No delimiters at all | `\frac{2}{3}` | `$\frac{2}{3}$` |
+| Display maths mid-sentence | `\[ x^2 \]`, `$$x^2$$` | `$x^2$` |
+
+Each of those rendered as visible LaTeX source on a device. A fragment that is
+maths end to end gets one span around the whole thing rather than a guess at
+where the maths "starts" — guessing wrong puts the delimiters mid-formula,
+which reads worse than the undelimited source it replaced.
+
+Anything that cannot be transformed safely (unbalanced braces, an odd number of
+`$`) is left exactly as it was and reported, because a question that renders
+slightly wrong is recoverable and one that has been silently rewritten is not.
+
+To re-canonicalise rows written before this existed:
+
+```bash
+python tools/ingest/normalize_latex.py --dry-run   # report
+python tools/ingest/normalize_latex.py             # apply
+```
+
+Idempotent — running it twice changes nothing the second time.
 
 ## The answer-key cross-check
 

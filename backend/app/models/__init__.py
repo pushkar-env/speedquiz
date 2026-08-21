@@ -2046,6 +2046,17 @@ class MockTestAttempt(Base, TimestampMixin):
     section_scores: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     percentile: Mapped[Optional[float]] = mapped_column(Float)
     total_time_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Whether this attempt enters the paper's percentile and rank.
+    #:
+    #: False for practice runs, which reveal the answer as you go. Letting
+    #: those into the ladder would make every percentile on the paper
+    #: meaningless for the people sitting it properly.
+    counts_for_rank: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
+    #: Pacing lives here rather than in columns of its own: `pacing`
+    #: (casual | timed), `per_question_seconds`, `duration_minutes`. A new
+    #: pacing rule is then a value, not a migration.
     config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     paper: Mapped[ExamPaper] = relationship()
@@ -2096,3 +2107,72 @@ class MockTestResponse(Base):
 
     first_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class NotebookStatus(str, enum.Enum):
+    """Where a mistake sits in the review cycle."""
+
+    #: Got it wrong; still to revisit.
+    OPEN = "open"
+    #: The student has read the solution and marked it understood.
+    REVIEWED = "reviewed"
+    #: Got it right on a later attempt after having been wrong.
+    RECOVERED = "recovered"
+
+
+class NotebookEntry(Base, TimestampMixin):
+    """One question a student got wrong, kept for revision.
+
+    Maintained at submission rather than derived on read. Deriving it is a
+    four-table join over every attempt the student has ever made, and this is a
+    screen they open often — but more importantly, a notebook you cannot clear
+    fills with hundreds of rows and stops being used, and "I have reviewed
+    this" has nowhere to live in derived data.
+
+    Keyed on (user, question) rather than on the attempt: getting the same
+    question wrong in three mock tests is one thing to revise, not three.
+    """
+
+    __tablename__ = "notebook_entries"
+    __table_args__ = (
+        UniqueConstraint("user_id", "question_id", name="uq_notebook_user_question"),
+        # The screen's own read: my open mistakes, most recent first.
+        Index("ix_notebook_user_status_seen", "user_id", "status", "last_wrong_at"),
+        Index("ix_notebook_user_chapter", "user_id", "chapter"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: The paper it came from, so the entry can say where without a join.
+    exam_question_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_questions.id", ondelete="SET NULL")
+    )
+    #: Denormalised from the question's tags: the notebook groups by chapter,
+    #: and that grouping should not depend on a JSONB lookup per row.
+    chapter: Mapped[str] = mapped_column(String(120), default="", server_default="", nullable=False)
+    subject: Mapped[str] = mapped_column(String(80), default="", server_default="", nullable=False)
+
+    status: Mapped[NotebookStatus] = mapped_column(
+        pg_enum(NotebookStatus, "notebook_status"),
+        default=NotebookStatus.OPEN,
+        nullable=False,
+    )
+    #: How many separate attempts this question has been failed in. A question
+    #: wrong three times is the one to revise first.
+    wrong_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    first_wrong_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_wrong_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: What they picked the last time they got it wrong, so the entry can show
+    #: the mistake rather than just the right answer.
+    last_selected: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    last_numeric: Mapped[Optional[float]] = mapped_column(Float)

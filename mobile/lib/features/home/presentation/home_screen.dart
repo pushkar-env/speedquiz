@@ -10,6 +10,7 @@ import 'package:speedquiz/core/network/api_errors.dart';
 import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_motion.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
+import 'package:speedquiz/features/exams/presentation/widgets/exam_home_section.dart';
 import 'package:speedquiz/features/auth/domain/auth_models.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/daily/data/daily_repository.dart';
@@ -285,8 +286,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
+                // Above "jump back in": preparing for an exam is a bigger
+                // commitment than picking a topic, and a student who came here
+                // for that should not have to scroll past the casual play.
+                const SqStagger(index: 5, child: ExamHomeSection()),
+                const SizedBox(height: AppSpacing.xl),
                 SqStagger(
-                  index: 5,
+                  index: 6,
                   child: SqSectionHeader(
                     title: l10n.homeJumpBackIn,
                     subtitle: l10n.homeJumpBackInSubtitle,
@@ -296,7 +302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SqStagger(
-                  index: 6,
+                  index: 7,
                   child: _TopicShortcuts(
                     async: topicsAsync,
                     onTap: _openTopic,
@@ -305,14 +311,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SqStagger(
-                  index: 7,
+                  index: 8,
                   child: _MakeQuizCard(
                     onTap: () => context.push(Routes.studio),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SqStagger(
-                  index: 8,
+                  index: 9,
                   child: _CustomTopicCard(
                     onTap: () => context.push(Routes.customTopic),
                   ),
@@ -331,10 +337,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final part = hour < 5
         ? l10n.greetingNight
         : hour < 12
-            ? l10n.greetingMorning
-            : hour < 17
-                ? l10n.greetingAfternoon
-                : l10n.greetingEvening;
+        ? l10n.greetingMorning
+        : hour < 17
+        ? l10n.greetingAfternoon
+        : l10n.greetingEvening;
     if (name == null || name.trim().isEmpty) return part;
     // Casing belongs to the language, not the layout: toUpperCase() is a no-op
     // on Devanagari, so each language decides how a name is set.
@@ -382,60 +388,60 @@ class _PlayerBar extends StatelessWidget {
             border: Border.all(color: p.border),
             boxShadow: AppShadows.soft(p),
           ),
-        child: Row(
-          children: [
-            SqAvatar(
-              name: displayName,
-              seed: user?.id,
-              size: 40,
-              premium: isPremium,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      SqBadge(
-                        label: '${context.l10n.levelShort} $level',
-                        dense: true,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SqProgressTrack(value: progress, height: 4),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$xp/$threshold',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: p.textFaint,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+          child: Row(
+            children: [
+              SqAvatar(
+                name: displayName,
+                seed: user?.id,
+                size: 40,
+                premium: isPremium,
               ),
-            ),
-            const SizedBox(width: 10),
-            _StreakPill(streak: streak),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right_rounded, size: 18, color: p.textFaint),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        SqBadge(
+                          label: '${context.l10n.levelShort} $level',
+                          dense: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SqProgressTrack(value: progress, height: 4),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$xp/$threshold',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: p.textFaint,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              _StreakPill(streak: streak),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, size: 18, color: p.textFaint),
             ],
           ),
         ),

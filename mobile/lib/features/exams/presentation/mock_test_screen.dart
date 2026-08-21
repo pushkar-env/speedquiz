@@ -6,7 +6,9 @@ import 'package:speedquiz/core/routing/app_router.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/exams/data/exam_repository.dart';
 import 'package:speedquiz/features/exams/domain/exam_models.dart';
+import 'package:speedquiz/features/exams/domain/test_mode.dart';
 import 'package:speedquiz/features/exams/presentation/mock_test_controller.dart';
+import 'package:speedquiz/features/exams/presentation/test_setup_sheet.dart';
 import 'package:speedquiz/features/exams/presentation/widgets/content_view.dart';
 import 'package:speedquiz/shared/widgets/sq_widgets.dart';
 
@@ -30,11 +32,20 @@ class PaletteColors {
   };
 }
 
+/// Thrown when the student backs out of the setup sheet.
+class _SetupCancelled implements Exception {
+  const _SetupCancelled();
+}
+
 /// Loads the paper and starts (or resumes) the attempt, then hands off.
 class MockTestScreen extends ConsumerStatefulWidget {
-  const MockTestScreen({super.key, required this.paperId});
+  const MockTestScreen({super.key, required this.paperId, this.setup});
 
   final String paperId;
+
+  /// How to sit the paper. Null means the setup sheet has not run yet, so
+  /// this screen shows it before touching the clock.
+  final TestSetup? setup;
 
   @override
   ConsumerState<MockTestScreen> createState() => _MockTestScreenState();
@@ -54,7 +65,30 @@ class _MockTestScreenState extends ConsumerState<MockTestScreen> {
     // Manifest first: the paper has to be in hand before the clock starts, or
     // a slow network eats into the candidate's time.
     final manifest = await repository.fetchManifest(widget.paperId);
-    final attempt = await repository.startAttempt(widget.paperId);
+
+    var setup = widget.setup;
+    if (setup == null) {
+      // Reached without going through the sheet — a deep link, or a resumed
+      // route. Ask now rather than silently picking a mode for them.
+      if (!mounted) throw StateError('screen gone');
+      setup = await showTestSetupSheet(
+        context,
+        paper: manifest.paper,
+        sections: manifest.sections,
+      );
+      if (setup == null) {
+        throw const _SetupCancelled();
+      }
+    }
+
+    final attempt = await repository.startAttempt(
+      widget.paperId,
+      mode: setup.mode.wire,
+      sectionId: setup.sectionId,
+      pacing: setup.pacing.wire,
+      durationMinutes: setup.durationMinutes,
+      perQuestionSeconds: setup.perQuestionSeconds,
+    );
     return (manifest, attempt);
   }
 
@@ -63,6 +97,13 @@ class _MockTestScreenState extends ConsumerState<MockTestScreen> {
     return FutureBuilder<(PaperManifest, MockAttempt)>(
       future: _boot,
       builder: (context, snapshot) {
+        if (snapshot.error is _SetupCancelled) {
+          // Backed out of the sheet. Leave rather than showing a failure.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && context.canPop()) context.pop();
+          });
+          return const Scaffold(body: SizedBox.shrink());
+        }
         if (snapshot.hasError) {
           return Scaffold(
             appBar: AppBar(),
@@ -314,12 +355,19 @@ class _TestAppBar extends StatelessWidget implements PreferredSizeWidget {
             ),
           ),
           const SizedBox(width: 12),
-          if (state.pendingSync > 0)
+          if (state.isTimed && state.questionRemaining != null)
+            _QuestionClock(
+              remaining: state.questionRemaining!,
+              limit: Duration(seconds: state.attempt.perQuestionSeconds ?? 60),
+            ),
+          if (state.pendingSync > 0) ...[
+            const SizedBox(width: 8),
             Icon(
               Icons.cloud_upload_outlined,
               size: 15,
               color: palette.textFaint,
             ),
+          ],
         ],
       ),
       actions: [
@@ -419,9 +467,11 @@ class _QuestionPane extends StatelessWidget {
             question: question,
             controller: numericController,
             onChanged: controller.setNumeric,
+            enabled: !state.currentLocked,
           )
         else
           ...List.generate(question.optionCount, (index) {
+            final feedback = state.currentFeedback;
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: _OptionTile(
@@ -429,11 +479,174 @@ class _QuestionPane extends StatelessWidget {
                 question: question,
                 assets: state.manifest.assets,
                 selected: response.selected.contains(index),
-                onTap: () => controller.selectOption(index),
+                // Only after checking: showing right/wrong before that would
+                // give the answer away for free.
+                verdict: feedback == null
+                    ? null
+                    : index == feedback.correctOptionIndex
+                    ? _OptionVerdict.correct
+                    : response.selected.contains(index)
+                    ? _OptionVerdict.wrong
+                    : null,
+                onTap: state.currentLocked
+                    ? null
+                    : () => controller.selectOption(index),
               ),
             );
           }),
+        if (state.currentFeedback != null) ...[
+          const SizedBox(height: 18),
+          _FeedbackPanel(
+            check: state.currentFeedback!,
+            question: question,
+            assets: state.manifest.assets,
+          ),
+        ] else if (state.locked.contains(question.id)) ...[
+          const SizedBox(height: 18),
+          _LockedNotice(),
+        ],
       ],
+    );
+  }
+}
+
+/// Shown when a per-question timer ran out on this question.
+class _LockedNotice extends StatelessWidget {
+  const _LockedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.sq;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.surfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.timer_off_outlined,
+            size: 18,
+            color: palette.textSecondary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Time ran out on this one. It stays as it was — you can review it '
+              'after you submit.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: palette.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Practice mode: the verdict, the key, and the worked solution.
+class _FeedbackPanel extends StatelessWidget {
+  const _FeedbackPanel({
+    required this.check,
+    required this.question,
+    required this.assets,
+  });
+
+  final AnswerCheck check;
+  final ExamQuestion question;
+  final Map<String, ExamAsset> assets;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.sq;
+    final theme = Theme.of(context);
+    final colour = check.isCorrect
+        ? PaletteColors.answered
+        : PaletteColors.notAnswered;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colour.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colour.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                check.isCorrect
+                    ? Icons.check_circle_rounded
+                    : Icons.cancel_rounded,
+                color: colour,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                check.isCorrect ? 'Correct' : 'Not quite',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colour,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '${check.marksAwarded > 0 ? '+' : ''}'
+                '${check.marksAwarded.toStringAsFixed(0)}',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colour,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          if (!check.isCorrect && check.correctValue != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Answer: ${check.correctValue}',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+          if (check.keyConcept != null && check.keyConcept!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              check.keyConcept!,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: palette.textSecondary,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (check.solutionAvailable)
+            // The solution gets the same renderer as the question, so its
+            // formulae and any diagram it references come through properly.
+            ContentView(
+              blocks: [TextBlock(text: check.solution)],
+              figures: question.figures,
+              assets: assets,
+              textStyle: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
+            )
+          else
+            Row(
+              children: [
+                Icon(Icons.hourglass_empty, size: 15, color: palette.textFaint),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'A worked solution for this one is still being checked.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }
@@ -443,17 +656,20 @@ class _NumericField extends StatelessWidget {
     required this.question,
     required this.controller,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final ExamQuestion question;
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       onChanged: onChanged,
+      enabled: enabled,
       keyboardType: const TextInputType.numberWithOptions(
         decimal: true,
         signed: true,
@@ -472,6 +688,9 @@ class _NumericField extends StatelessWidget {
   }
 }
 
+/// How a checked option should read once the answer is revealed.
+enum _OptionVerdict { correct, wrong }
+
 class _OptionTile extends StatelessWidget {
   const _OptionTile({
     required this.index,
@@ -479,13 +698,19 @@ class _OptionTile extends StatelessWidget {
     required this.assets,
     required this.selected,
     required this.onTap,
+    this.verdict,
   });
 
   final int index;
   final ExamQuestion question;
   final Map<String, ExamAsset> assets;
   final bool selected;
-  final VoidCallback onTap;
+
+  /// Null until practice mode reveals the answer.
+  final _OptionVerdict? verdict;
+
+  /// Null disables the tile — the question is locked.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -497,8 +722,17 @@ class _OptionTile extends StatelessWidget {
         ? question.optionText[index]
         : '';
 
+    // Once revealed, right and wrong outrank "selected": the student needs to
+    // see the correct option even when they did not pick it.
+    final accent = switch (verdict) {
+      _OptionVerdict.correct => PaletteColors.answered,
+      _OptionVerdict.wrong => PaletteColors.notAnswered,
+      null => palette.accent,
+    };
+    final highlighted = selected || verdict != null;
+
     return Material(
-      color: selected ? palette.accentWash(0.16) : palette.surface,
+      color: highlighted ? accent.withValues(alpha: 0.14) : palette.surface,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -508,8 +742,8 @@ class _OptionTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected ? palette.accent : palette.border,
-              width: selected ? 2 : 1,
+              color: highlighted ? accent : palette.border,
+              width: highlighted ? 2 : 1,
             ),
           ),
           child: Row(
@@ -521,20 +755,29 @@ class _OptionTile extends StatelessWidget {
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: selected ? palette.accent : Colors.transparent,
+                  color: highlighted ? accent : Colors.transparent,
                   border: Border.all(
-                    color: selected ? palette.accent : palette.borderStrong,
+                    color: highlighted ? accent : palette.borderStrong,
                   ),
                 ),
-                child: Text(
-                  '${index + 1}',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: selected
-                        ? palette.background
-                        : palette.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                child: verdict == null
+                    ? Text(
+                        '${index + 1}',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: highlighted
+                                  ? palette.background
+                                  : palette.textSecondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      )
+                    : Icon(
+                        verdict == _OptionVerdict.correct
+                            ? Icons.check
+                            : Icons.close,
+                        size: 16,
+                        color: palette.background,
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -594,18 +837,32 @@ class _BottomBar extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Clear response',
-            onPressed: state.current.hasAnswer
+            onPressed: state.current.hasAnswer && !state.currentLocked
                 ? controller.clearResponse
                 : null,
             icon: const Icon(Icons.backspace_outlined),
           ),
           const Spacer(),
-          SqButton(
-            label: state.isLastQuestion ? 'Last question' : 'Save & Next',
-            expand: false,
-            height: 46,
-            onPressed: state.isLastQuestion ? null : controller.next,
-          ),
+          if (state.isPractice && state.currentFeedback == null)
+            // In practice the primary action is "tell me" rather than "next":
+            // moving on without looking is exactly what practice is not for.
+            SqButton(
+              label: 'Check',
+              icon: Icons.visibility_outlined,
+              expand: false,
+              height: 46,
+              loading: state.checking,
+              onPressed: state.current.hasAnswer
+                  ? () => controller.checkCurrentAnswer()
+                  : null,
+            )
+          else
+            SqButton(
+              label: state.isLastQuestion ? 'Last question' : 'Save & Next',
+              expand: false,
+              height: 46,
+              onPressed: state.isLastQuestion ? null : controller.next,
+            ),
         ],
       ),
     );
@@ -752,6 +1009,53 @@ class _PaletteLegend extends StatelessWidget {
                 Text(label, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small ring for the current question's own clock.
+///
+/// Shown only in Timed pacing, beside the paper clock rather than replacing it:
+/// a candidate needs both numbers, and which one is about to bite changes
+/// through the paper.
+class _QuestionClock extends StatelessWidget {
+  const _QuestionClock({required this.remaining, required this.limit});
+
+  final Duration remaining;
+  final Duration limit;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.sq;
+    final total = limit.inMilliseconds;
+    final fraction = total <= 0
+        ? 0.0
+        : (remaining.inMilliseconds / total).clamp(0.0, 1.0);
+    final low = remaining.inSeconds <= 10;
+    final colour = low ? PaletteColors.notAnswered : palette.accent;
+
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CircularProgressIndicator(
+            value: fraction,
+            strokeWidth: 2.5,
+            backgroundColor: palette.border,
+            valueColor: AlwaysStoppedAnimation(colour),
+          ),
+          Text(
+            '${remaining.inSeconds}',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colour,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ],
       ),
     );

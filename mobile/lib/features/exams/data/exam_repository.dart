@@ -38,12 +38,65 @@ class ExamRepository {
     String paperId, {
     String mode = 'full',
     String? sectionId,
+    String pacing = 'casual',
+    int? durationMinutes,
+    int? perQuestionSeconds,
   }) async {
     final response = await _dio.post(
       '$_base/papers/$paperId/attempts',
-      data: {'mode': mode, 'section_id': ?sectionId},
+      data: {
+        'mode': mode,
+        'pacing': pacing,
+        'section_id': ?sectionId,
+        'duration_minutes': ?durationMinutes,
+        'per_question_seconds': ?perQuestionSeconds,
+      },
     );
     return MockAttempt.fromJson((response.data as Map).cast<String, dynamic>());
+  }
+
+  /// Practice mode only: grade one question now and reveal the solution.
+  Future<AnswerCheck> checkAnswer(
+    String attemptId, {
+    required String examQuestionId,
+    List<int> selected = const [],
+    double? numericValue,
+  }) async {
+    final response = await _dio.post(
+      '$_base/attempts/$attemptId/check',
+      data: {
+        'exam_question_id': examQuestionId,
+        'selected': selected,
+        'numeric_value': ?numericValue,
+      },
+    );
+    return AnswerCheck.fromJson((response.data as Map).cast<String, dynamic>());
+  }
+
+  Future<Notebook> fetchNotebook({
+    String status = 'open',
+    String? chapter,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final response = await _dio.get(
+      '$_base/notebook',
+      queryParameters: {
+        'status': status,
+        'chapter': ?chapter,
+        'limit': limit,
+        'offset': offset,
+      },
+    );
+    return Notebook.fromJson((response.data as Map).cast<String, dynamic>());
+  }
+
+  Future<void> setNotebookStatus(String entryId, String status) async {
+    await _dio.patch('$_base/notebook/$entryId', data: {'status': status});
+  }
+
+  Future<void> deleteNotebookEntry(String entryId) async {
+    await _dio.delete('$_base/notebook/$entryId');
   }
 
   Future<MockAttempt> fetchAttempt(String attemptId) async {
@@ -128,4 +181,21 @@ final attemptResultProvider = FutureProvider.family<AttemptResult, String>((
   attemptId,
 ) {
   return ref.watch(examRepositoryProvider).fetchResult(attemptId);
+});
+
+/// The mistake notebook, filtered by status.
+final notebookProvider = FutureProvider.family<Notebook, String>((ref, status) {
+  return ref.watch(examRepositoryProvider).fetchNotebook(status: status);
+});
+
+/// Just the open-mistake count, for the badge on the Home entry.
+///
+/// A separate provider rather than reading `notebookProvider`'s length: Home
+/// only needs the number, and pulling fifty entries with their content blocks
+/// and figures to render "12" would be a wasteful request on every visit.
+final notebookCountProvider = FutureProvider<int>((ref) async {
+  final notebook = await ref
+      .watch(examRepositoryProvider)
+      .fetchNotebook(status: 'open', limit: 1);
+  return notebook.openCount;
 });

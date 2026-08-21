@@ -132,6 +132,27 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('paren-delimited maths renders, not as source', (tester) async {
+      // The reported bug: Q63 rendered its options as visible LaTeX source.
+      // Content is canonicalised server-side now; this is the client's own
+      // guard, and the failure it prevents is unreadable to a student.
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [TextBlock(text: r'Product is \( \text{CH}_3 - \text{CHO} \)')],
+            figures: {},
+            assets: {},
+          ),
+        ),
+      );
+
+      // The prose survives; nothing of the delimiter or the command does.
+      expect(find.textContaining('Product is'), findsOneWidget);
+      expect(find.textContaining(r'\('), findsNothing);
+      expect(find.textContaining(r'\text{CH}'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('an escaped dollar stays literal', (tester) async {
       await tester.pumpWidget(
         _host(

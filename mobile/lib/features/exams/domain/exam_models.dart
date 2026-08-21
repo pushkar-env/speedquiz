@@ -490,6 +490,9 @@ class MockAttempt extends Equatable {
     required this.serverNow,
     required this.responses,
     this.submittedAt,
+    this.pacing = 'casual',
+    this.perQuestionSeconds,
+    this.countsForRank = true,
   });
 
   factory MockAttempt.fromJson(Map<String, dynamic> json) => MockAttempt(
@@ -520,9 +523,22 @@ class MockAttempt extends Equatable {
   final int remainingMs;
   final DateTime serverNow;
   final DateTime? submittedAt;
+
+  /// "casual" or "timed" — whether questions carry their own clock.
+  final String pacing;
+
+  /// Per-question limit in seconds, when pacing is "timed".
+  final int? perQuestionSeconds;
+
+  /// False for practice runs, which stay out of the paper's percentile.
+  final bool countsForRank;
   final List<QuestionResponse> responses;
 
   bool get isLive => status == 'in_progress';
+
+  bool get isPractice => mode == 'practice';
+
+  bool get isTimedPacing => pacing == 'timed' && (perQuestionSeconds ?? 0) > 0;
 
   @override
   List<Object?> get props => [id, status, remainingMs];
@@ -673,4 +689,193 @@ class AttemptResult extends Equatable {
 
   @override
   List<Object?> get props => [attempt.id, score];
+}
+
+/// Instant feedback on one practice question.
+class AnswerCheck extends Equatable {
+  const AnswerCheck({
+    required this.examQuestionId,
+    required this.isCorrect,
+    required this.marksAwarded,
+    required this.answerType,
+    this.correctOptionIndex,
+    this.correctValue,
+    this.solution = '',
+    this.solutionAvailable = false,
+    this.chapter,
+    this.keyConcept,
+  });
+
+  factory AnswerCheck.fromJson(Map<String, dynamic> json) => AnswerCheck(
+    examQuestionId: json['exam_question_id'] as String,
+    isCorrect: json['is_correct'] as bool? ?? false,
+    marksAwarded: (json['marks_awarded'] as num?)?.toDouble() ?? 0,
+    answerType: json['answer_type'] as String? ?? 'single',
+    correctOptionIndex: (json['correct_option_index'] as num?)?.toInt(),
+    correctValue: (json['correct_value'] as num?)?.toDouble(),
+    solution: json['solution'] as String? ?? '',
+    solutionAvailable: json['solution_available'] as bool? ?? false,
+    chapter: json['chapter'] as String?,
+    keyConcept: json['key_concept'] as String?,
+  );
+
+  final String examQuestionId;
+  final bool isCorrect;
+  final double marksAwarded;
+  final String answerType;
+  final int? correctOptionIndex;
+  final double? correctValue;
+  final String solution;
+
+  /// Distinguishes "no solution written yet" from "solution withheld pending
+  /// review", so the UI can say which.
+  final bool solutionAvailable;
+  final String? chapter;
+  final String? keyConcept;
+
+  @override
+  List<Object?> get props => [examQuestionId, isCorrect];
+}
+
+class NotebookEntry extends Equatable {
+  const NotebookEntry({
+    required this.id,
+    required this.questionId,
+    required this.chapter,
+    required this.status,
+    required this.wrongCount,
+    required this.lastWrongAt,
+    required this.answerType,
+    required this.stem,
+    required this.options,
+    required this.optionText,
+    required this.figures,
+    required this.yourSelected,
+    this.subject = '',
+    this.source,
+    this.correctOptionIndex,
+    this.correctValue,
+    this.yourNumeric,
+    this.solution = '',
+  });
+
+  factory NotebookEntry.fromJson(Map<String, dynamic> json) => NotebookEntry(
+    id: json['id'] as String,
+    questionId: json['question_id'] as String,
+    chapter: json['chapter'] as String? ?? 'Unclassified',
+    subject: json['subject'] as String? ?? '',
+    status: json['status'] as String? ?? 'open',
+    wrongCount: (json['wrong_count'] as num?)?.toInt() ?? 1,
+    lastWrongAt: DateTime.parse(json['last_wrong_at'] as String),
+    source: json['source'] as String?,
+    answerType: ExamAnswerType.parse(json['answer_type'] as String?),
+    stem: ContentBlock.listFrom(json['stem']),
+    options: ((json['options'] as List?) ?? const [])
+        .map(ContentBlock.listFrom)
+        .toList(growable: false),
+    optionText: ((json['option_text'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .toList(growable: false),
+    figures: ((json['figures'] as Map?) ?? const {}).map(
+      (k, v) => MapEntry(k.toString(), v.toString()),
+    ),
+    correctOptionIndex: (json['correct_option_index'] as num?)?.toInt(),
+    correctValue: (json['correct_value'] as num?)?.toDouble(),
+    yourSelected: ((json['your_selected'] as List?) ?? const [])
+        .map((e) => (e as num).toInt())
+        .toList(growable: false),
+    yourNumeric: (json['your_numeric'] as num?)?.toDouble(),
+    solution: json['solution'] as String? ?? '',
+  );
+
+  final String id;
+  final String questionId;
+  final String chapter;
+  final String subject;
+
+  /// open | reviewed | recovered
+  final String status;
+
+  /// How many separate attempts this question has been failed in. A question
+  /// wrong three times is the one to revise first.
+  final int wrongCount;
+  final DateTime lastWrongAt;
+
+  /// "JEE Main 2025 January Shift 1 · Q28"
+  final String? source;
+  final ExamAnswerType answerType;
+  final List<ContentBlock> stem;
+  final List<List<ContentBlock>> options;
+  final List<String> optionText;
+  final Map<String, String> figures;
+  final int? correctOptionIndex;
+  final double? correctValue;
+  final List<int> yourSelected;
+  final double? yourNumeric;
+  final String solution;
+
+  bool get isOpen => status == 'open';
+
+  @override
+  List<Object?> get props => [id, status, wrongCount];
+}
+
+class NotebookChapter extends Equatable {
+  const NotebookChapter({required this.name, required this.count});
+
+  factory NotebookChapter.fromJson(Map<String, dynamic> json) =>
+      NotebookChapter(
+        name: json['name'] as String? ?? 'Unclassified',
+        count: (json['count'] as num?)?.toInt() ?? 0,
+      );
+
+  final String name;
+  final int count;
+
+  @override
+  List<Object?> get props => [name, count];
+}
+
+class Notebook extends Equatable {
+  const Notebook({
+    required this.total,
+    required this.openCount,
+    required this.items,
+    required this.assets,
+    required this.chapters,
+  });
+
+  factory Notebook.fromJson(Map<String, dynamic> json) {
+    final assets = <String, ExamAsset>{};
+    for (final raw in (json['assets'] as List?) ?? const []) {
+      final asset = ExamAsset.fromJson((raw as Map).cast<String, dynamic>());
+      assets[asset.checksum] = asset;
+    }
+    return Notebook(
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      openCount: (json['open_count'] as num?)?.toInt() ?? 0,
+      items: ((json['items'] as List?) ?? const [])
+          .map(
+            (e) => NotebookEntry.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList(growable: false),
+      assets: assets,
+      chapters: ((json['chapters'] as List?) ?? const [])
+          .map(
+            (e) => NotebookChapter.fromJson((e as Map).cast<String, dynamic>()),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  final int total;
+  final int openCount;
+  final List<NotebookEntry> items;
+  final Map<String, ExamAsset> assets;
+  final List<NotebookChapter> chapters;
+
+  bool get isEmpty => items.isEmpty;
+
+  @override
+  List<Object?> get props => [total, openCount, items];
 }

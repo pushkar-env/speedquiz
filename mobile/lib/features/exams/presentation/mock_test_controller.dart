@@ -27,6 +27,10 @@ class MockTestState {
     this.syncing = false,
     this.lastSyncError,
     this.submitting = false,
+    this.questionRemaining,
+    this.locked = const {},
+    this.feedback = const {},
+    this.checking = false,
   });
 
   final PaperManifest manifest;
@@ -41,6 +45,27 @@ class MockTestState {
   final bool syncing;
   final String? lastSyncError;
   final bool submitting;
+
+  /// Time left on the current question, in Timed pacing. Null in Casual.
+  final Duration? questionRemaining;
+
+  /// Questions whose per-question timer ran out. They cannot be answered
+  /// again — that is what makes Timed pacing train pacing rather than just
+  /// display a number.
+  final Set<String> locked;
+
+  /// Practice mode: the revealed verdict per question, once checked.
+  final Map<String, AnswerCheck> feedback;
+  final bool checking;
+
+  bool get isPractice => attempt.isPractice;
+
+  bool get isTimed => attempt.isTimedPacing;
+
+  AnswerCheck? get currentFeedback => feedback[question.id];
+
+  bool get currentLocked =>
+      locked.contains(question.id) || feedback.containsKey(question.id);
 
   ExamQuestion get question => manifest.questions[index];
 
@@ -66,6 +91,11 @@ class MockTestState {
     String? lastSyncError,
     bool clearSyncError = false,
     bool? submitting,
+    Duration? questionRemaining,
+    bool clearQuestionRemaining = false,
+    Set<String>? locked,
+    Map<String, AnswerCheck>? feedback,
+    bool? checking,
   }) => MockTestState(
     manifest: manifest,
     attempt: attempt ?? this.attempt,
@@ -78,6 +108,12 @@ class MockTestState {
         ? null
         : (lastSyncError ?? this.lastSyncError),
     submitting: submitting ?? this.submitting,
+    questionRemaining: clearQuestionRemaining
+        ? null
+        : (questionRemaining ?? this.questionRemaining),
+    locked: locked ?? this.locked,
+    feedback: feedback ?? this.feedback,
+    checking: checking ?? this.checking,
   );
 }
 
@@ -106,6 +142,7 @@ class MockTestController extends StateNotifier<MockTestState> {
       (highest, r) => r.clientRevision > highest ? r.clientRevision : highest,
     );
     _markVisited();
+    _resetQuestionClock();
     _ticker = Timer.periodic(_tickInterval, (_) => _tick());
     _syncTimer = Timer.periodic(_syncInterval, (_) => flush());
   }
@@ -123,8 +160,12 @@ class MockTestController extends StateNotifier<MockTestState> {
   /// When the current question was opened, for per-question timing.
   DateTime _openedAt = DateTime.now();
 
-  /// Fires when the clock runs out, so the screen can submit and navigate.
+  /// Fires when the paper clock runs out, so the screen can submit and navigate.
   VoidCallback? onTimeExpired;
+
+  /// Fires when a per-question timer runs out, so the screen can say so. The
+  /// advance and the lock have already happened by then.
+  VoidCallback? onQuestionExpired;
 
   void _tick() {
     final next = state.remaining - _tickInterval;
@@ -135,6 +176,47 @@ class MockTestController extends StateNotifier<MockTestState> {
       return;
     }
     state = state.copyWith(remaining: next);
+    _tickQuestionClock();
+  }
+
+  /// Reset the per-question clock for whatever question is now on screen.
+  ///
+  /// A question already locked keeps a zero clock rather than getting a fresh
+  /// one: returning to it must not hand back the time it ran out of.
+  void _resetQuestionClock() {
+    if (!state.isTimed) return;
+    final limit = state.attempt.perQuestionSeconds ?? 0;
+    if (limit <= 0) return;
+    state = state.copyWith(
+      questionRemaining: state.currentLocked
+          ? Duration.zero
+          : Duration(seconds: limit),
+    );
+  }
+
+  void _tickQuestionClock() {
+    if (!state.isTimed) return;
+    final remaining = state.questionRemaining;
+    if (remaining == null || remaining <= Duration.zero) return;
+
+    final next = remaining - _tickInterval;
+    if (next > Duration.zero) {
+      state = state.copyWith(questionRemaining: next);
+      return;
+    }
+
+    // Out of time. Lock the question and move on — the whole point of Timed
+    // pacing is that the pressure is real, so an expired question cannot be
+    // returned to later.
+    final question = state.question;
+    state = state.copyWith(
+      questionRemaining: Duration.zero,
+      locked: {...state.locked, question.id},
+    );
+    onQuestionExpired?.call();
+    if (!state.isLastQuestion) {
+      goTo(state.index + 1);
+    }
   }
 
   void _markVisited() {
@@ -177,6 +259,7 @@ class MockTestController extends StateNotifier<MockTestState> {
     state = state.copyWith(index: index);
     _openedAt = DateTime.now();
     _markVisited();
+    _resetQuestionClock();
   }
 
   void next() => goTo(state.index + 1);
@@ -184,6 +267,9 @@ class MockTestController extends StateNotifier<MockTestState> {
   void previous() => goTo(state.index - 1);
 
   void selectOption(int optionIndex) {
+    // A locked question is one whose timer expired, or one already checked in
+    // practice. Either way the answer is settled and must not move.
+    if (state.currentLocked) return;
     final question = state.question;
     final existing = state.responseFor(question.id);
 
@@ -213,6 +299,7 @@ class MockTestController extends StateNotifier<MockTestState> {
   }
 
   void setNumeric(String raw) {
+    if (state.currentLocked) return;
     final question = state.question;
     final existing = state.responseFor(question.id);
     final trimmed = raw.trim();
@@ -232,6 +319,7 @@ class MockTestController extends StateNotifier<MockTestState> {
   }
 
   void clearResponse() {
+    if (state.currentLocked) return;
     final existing = state.responseFor(state.question.id);
     _write(
       existing.copyWith(
@@ -302,6 +390,50 @@ class MockTestController extends StateNotifier<MockTestState> {
         lastSyncError: 'Saved on this device. Will sync when back online.',
       );
       if (kDebugMode) debugPrint('mock test sync failed: $error');
+    }
+  }
+
+  /// Practice mode: grade the current answer now and reveal the solution.
+  ///
+  /// Locks the question afterwards. Being told the answer and then being
+  /// allowed to change it would make the score meaningless even by practice
+  /// standards, and the point of practice is to find out what you actually
+  /// knew.
+  Future<AnswerCheck?> checkCurrentAnswer() async {
+    if (!state.isPractice || state.checking) return null;
+    final question = state.question;
+    if (state.feedback.containsKey(question.id)) {
+      return state.feedback[question.id];
+    }
+
+    final response = state.responseFor(question.id);
+    if (!response.hasAnswer) return null;
+
+    state = state.copyWith(checking: true);
+    try {
+      final check = await _repository.checkAnswer(
+        state.attempt.id,
+        examQuestionId: question.id,
+        selected: response.selected,
+        numericValue: response.numericValue,
+      );
+      // The check writes the response server-side, so this one is no longer
+      // pending — dropping it avoids a redundant round trip on the next flush.
+      _dirty.remove(question.id);
+      state = state.copyWith(
+        checking: false,
+        feedback: {...state.feedback, question.id: check},
+        pendingSync: _dirty.length,
+        clearQuestionRemaining: true,
+      );
+      return check;
+    } catch (error) {
+      state = state.copyWith(
+        checking: false,
+        lastSyncError: 'Could not check that answer. Try again.',
+      );
+      if (kDebugMode) debugPrint('practice check failed: $error');
+      return null;
     }
   }
 

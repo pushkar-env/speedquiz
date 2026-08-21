@@ -6,6 +6,7 @@ import 'package:speedquiz/core/routing/page_transitions.dart';
 import 'package:speedquiz/features/exams/presentation/exams_screen.dart';
 import 'package:speedquiz/features/exams/presentation/mock_result_screen.dart';
 import 'package:speedquiz/features/exams/presentation/mock_test_screen.dart';
+import 'package:speedquiz/features/exams/presentation/notebook_screen.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/custom_topics/presentation/custom_topic_screen.dart';
 import 'package:speedquiz/features/entitlements/presentation/premium_paywall_sheet.dart';
@@ -63,13 +64,7 @@ abstract final class Routes {
   /// the player to Home or to quiz setup — and a tab has to be *switched to*,
   /// not pushed: pushing one stacks a second copy of the shell on top of the
   /// first. See `DeepLinkListener`.
-  static const tabRoots = <String>[
-    home,
-    explore,
-    battle,
-    leaderboard,
-    profile,
-  ];
+  static const tabRoots = <String>[home, explore, battle, leaderboard, profile];
 
   static bool isTabRoot(String location) => tabRoots.contains(location);
   static const profileEdit = '/profile/edit';
@@ -106,6 +101,9 @@ abstract final class Routes {
 
   static String mockResultPath(String attemptId) =>
       '/exams/attempt/$attemptId/result';
+
+  /// Every question this student has got wrong, kept for revision.
+  static const notebook = '/exams/notebook';
 }
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -294,23 +292,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'paper/:paperId/test',
             parentNavigatorKey: _rootNavigatorKey,
-            builder: (context, state) => MockTestScreen(
-              paperId: state.pathParameters['paperId']!,
-            ),
+            builder: (context, state) =>
+                MockTestScreen(paperId: state.pathParameters['paperId']!),
           ),
           GoRoute(
             path: 'attempt/:attemptId/result',
             parentNavigatorKey: _rootNavigatorKey,
-            builder: (context, state) => MockResultScreen(
-              attemptId: state.pathParameters['attemptId']!,
-            ),
+            builder: (context, state) =>
+                MockResultScreen(attemptId: state.pathParameters['attemptId']!),
           ),
+          GoRoute(
+            path: 'notebook',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => const NotebookScreen(),
+          ),
+          // Last: a bare segment would otherwise swallow "notebook" and every
+          // other static child above it.
           GoRoute(
             path: ':examSlug',
             parentNavigatorKey: _rootNavigatorKey,
-            builder: (context, state) => ExamPapersScreen(
-              examSlug: state.pathParameters['examSlug']!,
-            ),
+            builder: (context, state) =>
+                ExamPapersScreen(examSlug: state.pathParameters['examSlug']!),
           ),
         ],
       ),

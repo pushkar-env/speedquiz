@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.languages import DEFAULT_LANGUAGE, normalize_language
+from app.services.latex_normalize import normalize_blocks, normalize_text
 from app.core.logging import get_logger
 from app.models import (
     AnswerType,
@@ -394,9 +395,21 @@ async def import_paper(
             continue
 
         answer_type = _answer_type(payload.get("answer_type") or "single")
-        options = payload.get("options") or []
-        stem_blocks = payload.get("stem") or []
-        stem_text = payload.get("plain_text") or _flatten_blocks(stem_blocks)
+
+        # Canonicalise the maths on the way in. Extraction records what the
+        # model wrote; this is the single choke point where every question --
+        # from any paper, any source -- gets its delimiters made consistent.
+        stem_blocks, stem_report = normalize_blocks(payload.get("stem") or [])
+        options = []
+        for option in payload.get("options") or []:
+            blocks, sub = normalize_blocks(option.get("blocks") or [])
+            stem_report.merge(sub)
+            options.append({**option, "blocks": blocks})
+        if stem_report.notes:
+            report.warnings.extend(
+                f"Q{number}: {note}" for note in stem_report.notes[:2]
+            )
+        stem_text = _flatten_blocks(stem_blocks) or (payload.get("plain_text") or "")
 
         # An answer we cannot express is a question we cannot score. Refuse it
         # here rather than shipping something that marks every student wrong.
@@ -445,14 +458,15 @@ async def import_paper(
 
         solution_status = _solution_status(payload.get("solution_status") or "withheld")
         difficulty = float(payload.get("difficulty") or 0.5)
+        solution_text, _ = normalize_text(payload.get("solution") or "")
 
         question.topic_id = topic.id
         question.prompt = stem_text
         # Only a verified solution is worth storing as the explanation shown to
         # students; the rest stay in the ingest artefact for a reviewer.
         question.explanation = (
-            payload.get("solution") or ""
-        ) if solution_status is SolutionStatus.VERIFIED else ""
+            solution_text if solution_status is SolutionStatus.VERIFIED else ""
+        )
         question.solution_status = solution_status
         question.language = language
         question.source = paper_payload.get("source_label") or paper_payload.get("source_pdf")
