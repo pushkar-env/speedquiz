@@ -623,6 +623,85 @@ def test_the_migration_chains_onto_the_current_head():
     assert 'down_revision: Union[str, None] = "0009_news_topics"' in source
 
 
+def test_serialize_one_refreshes_before_calling_the_sync_serializer():
+    """The bug this pins shipped to a release build as a 500 on "add question".
+
+    Every mutation ends by flushing a change to the quiz row, and
+    ``TimestampMixin.updated_at`` carries an ``onupdate`` of ``func.now()`` — a
+    SQL expression, so SQLAlchemy marks the attribute *expired* and reads it
+    back on next access. `serialize` is deliberately synchronous, so that read
+    is a `MissingGreenlet` rather than a lazy query, and FastAPI turns it into
+    an internal server error.
+
+    `create_quiz` was unaffected and `add_question` was not, which is what made
+    it look like a question-specific bug: with no starter questions the counter
+    goes 0 -> 0, SQLAlchemy emits no UPDATE, and nothing is expired.
+
+    The refresh has to happen inside the async function and before the sync one
+    is called; this asserts both.
+    """
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "services"
+        / "custom_quizzes.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "serialize_one"
+    )
+
+    refresh_line = next(
+        (
+            node.lineno
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Attribute) and node.attr == "refresh"
+        ),
+        None,
+    )
+    serialize_line = next(
+        (
+            node.lineno
+            for node in ast.walk(fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "serialize"
+        ),
+        None,
+    )
+    assert refresh_line is not None, "serialize_one no longer refreshes"
+    assert serialize_line is not None, "serialize_one no longer calls serialize"
+    assert refresh_line < serialize_line, "the refresh must precede the serializer"
+
+
+def test_serialize_reads_the_attribute_that_a_flush_expires():
+    """Half of the pairing above. If `serialize` stopped reading `updated_at`
+    the refresh guard would look redundant and get deleted — and the next
+    timestamp column added to the payload would reintroduce the 500."""
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "services"
+        / "custom_quizzes.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "serialize"
+    )
+    reads = {
+        node.attr
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "quiz"
+    }
+    assert "updated_at" in reads
+
+
 def test_serialize_cannot_run_a_query_of_its_own():
     """The list path renders up to a hundred rows through `serialize`. A
     convenient default that fetched the author, the best score or the publish

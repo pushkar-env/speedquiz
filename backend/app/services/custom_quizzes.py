@@ -40,6 +40,7 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -613,7 +614,24 @@ async def serialize_one(
     quiz: CustomQuiz,
     viewer: User,
 ) -> CustomQuizOut:
-    """[serialize] for a single quiz, fetching what it needs first."""
+    """[serialize] for a single quiz, fetching what it needs first.
+
+    The refresh is load-bearing. Every mutation ends by flushing a change to
+    the quiz row, and ``TimestampMixin.updated_at`` carries an ``onupdate`` of
+    ``func.now()`` — a SQL expression, so SQLAlchemy cannot know the new value
+    and marks the attribute **expired**, to be read back on next access. Under
+    asyncio that read has to be awaited, and `serialize` is deliberately
+    synchronous (see its docstring). Touching an expired attribute there is a
+    `MissingGreenlet`, which surfaces as a 500 rather than as a slow query.
+
+    So the reload happens here, where awaiting is allowed, and only when the
+    instance actually has something expired — a read path that selected the
+    quiz a moment ago pays nothing.
+    """
+    state = sa_inspect(quiz)
+    if state.expired or state.expired_attributes:
+        await db.refresh(quiz)
+
     author = (await _profiles_for(db, [quiz.owner_user_id])).get(quiz.owner_user_id)
     best = await db.scalar(
         select(func.max(Score.final_score)).where(
