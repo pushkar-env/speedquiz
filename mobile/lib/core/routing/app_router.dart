@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speedquiz/core/routing/nav.dart';
 import 'package:speedquiz/core/routing/page_transitions.dart';
+import 'package:speedquiz/features/exams/presentation/exams_screen.dart';
+import 'package:speedquiz/features/exams/presentation/mock_result_screen.dart';
+import 'package:speedquiz/features/exams/presentation/mock_test_screen.dart';
 import 'package:speedquiz/features/auth/presentation/auth_controller.dart';
 import 'package:speedquiz/features/custom_topics/presentation/custom_topic_screen.dart';
 import 'package:speedquiz/features/entitlements/presentation/premium_paywall_sheet.dart';
@@ -92,6 +95,17 @@ abstract final class Routes {
   /// A share code arriving from outside the app. The studio resolves it,
   /// which is also what grants standing access.
   static String quizCodePath(String code) => '/studio/code/$code';
+
+  // --- Exam mode ---------------------------------------------------------
+  static const exams = '/exams';
+
+  static String examPapersPath(String examSlug) => '/exams/$examSlug';
+
+  /// Opens a paper and starts (or resumes) an attempt on it.
+  static String mockTestPath(String paperId) => '/exams/paper/$paperId/test';
+
+  static String mockResultPath(String attemptId) =>
+      '/exams/attempt/$attemptId/result';
 }
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -268,6 +282,37 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: CustomTopicScreen(),
           ),
         ),
+      ),
+      // Exam mode sits on the root navigator for the same reason the studio
+      // does, and one more: a live mock test has a running clock, so a stray
+      // tap on the bottom bar must not be able to walk away from it.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.exams,
+        builder: (context, state) => const ExamsScreen(),
+        routes: [
+          GoRoute(
+            path: 'paper/:paperId/test',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => MockTestScreen(
+              paperId: state.pathParameters['paperId']!,
+            ),
+          ),
+          GoRoute(
+            path: 'attempt/:attemptId/result',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => MockResultScreen(
+              attemptId: state.pathParameters['attemptId']!,
+            ),
+          ),
+          GoRoute(
+            path: ':examSlug',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) => ExamPapersScreen(
+              examSlug: state.pathParameters['examSlug']!,
+            ),
+          ),
+        ],
       ),
       // The studio sits on the root navigator: writing a quiz is a
       // destination, not a tab, and a half-written question must not be

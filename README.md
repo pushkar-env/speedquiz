@@ -10,6 +10,7 @@ Gameplay is served from a validated question bank — not live LLM calls per que
 mobile/          Flutter client (Riverpod, GoRouter, Dio)
 backend/         FastAPI + SQLAlchemy + Alembic
 workers/         Background AI generation / validation jobs
+tools/ingest/    Exam paper PDF -> playable mock test
 infrastructure/  Docker and deployment assets
 docs/            Product and engineering docs
 scripts/         Dev utilities
@@ -63,6 +64,10 @@ Notes:
 /studio/new        write a quiz
 /studio/quiz/:id   play it, challenge with it, its own leaderboard
 /studio/code/:code redeem a share code (deep-link target)
+/exams             past-year papers, by exam                          ┐
+/exams/:slug       every published paper for one exam                 │ exam mode
+/exams/paper/…     a full-length timed mock test                      │
+/exams/attempt/…   score, percentile, chapter analysis, solutions     ┘
 /quiz/*            setup → play → results
 /share/results/:id public share card (reachable signed-out)
 ```
@@ -77,6 +82,7 @@ Each guide is self-contained:
 | **[docs/TESTING_PAYMENTS.md](docs/TESTING_PAYMENTS.md)** | Testing Premium end to end — test mode with no Play Console, then the real Play sandbox |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | Railway + Neon + Upstash + Cloudflare Worker, scaling, load testing, troubleshooting, VPS alternative |
 | **[docs/RELEASE.md](docs/RELEASE.md)** | Signing, App Links, IAP verification, Play Console, pre-submission checklist |
+| **[tools/ingest/README.md](tools/ingest/README.md)** | Turning exam paper PDFs into playable mock tests — the pipeline, the answer-key cross-check, figures, and how to add an exam |
 | **[docs/LANGUAGES.md](docs/LANGUAGES.md)** | The two language systems — app chrome (English/Hindi) and the per-run quiz language, and how to add a third |
 
 ## Quick start

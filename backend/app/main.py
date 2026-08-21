@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.v1 import api_router
@@ -89,6 +91,18 @@ def create_app() -> FastAPI:
     app.include_router(well_known_router)
     app.include_router(share_landing_router)
     app.include_router(api_router, prefix=settings.api_prefix)
+
+    # Question figures, when the local asset store is in use. Keys are content
+    # hashes, so the bytes behind a URL can never change and the response is
+    # safe to cache for a year. In production these move to R2 and this mount
+    # simply finds no directory and does nothing.
+    figures_dir = Path(__file__).resolve().parent.parent / "static" / "figures"
+    if figures_dir.is_dir():
+        app.mount(
+            "/static/figures",
+            StaticFiles(directory=str(figures_dir)),
+            name="question-figures",
+        )
 
     return app
 

@@ -111,3 +111,14 @@ backend/certs/*
 _p4_spec*.txt
 *.orig
 *.bak
+
+# Exam ingestion working data. All of it is reproducible from the source PDF:
+# figures and crops are extracted deterministically, and model responses are
+# cached under work/. The published result lives in the database and the asset
+# store, not in git.
+tools/ingest/data/inbox/
+tools/ingest/data/work/
+tools/ingest/data/out/
+
+# Figures written by the local asset store. Production serves these from R2.
+backend/static/figures/

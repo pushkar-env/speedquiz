@@ -9,6 +9,7 @@ from app.api.v1 import (
     custom_topics,
     daily,
     entitlements,
+    exams,
     health,
     leaderboards,
     multiplayer,
@@ -30,6 +31,7 @@ api_router.include_router(achievements.router)
 api_router.include_router(daily.router)
 api_router.include_router(leaderboards.router)
 api_router.include_router(entitlements.router)
+api_router.include_router(exams.router)
 api_router.include_router(billing_webhooks.router)
 api_router.include_router(share.router)
 api_router.include_router(social.router)

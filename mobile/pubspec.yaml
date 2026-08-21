@@ -52,6 +52,8 @@ dependencies:
   # stay 19:00 in October.
   timezone: ^0.11.1
   flutter_timezone: ^5.1.0
+  flutter_math_fork: ^0.7.4
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -92,6 +93,32 @@ class QuestionStatus(str, enum.Enum):
     REJECTED = "rejected"
     RETIRED = "retired"
     REPORTED = "reported"
+
+
+class AnswerType(str, enum.Enum):
+    """How a question is answered.
+
+    ``SINGLE`` is what the whole bank was before exam mode, which is why it is
+    the server default: every pre-existing row is already correct.
+    """
+
+    SINGLE = "single"
+    MULTI = "multi"
+    NUMERIC = "numeric"
+
+
+class SolutionStatus(str, enum.Enum):
+    """How far a worked solution can be trusted.
+
+    Set by the ingestion pipeline. Only ``VERIFIED`` is shown to students: a
+    solution written after the model was told the answer can reach the right
+    result by an invalid route, and a plausible wrong method is worse than no
+    method at all.
+    """
+
+    VERIFIED = "verified"
+    NEEDS_REVIEW = "needs_review"
+    WITHHELD = "withheld"
 
 
 class GameMode(str, enum.Enum):
@@ -732,7 +759,38 @@ class Question(Base, TimestampMixin):
         default=DifficultyLabel.MEDIUM,
         nullable=False,
     )
-    correct_option_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: NULL for a numeric-entry question, which has no options at all. It was
+    #: non-null for the whole life of the bank before exam mode, and every row
+    #: written then still has a value.
+    correct_option_index: Mapped[Optional[int]] = mapped_column(Integer)
+    #: How this question is answered. ``single`` is the server default, so the
+    #: entire pre-existing bank is already correct without a data migration.
+    answer_type: Mapped[AnswerType] = mapped_column(
+        pg_enum(AnswerType, "answer_type", create_constraint=False),
+        default=AnswerType.SINGLE,
+        server_default=AnswerType.SINGLE.value,
+        nullable=False,
+    )
+    #: The answer, for anything ``correct_option_index`` cannot express:
+    #: ``{"value": 13.5, "tolerance": 0.01, "mode": "absolute"}`` for numeric,
+    #: ``{"mask": [0, 2]}`` for multi-select. One JSON column rather than a
+    #: column per answer type, so a future type needs no migration.
+    answer_spec: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: Structured content blocks — text with inline LaTeX, and figure
+    #: references. ``prompt`` stays the flat rendering, which is what dedup,
+    #: search and moderation read, and what an older client falls back to.
+    content: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: Per-option blocks, parallel to ``options`` by position. Kept off
+    #: ``QuestionOption`` so that table stays a narrow hot-path read.
+    option_content: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    #: Whether the worked solution in ``explanation`` can be shown. See
+    #: ``SolutionStatus`` — an unverified solution is withheld, not displayed.
+    solution_status: Mapped[SolutionStatus] = mapped_column(
+        pg_enum(SolutionStatus, "solution_status", create_constraint=False),
+        default=SolutionStatus.VERIFIED,
+        server_default=SolutionStatus.VERIFIED.value,
+        nullable=False,
+    )
     quality_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[QuestionStatus] = mapped_column(pg_enum(QuestionStatus, "question_status"),
         default=QuestionStatus.PENDING,
@@ -1651,3 +1709,390 @@ class AnalyticsEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Exam mode: past-year papers and the mock tests run against them.
+#
+# The content layer sits *on top of* `questions` rather than beside it. Every
+# paper owns one hidden `topics` row and writes ordinary `questions` under it,
+# exactly as `CustomQuiz` does — so practice mode, the three game modes,
+# multiplayer, scoring and anti-cheat all keep working against a concept they
+# already have, and only the timed full-length attempt needs new machinery.
+#
+# What genuinely could not be reused is the *attempt*: a three-hour paper needs
+# free navigation, mark-for-review, changing an answer, one shared clock and
+# submit-at-end, and `QuizSession` is built around answer-once-and-advance with
+# a per-question timer (`uq_answer_once` makes changing an answer a constraint
+# violation). Hence `MockTestAttempt` below.
+# ---------------------------------------------------------------------------
+
+
+class ExamPaperStatus(str, enum.Enum):
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class AttemptMode(str, enum.Enum):
+    FULL = "full"
+    SECTIONAL = "sectional"
+    PRACTICE = "practice"
+
+
+class AttemptStatus(str, enum.Enum):
+    IN_PROGRESS = "in_progress"
+    SUBMITTED = "submitted"
+    #: The deadline passed without a client submission — app killed, phone
+    #: died, tunnel. Scored exactly like a submission; the distinction is kept
+    #: only so the results screen can say what happened.
+    AUTO_SUBMITTED = "auto_submitted"
+    ABANDONED = "abandoned"
+
+
+class ResponseState(str, enum.Enum):
+    """The five states of the official CBT answer palette.
+
+    Mirrored exactly, colours included, because candidates have drilled on this
+    palette for two years and inventing a different one is a usability cost
+    with no upside.
+    """
+
+    NOT_VISITED = "not_visited"
+    NOT_ANSWERED = "not_answered"
+    ANSWERED = "answered"
+    MARKED = "marked"
+    ANSWERED_AND_MARKED = "answered_and_marked"
+
+
+class Exam(Base, TimestampMixin):
+    __tablename__ = "exams"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    #: NTA, IIT, AIIMS — shown on the paper card, and the thing a student
+    #: recognises as the authority behind the key.
+    authority: Mapped[Optional[str]] = mapped_column(String(120))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    icon: Mapped[str] = mapped_column(String(64), default="exam", nullable=False)
+    #: Fallback marking when a section does not override it.
+    default_marking: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    name_i18n: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    papers: Mapped[list["ExamPaper"]] = relationship(back_populates="exam")
+
+
+class ExamPaper(Base, TimestampMixin):
+    """One real paper that was actually sat."""
+
+    __tablename__ = "exam_papers"
+    __table_args__ = (
+        UniqueConstraint(
+            "exam_id", "year", "session", "shift", "paper_code",
+            name="uq_exam_paper_identity",
+        ),
+        # The catalog read: published papers for one exam, newest first.
+        Index("ix_exam_papers_exam_status_year", "exam_id", "status", "year"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    exam_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exams.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: Stable identity from the ingestion pipeline
+    #: ("jee-main-2025-january-shift1"). Re-ingesting the same PDF lands here.
+    key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: "january" / "april". Empty string rather than NULL so the unique
+    #: constraint above actually constrains — in Postgres, NULLs never collide.
+    session: Mapped[str] = mapped_column(String(32), default="", server_default="", nullable=False)
+    shift: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    paper_code: Mapped[str] = mapped_column(String(32), default="", server_default="", nullable=False)
+    held_on: Mapped[Optional[date]] = mapped_column(Date)
+
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
+    total_marks: Mapped[float] = mapped_column(Float, default=0, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    language: Mapped[str] = language_column()
+
+    #: The hidden bank this paper owns — the CustomQuiz trick. Practice mode
+    #: deals out of it with the existing dealer and needs no new code.
+    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("topics.id", ondelete="SET NULL"), unique=True
+    )
+
+    status: Mapped[ExamPaperStatus] = mapped_column(
+        pg_enum(ExamPaperStatus, "exam_paper_status"),
+        default=ExamPaperStatus.DRAFT,
+        nullable=False,
+    )
+    #: Free users get a couple of papers per exam; the rest are premium.
+    is_free: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    #: Provenance, so a bad paper can be traced back to the PDF that made it.
+    source_pdf: Mapped[Optional[str]] = mapped_column(String(255))
+    source_sha256: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    ingest_meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    exam: Mapped[Exam] = relationship(back_populates="papers")
+    sections: Mapped[list["ExamSection"]] = relationship(
+        back_populates="paper", cascade="all, delete-orphan", order_by="ExamSection.position"
+    )
+    questions: Mapped[list["ExamQuestion"]] = relationship(
+        back_populates="paper", cascade="all, delete-orphan",
+        order_by="ExamQuestion.question_number",
+    )
+
+
+class ExamSection(Base, TimestampMixin):
+    """A section of a paper, and the rules that score it.
+
+    Marking lives here as data rather than in code so that adding an exam is a
+    row, not a release: JEE's +4/-1, GATE's +1/-1/3 and NAT's no-negative all
+    differ only in this JSON.
+    """
+
+    __tablename__ = "exam_sections"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "position", name="uq_exam_section_position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_papers.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    subject: Mapped[str] = mapped_column(String(80), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_question: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_question: Mapped[int] = mapped_column(Integer, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    answer_type: Mapped[AnswerType] = mapped_column(
+        pg_enum(AnswerType, "answer_type", create_constraint=False),
+        default=AnswerType.SINGLE,
+        nullable=False,
+    )
+    #: ``{"correct": 4, "incorrect": -1, "unattempted": 0}``
+    marking: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: ``{"count_best_n": 5}`` — JEE Section B scores only the best 5 attempted.
+    rules: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: NULL means the section shares the paper's single clock, which is the
+    #: normal case; a value locks the section independently (GATE-style).
+    time_limit_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+
+    paper: Mapped[ExamPaper] = relationship(back_populates="sections")
+
+
+class ExamQuestion(Base, TimestampMixin):
+    """A question's place in a paper, plus what is true of it only here.
+
+    The question text lives in ``questions``; this row carries the per-paper
+    facts — its printed number, what it is worth, and whether the board later
+    revised the key.
+    """
+
+    __tablename__ = "exam_questions"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "question_number", name="uq_exam_question_number"),
+        Index("ix_exam_questions_paper_section", "paper_id", "section_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_papers.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    section_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_sections.id", ondelete="SET NULL")
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    question_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    marks: Mapped[float] = mapped_column(Float, default=1, nullable=False)
+    negative_marks: Mapped[float] = mapped_column(Float, default=0, nullable=False)
+
+    #: Boards drop or regrade questions every year. Bumping the revision and
+    #: widening ``accepted_answers`` fixes the key without rewriting history,
+    #: and a re-score job replays the attempts it affected.
+    key_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    #: Awarded to everyone who attempted it, right or wrong.
+    is_dropped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: Extra answers the board later accepted, in the same shape as
+    #: ``Question.answer_spec``.
+    accepted_answers: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+
+    #: What the board actually printed, kept verbatim for auditing a dispute.
+    answer_key_raw: Mapped[Optional[str]] = mapped_column(String(64))
+
+    paper: Mapped[ExamPaper] = relationship(back_populates="questions")
+    question: Mapped["Question"] = relationship()
+
+
+class QuestionAsset(Base, TimestampMixin):
+    """One figure, stored content-addressed.
+
+    ``checksum`` is the sha256 of the canonical PNG and doubles as the storage
+    key, which makes the object immutable by construction: correcting a figure
+    produces a new key. That earns a one-year immutable cache header, a near
+    100% CDN hit rate, and free dedup when the same figure appears in two
+    shifts of the same paper.
+    """
+
+    __tablename__ = "question_assets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    checksum: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="raster", nullable=False)
+    width: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    alt_text: Mapped[Optional[str]] = mapped_column(Text)
+    #: ``{"light": {"url": ..., "bytes": n}, "dark": {...}}``. A single
+    #: black-on-white diagram is illegible on a dark ground, so both variants
+    #: are baked at ingest rather than inverted at runtime.
+    variants: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    total_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class QuestionAssetLink(Base):
+    """Which figures a question uses, and in what role."""
+
+    __tablename__ = "question_asset_links"
+    __table_args__ = (
+        UniqueConstraint("question_id", "ref", name="uq_question_asset_ref"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("question_assets.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    #: The token the content blocks refer to ("fig1"), stable within a question.
+    ref: Mapped[str] = mapped_column(String(16), nullable=False)
+    role: Mapped[str] = mapped_column(String(24), default="figure", nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    asset: Mapped[QuestionAsset] = relationship()
+
+
+class MockTestAttempt(Base, TimestampMixin):
+    __tablename__ = "mock_test_attempts"
+    __table_args__ = (
+        Index("ix_mock_attempts_user_status", "user_id", "status"),
+        Index("ix_mock_attempts_paper_score", "paper_id", "score"),
+        # The auto-submit sweep scans only live attempts past their deadline,
+        # which is a tiny slice of a table that grows without bound.
+        Index(
+            "ix_mock_attempts_live_deadline",
+            "server_deadline_at",
+            postgresql_where=text("status = 'in_progress'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    paper_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_papers.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    mode: Mapped[AttemptMode] = mapped_column(
+        pg_enum(AttemptMode, "attempt_mode"), default=AttemptMode.FULL, nullable=False
+    )
+    status: Mapped[AttemptStatus] = mapped_column(
+        pg_enum(AttemptStatus, "attempt_status"),
+        default=AttemptStatus.IN_PROGRESS,
+        nullable=False,
+    )
+    #: Only set for a sectional attempt.
+    section_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_sections.id", ondelete="SET NULL")
+    )
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    #: Stamped once, at start. The client counts down locally against a
+    #: server-supplied clock and every sync returns the authoritative
+    #: remainder; client-reported elapsed time is never trusted for scoring.
+    server_deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    #: Monotonic counter the client echoes back, so an out-of-order sync
+    #: arriving after a retry cannot overwrite newer answers.
+    last_sync_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+
+    score: Mapped[float] = mapped_column(Float, default=0, nullable=False)
+    max_score: Mapped[float] = mapped_column(Float, default=0, nullable=False)
+    correct_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    incorrect_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    unattempted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: ``{"<section_id>": {"score": 44, "correct": 12, ...}}``
+    section_scores: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    percentile: Mapped[Optional[float]] = mapped_column(Float)
+    total_time_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    paper: Mapped[ExamPaper] = relationship()
+
+
+class MockTestResponse(Base):
+    """One candidate's state on one question.
+
+    The fastest-growing table in the schema — 90 rows per attempt — and the
+    reason the client syncs deltas in batches rather than writing per tap. The
+    composite primary key makes a sync an idempotent bulk upsert.
+    """
+
+    __tablename__ = "mock_test_responses"
+    __table_args__ = (
+        PrimaryKeyConstraint("attempt_id", "exam_question_id", name="pk_mock_test_response"),
+    )
+
+    attempt_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mock_test_attempts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    exam_question_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exam_questions.id", ondelete="CASCADE"), nullable=False
+    )
+    state: Mapped[ResponseState] = mapped_column(
+        pg_enum(ResponseState, "response_state"),
+        default=ResponseState.NOT_VISITED,
+        nullable=False,
+    )
+    #: Selected option indices, 0-based. A list even for single-choice, so
+    #: multi-select needs no second column and no migration.
+    selected: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    numeric_value: Mapped[Optional[float]] = mapped_column(Float)
+    #: Exactly what the candidate typed, before parsing. A dispute about a
+    #: numeric answer is unresolvable without it.
+    numeric_raw: Mapped[Optional[str]] = mapped_column(String(64))
+
+    time_spent_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    visit_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    client_revision: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+
+    #: Filled at submission, never before — these are the scored results.
+    is_correct: Mapped[Optional[bool]] = mapped_column(Boolean)
+    marks_awarded: Mapped[Optional[float]] = mapped_column(Float)
+    #: False when a Section-B "best 5 of 10" rule left this one out.
+    counted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    first_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
