@@ -39,7 +39,10 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
+                <!-- Shared run results, and a custom-quiz share code. Both are
+                     links one player sends another, so they share a filter. -->
                 <data android:scheme="speedquiz" android:host="results"/>
+                <data android:scheme="speedquiz" android:host="quiz"/>
             </intent-filter>
             <!-- HTTPS App Links: verified when /.well-known/assetlinks.json is live -->
             <intent-filter android:autoVerify="true">
@@ -50,6 +53,10 @@
                     android:scheme="https"
                     android:host="${shareHttpsHost}"
                     android:pathPrefix="/r"/>
+                <data
+                    android:scheme="https"
+                    android:host="${shareHttpsHost}"
+                    android:pathPrefix="/q"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

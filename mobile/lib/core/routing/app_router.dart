@@ -30,6 +30,10 @@ import 'package:speedquiz/features/quiz/presentation/quiz_results_loader_screen.
 import 'package:speedquiz/features/quiz/presentation/quiz_setup_screen.dart';
 import 'package:speedquiz/features/share/presentation/shared_result_screen.dart';
 import 'package:speedquiz/features/shell/presentation/main_shell.dart';
+import 'package:speedquiz/features/studio/presentation/quiz_code_screen.dart';
+import 'package:speedquiz/features/studio/presentation/quiz_detail_screen.dart';
+import 'package:speedquiz/features/studio/presentation/quiz_editor_screen.dart';
+import 'package:speedquiz/features/studio/presentation/studio_screen.dart';
 
 abstract final class Routes {
   static const splash = '/splash';
@@ -74,6 +78,20 @@ abstract final class Routes {
   static const quizPlay = '/quiz/play';
   static const customTopic = '/custom-topic';
   static const sharePrefix = '/share/';
+
+  // --- Quiz studio -------------------------------------------------------
+  static const studio = '/studio';
+  static const quizEditorNew = '/studio/new';
+
+  /// A quiz someone can play, share or challenge with.
+  static String quizDetailPath(String quizId) => '/studio/quiz/$quizId';
+
+  /// The author's editor for one quiz.
+  static String quizEditorPath(String quizId) => '/studio/quiz/$quizId/edit';
+
+  /// A share code arriving from outside the app. The studio resolves it,
+  /// which is also what grants standing access.
+  static String quizCodePath(String code) => '/studio/code/$code';
 }
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -248,6 +266,61 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           child: const SqBackGuard(
             fallback: Routes.home,
             child: CustomTopicScreen(),
+          ),
+        ),
+      ),
+      // The studio sits on the root navigator: writing a quiz is a
+      // destination, not a tab, and a half-written question must not be
+      // interruptible by a stray tap on the bottom bar.
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.studio,
+        pageBuilder: (context, state) => sqModalPage(
+          state: state,
+          child: const SqBackGuard(
+            fallback: Routes.home,
+            child: StudioScreen(),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: Routes.quizEditorNew,
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          // No SqBackGuard: the editor registers its own PopScope so leaving
+          // flushes whatever metadata has not been written yet, and two
+          // PopScopes on one route both fire.
+          child: const QuizEditorScreen(),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/studio/quiz/:quizId/edit',
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: QuizEditorScreen(quizId: state.pathParameters['quizId']!),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/studio/quiz/:quizId',
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: SqBackGuard(
+            fallback: Routes.studio,
+            child: QuizDetailScreen(quizId: state.pathParameters['quizId']!),
+          ),
+        ),
+      ),
+      GoRoute(
+        parentNavigatorKey: _rootNavigatorKey,
+        path: '/studio/code/:code',
+        pageBuilder: (context, state) => sqSharedAxisPage(
+          state: state,
+          child: SqBackGuard(
+            fallback: Routes.studio,
+            child: QuizCodeScreen(code: state.pathParameters['code']!),
           ),
         ),
       ),

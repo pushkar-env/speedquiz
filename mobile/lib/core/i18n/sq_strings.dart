@@ -790,4 +790,155 @@ abstract class SqStrings {
 
   /// Maps a server `detail.code` to a sentence in the player's language.
   String matchError(String code);
+
+  // --- Quiz studio (player-authored quizzes) -----------------------------
+  String get studioTitle;
+  String get studioHeadline;
+  String get studioBody;
+  String get studioMine;
+  String get studioShared;
+  String get studioSharedSubtitle;
+  String get studioEmptyTitle;
+  String get studioEmptyBody;
+  String get studioCreate;
+  String get studioNewQuiz;
+  String get studioOpenWithCode;
+  String get studioCodeHint;
+  String get studioCodeInvalid;
+  String get studioOpen;
+  String get studioCouldNotLoad;
+
+  /// "2 of 3 quiz slots left" — the free-tier allowance.
+  String studioSlotsLeft(int remaining, int total);
+  String get studioSlotsUnlimited;
+  String get studioSlotsNone;
+  String get studioSlotsNoneBody;
+
+  // Home entry point
+  String get homeMakeQuiz;
+  String get homeMakeQuizBody;
+
+  // Status and visibility
+  String get quizStatusDraft;
+  String get quizStatusPublished;
+  String get quizStatusArchived;
+  String get quizStatusHidden;
+  String get quizVisibilityPrivate;
+  String get quizVisibilityPrivateBody;
+  String get quizVisibilityFriends;
+  String get quizVisibilityFriendsBody;
+  String get quizVisibilityLink;
+  String get quizVisibilityLinkBody;
+
+  /// "12 questions · 40 plays".
+  String quizStatLine(int questions, int plays);
+  String quizByAuthor(String name);
+  String get quizNoPlaysYet;
+
+  // Editor
+  String get editorNewTitle;
+  String get editorEditTitle;
+  String get editorTitleLabel;
+  String get editorTitleHint;
+  String get editorDescriptionLabel;
+  String get editorDescriptionHint;
+  String get editorIconLabel;
+  String get editorVisibilityLabel;
+  String get editorDefaultsLabel;
+  String get editorDefaultsSubtitle;
+  String get editorQuestionsLabel;
+  String editorQuestionsCounter(int used, int max);
+  String get editorAddQuestion;
+  String get editorAiDraft;
+  String get editorNoQuestionsTitle;
+  String get editorNoQuestionsBody;
+  String get editorPublish;
+  String get editorPublished;
+  String get editorUnpublish;
+  String get editorUnpublished;
+  String get editorArchive;
+  String get editorArchived;
+  String get editorRestore;
+  String get editorDelete;
+  String get editorDeleteTitle;
+  String get editorDeleteBody;
+  String get editorSaveChanges;
+  String get editorSaved;
+  String get editorNeedTitle;
+  String editorNeedQuestions(int minimum);
+  String get editorQuestionLimit;
+  String get editorQuizLimit;
+  String get editorDiscardTitle;
+  String get editorDiscardBody;
+  String get editorKeepEditing;
+  String get editorDiscard;
+  String get editorReorderHint;
+  String get editorRetiredNote;
+  String get editorHiddenNote;
+  String get editorLanguageLocked;
+
+  // One question
+  String get questionEditorNew;
+  String get questionEditorEdit;
+  String get questionPromptLabel;
+  String get questionPromptHint;
+  String get questionOptionsLabel;
+  String get questionOptionsHint;
+  String questionOptionHint(int index);
+  String get questionExplanationLabel;
+  String get questionExplanationHint;
+  String get questionDifficultyLabel;
+  String get questionNeedPrompt;
+  String get questionNeedOptions;
+  String get questionDuplicateOptions;
+  String get questionDeleteTitle;
+  String get questionDeleteBody;
+  String get questionMarkCorrect;
+  String get questionCorrect;
+
+  // AI drafting
+  String get aiDraftTitle;
+  String get aiDraftBody;
+  String get aiDraftHint;
+  String get aiDraftCount;
+  String get aiDraftGenerate;
+  String get aiDraftWorking;
+  String aiDraftAddAll(int count);
+  String aiDraftRemaining(int remaining);
+  String get aiDraftUnlimited;
+  String get aiDraftReviewNote;
+  String get aiDraftNeedPrompt;
+
+  // Playing and sharing
+  String get quizPlaySolo;
+  String get quizChallengeFriend;
+  String get quizOpenRoom;
+  String get quizShare;
+  String quizShareMessage(String title, String code);
+  String get quizCodeCopied;
+  String get quizChooseMode;
+  String get quizLeaderboardTitle;
+  String get quizLeaderboardSubtitle;
+  String get quizLeaderboardEmpty;
+  String quizYourBest(String score);
+  String get quizNotPlayedYet;
+  String quizPlayersCount(int count);
+  String get quizEdit;
+  String get quizReport;
+  String get quizReportTitle;
+  String get quizReportOffensive;
+  String get quizReportWrongAnswers;
+  String get quizReportSpam;
+  String get quizReportCopyright;
+  String get quizReportOther;
+  String get quizReportSent;
+  String get quizDraftNotice;
+
+  // Results
+  String get resultsCustomQuiz;
+  String get resultsXpSuppressed;
+
+  /// Maps a `custom-quizzes` error code to a sentence. Falls back to
+  /// [matchError] so one table covers both features.
+  String quizError(String code);
 }

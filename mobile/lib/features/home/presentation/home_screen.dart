@@ -306,6 +306,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 const SizedBox(height: AppSpacing.md),
                 SqStagger(
                   index: 7,
+                  child: _MakeQuizCard(
+                    onTap: () => context.push(Routes.studio),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                SqStagger(
+                  index: 8,
                   child: _CustomTopicCard(
                     onTap: () => context.push(Routes.customTopic),
                   ),
@@ -862,6 +869,72 @@ class _TopicShortcuts extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Entry point to the quiz studio.
+///
+/// Deliberately the loudest card below the fold: writing a quiz is the only
+/// thing on Home that produces something other players can play, so it earns
+/// the gold treatment the paywall otherwise owns.
+class _MakeQuizCard extends StatelessWidget {
+  const _MakeQuizCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = theme.sq;
+
+    return SqSurface(
+      onTap: onTap,
+      gradient: LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          AppColors.gold.withValues(alpha: p.isDark ? 0.18 : 0.12),
+          p.surface,
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.gold.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(AppRadii.sm),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+            ),
+            child: const Icon(
+              Icons.edit_note_rounded,
+              color: AppColors.gold,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  context.l10n.homeMakeQuiz,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  context.l10n.homeMakeQuizBody,
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, color: p.textFaint),
+        ],
+      ),
     );
   }
 }

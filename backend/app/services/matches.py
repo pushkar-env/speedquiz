@@ -212,6 +212,30 @@ async def _build_question_set(
     return [q.id for q in questions[:count]], orders[:count], seed
 
 
+async def _grant_custom_quiz_access(
+    db: AsyncSession,
+    match: Match,
+    user_ids: Sequence[UUID],
+) -> None:
+    """Let everyone seated in a match open the custom quiz behind it.
+
+    Sharing a room code, or challenging a friend, *is* the author granting
+    access — a player who has answered a quiz's questions and then cannot open
+    it to replay it or see its ladder has been shown a door with no handle.
+    No-op for a curated topic, which needs no permission at all.
+    """
+    from app.services import custom_quizzes as custom_quiz_service
+
+    topic = await db.scalar(select(Topic).where(Topic.id == match.topic_id))
+    if topic is None or not topic.is_user_generated:
+        return
+    quiz = await custom_quiz_service.quiz_for_topic(db, topic.id)
+    if quiz is None:
+        return
+    for user_id in user_ids:
+        await custom_quiz_service.grant_access(db, quiz, user_id, source="invite")
+
+
 async def _unique_room_code(db: AsyncSession) -> str:
     for _ in range(10):
         code = "".join(secrets.choice(ROOM_CODE_ALPHABET) for _ in range(ROOM_CODE_LENGTH))
@@ -597,6 +621,19 @@ async def create_match(
     if topic is None:
         raise _err("topic_not_found", "Topic not found.", status.HTTP_404_NOT_FOUND)
 
+    # A player-authored quiz is not public content. Being active is enough for
+    # a curated topic but says nothing here, so the check goes through the
+    # quiz's own ACL — otherwise anyone who learned a topic id could open a
+    # match on someone's private quiz and read its questions off the board.
+    custom_quiz = None
+    if topic.is_user_generated:
+        from app.services import custom_quizzes as custom_quiz_service
+
+        custom_quiz = await custom_quiz_service.quiz_for_topic(db, topic.id)
+        if custom_quiz is None:
+            raise _err("topic_not_found", "Topic not found.", status.HTTP_404_NOT_FOUND)
+        await custom_quiz_service.assert_can_play(db, user, custom_quiz)
+
     profile = user.profile
     language = normalize_language(
         payload.language if payload.language is not None
@@ -640,6 +677,17 @@ async def create_match(
     question_count = max(
         settings.match_min_question_count, min(question_count, settings.match_max_question_count)
     )
+    if custom_quiz is not None:
+        # The deck is exactly as long as the author made it. Asking for seven
+        # questions from a five-question quiz is a `bank_too_thin` 409 the
+        # player can do nothing about, so the request is clamped to what exists.
+        if custom_quiz.question_count < settings.match_min_question_count:
+            raise _err(
+                "quiz_too_short_to_challenge",
+                f"A challenge needs at least {settings.match_min_question_count} questions.",
+                status.HTTP_409_CONFLICT,
+            )
+        question_count = min(question_count, custom_quiz.question_count)
 
     known_players = [user.id, *invitees]
     question_ids, option_orders, seed = await _build_question_set(
@@ -705,6 +753,7 @@ async def create_match(
         )
     await db.flush()
     await db.refresh(match, ["participants"])
+    await _grant_custom_quiz_access(db, match, [p.user_id for p in match.participants])
 
     if kind is MatchKind.RANKED:
         await _begin(db, match)
@@ -774,6 +823,7 @@ async def join_by_code(db: AsyncSession, user: User, code: str) -> Match:
         return await load_match(db, match.id)
 
     await db.refresh(match, ["participants"])
+    await _grant_custom_quiz_access(db, match, [user.id])
     await _publish_participants(db, match)
     return match
 

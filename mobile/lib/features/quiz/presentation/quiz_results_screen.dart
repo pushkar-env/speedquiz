@@ -198,6 +198,17 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                             style: theme.textTheme.bodyMedium,
                           ),
                         ),
+                        if (result.isCustomQuiz) ...[
+                          const SizedBox(height: 8),
+                          Center(
+                            child: SqBadge(
+                              label: l10n.resultsCustomQuiz,
+                              icon: Icons.edit_note_rounded,
+                              color: AppColors.gold,
+                              dense: true,
+                            ),
+                          ),
+                        ],
                         if (!result.isPersonalBest &&
                             result.previousBest > 0) ...[
                           const SizedBox(height: 6),
@@ -281,6 +292,9 @@ class _QuizResultsScreenState extends ConsumerState<QuizResultsScreen>
                             xpEarned: result.xpEarned,
                             level: result.level,
                             xp: result.xp,
+                            suppressedNote: result.xpSuppressed
+                                ? l10n.resultsXpSuppressed
+                                : null,
                           ),
                         ),
                         if (unlocks.isNotEmpty) ...[
@@ -487,11 +501,19 @@ class _StatTile extends StatelessWidget {
 }
 
 class _XpCard extends StatelessWidget {
-  const _XpCard({required this.xpEarned, this.level, this.xp});
+  const _XpCard({
+    required this.xpEarned,
+    this.level,
+    this.xp,
+    this.suppressedNote,
+  });
 
   final int xpEarned;
   final int? level;
   final int? xp;
+
+  /// Why this run paid nothing, when it paid nothing on purpose.
+  final String? suppressedNote;
 
   @override
   Widget build(BuildContext context) {
@@ -523,6 +545,13 @@ class _XpCard extends StatelessWidget {
               SqBadge(label: context.l10n.levelBadge(currentLevel)),
             ],
           ),
+          if (suppressedNote != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              suppressedNote!,
+              style: theme.textTheme.labelSmall?.copyWith(color: p.textFaint),
+            ),
+          ],
           if (level != null) ...[
             const SizedBox(height: AppSpacing.md),
             SqProgressTrack(value: progress, height: 8),

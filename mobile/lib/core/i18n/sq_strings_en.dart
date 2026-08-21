@@ -1530,4 +1530,318 @@ class SqStringsEn extends SqStrings {
         'rate_limited' => 'Slow down a moment.',
         _ => errorNetwork,
       };
+
+  // --- Quiz studio (player-authored quizzes) -----------------------------
+  @override
+  String get studioTitle => 'Quiz studio';
+  @override
+  String get studioHeadline => 'Write a quiz.\nChallenge your friends.';
+  @override
+  String get studioBody =>
+      'Your questions, your answers. Play it solo or put it in front of a friend.';
+  @override
+  String get studioMine => 'Your quizzes';
+  @override
+  String get studioShared => 'Shared with you';
+  @override
+  String get studioSharedSubtitle => 'Quizzes friends sent you';
+  @override
+  String get studioEmptyTitle => 'Nothing here yet';
+  @override
+  String get studioEmptyBody =>
+      'Make your first quiz, or open one a friend sent you with their code.';
+  @override
+  String get studioCreate => 'Create a quiz';
+  @override
+  String get studioNewQuiz => 'New quiz';
+  @override
+  String get studioOpenWithCode => 'Open with a code';
+  @override
+  String get studioCodeHint => 'e.g. BCD234';
+  @override
+  String get studioCodeInvalid => 'That code does not look right.';
+  @override
+  String get studioOpen => 'Open';
+  @override
+  String get studioCouldNotLoad => 'Could not load your quizzes.';
+  @override
+  String studioSlotsLeft(int remaining, int total) =>
+      '$remaining of $total quiz slots left';
+  @override
+  String get studioSlotsUnlimited => 'Unlimited quizzes';
+  @override
+  String get studioSlotsNone => 'All quiz slots used';
+  @override
+  String get studioSlotsNoneBody =>
+      'Archive one, or go Premium for unlimited quizzes.';
+
+  @override
+  String get homeMakeQuiz => 'Make your own quiz';
+  @override
+  String get homeMakeQuizBody => 'Write the questions, challenge your friends';
+
+  @override
+  String get quizStatusDraft => 'Draft';
+  @override
+  String get quizStatusPublished => 'Live';
+  @override
+  String get quizStatusArchived => 'Archived';
+  @override
+  String get quizStatusHidden => 'Under review';
+  @override
+  String get quizVisibilityPrivate => 'Just me';
+  @override
+  String get quizVisibilityPrivateBody => 'Only you can play it';
+  @override
+  String get quizVisibilityFriends => 'Friends';
+  @override
+  String get quizVisibilityFriendsBody => 'Anyone on your friends list';
+  @override
+  String get quizVisibilityLink => 'Anyone with the code';
+  @override
+  String get quizVisibilityLinkBody => 'Share the code and they are in';
+  @override
+  String quizStatLine(int questions, int plays) =>
+      '${questionsCount(questions)} · ${plays == 1 ? '1 play' : '$plays plays'}';
+  @override
+  String quizByAuthor(String name) => 'by $name';
+  @override
+  String get quizNoPlaysYet => 'No plays yet';
+
+  @override
+  String get editorNewTitle => 'New quiz';
+  @override
+  String get editorEditTitle => 'Edit quiz';
+  @override
+  String get editorTitleLabel => 'Title';
+  @override
+  String get editorTitleHint => 'Bollywood in the 2000s';
+  @override
+  String get editorDescriptionLabel => 'Description';
+  @override
+  String get editorDescriptionHint => 'What is this quiz about? (optional)';
+  @override
+  String get editorIconLabel => 'Icon';
+  @override
+  String get editorVisibilityLabel => 'Who can play it';
+  @override
+  String get editorDefaultsLabel => 'Suggested setup';
+  @override
+  String get editorDefaultsSubtitle =>
+      'What players start on. They can still change it.';
+  @override
+  String get editorQuestionsLabel => 'Questions';
+  @override
+  String editorQuestionsCounter(int used, int max) => '$used / $max';
+  @override
+  String get editorAddQuestion => 'Add a question';
+  @override
+  String get editorAiDraft => 'Draft with AI';
+  @override
+  String get editorNoQuestionsTitle => 'No questions yet';
+  @override
+  String get editorNoQuestionsBody =>
+      'Write one yourself, or let the AI draft a few and edit them.';
+  @override
+  String get editorPublish => 'Publish';
+  @override
+  String get editorPublished => 'Your quiz is live.';
+  @override
+  String get editorUnpublish => 'Back to draft';
+  @override
+  String get editorUnpublished => 'Back to draft. Nobody can start it now.';
+  @override
+  String get editorArchive => 'Archive';
+  @override
+  String get editorArchived => 'Archived. Scores are kept.';
+  @override
+  String get editorRestore => 'Restore';
+  @override
+  String get editorDelete => 'Delete quiz';
+  @override
+  String get editorDeleteTitle => 'Delete this quiz?';
+  @override
+  String get editorDeleteBody =>
+      'The quiz and its questions are gone for good. This cannot be undone.';
+  @override
+  String get editorSaveChanges => 'Save';
+  @override
+  String get editorSaved => 'Saved';
+  @override
+  String get editorNeedTitle => 'Give your quiz a title first.';
+  @override
+  String editorNeedQuestions(int minimum) =>
+      'You need at least ${questionsCount(minimum)} to publish.';
+  @override
+  String get editorQuestionLimit =>
+      'This quiz is full. Premium raises the limit.';
+  @override
+  String get editorQuizLimit =>
+      'You have used all your quiz slots. Archive one, or go Premium.';
+  @override
+  String get editorDiscardTitle => 'Discard this quiz?';
+  @override
+  String get editorDiscardBody =>
+      'It has no questions yet, so nothing will be kept.';
+  @override
+  String get editorKeepEditing => 'Keep editing';
+  @override
+  String get editorDiscard => 'Discard';
+  @override
+  String get editorReorderHint => 'Hold and drag to reorder';
+  @override
+  String get editorRetiredNote =>
+      'Already played, so removing it keeps everyone’s scores intact.';
+  @override
+  String get editorHiddenNote =>
+      'This quiz is locked while it is reviewed. You cannot edit it right now.';
+  @override
+  String get editorLanguageLocked =>
+      'Questions are written in the language you picked when you created the quiz.';
+
+  @override
+  String get questionEditorNew => 'New question';
+  @override
+  String get questionEditorEdit => 'Edit question';
+  @override
+  String get questionPromptLabel => 'Question';
+  @override
+  String get questionPromptHint => 'Which film won Best Picture in 2004?';
+  @override
+  String get questionOptionsLabel => 'Answers';
+  @override
+  String get questionOptionsHint => 'Tap the circle to mark the right one';
+  @override
+  String questionOptionHint(int index) => 'Answer ${index + 1}';
+  @override
+  String get questionExplanationLabel => 'Explanation';
+  @override
+  String get questionExplanationHint => 'Shown after answering (optional)';
+  @override
+  String get questionDifficultyLabel => 'Difficulty';
+  @override
+  String get questionNeedPrompt => 'Write the question first.';
+  @override
+  String get questionNeedOptions => 'All four answers need text.';
+  @override
+  String get questionDuplicateOptions => 'Two answers are the same.';
+  @override
+  String get questionDeleteTitle => 'Remove this question?';
+  @override
+  String get questionDeleteBody =>
+      'It stops appearing in new runs straight away.';
+  @override
+  String get questionMarkCorrect => 'Mark as the correct answer';
+  @override
+  String get questionCorrect => 'Correct';
+
+  @override
+  String get aiDraftTitle => 'Draft with AI';
+  @override
+  String get aiDraftBody =>
+      'Say what the quiz is about and the AI writes a few starters. Everything is yours to edit before it is saved.';
+  @override
+  String get aiDraftHint => 'Bollywood films of the 2000s';
+  @override
+  String get aiDraftCount => 'How many';
+  @override
+  String get aiDraftGenerate => 'Draft questions';
+  @override
+  String get aiDraftWorking => 'Writing questions…';
+  @override
+  String aiDraftAddAll(int count) => 'Add all ${questionsCount(count)}';
+  @override
+  String aiDraftRemaining(int remaining) => remaining == 1
+      ? '1 AI draft left today'
+      : '$remaining AI drafts left today';
+  @override
+  String get aiDraftUnlimited => 'Unlimited AI drafts';
+  @override
+  String get aiDraftReviewNote => 'Check each one before you publish.';
+  @override
+  String get aiDraftNeedPrompt => 'Say what the quiz is about first.';
+
+  @override
+  String get quizPlaySolo => 'Play solo';
+  @override
+  String get quizChallengeFriend => 'Challenge a friend';
+  @override
+  String get quizOpenRoom => 'Open a room';
+  @override
+  String get quizShare => 'Share';
+  @override
+  String quizShareMessage(String title, String code) =>
+      'Beat my score on “$title” — open SpeedQuiz and enter code $code';
+  @override
+  String get quizCodeCopied => 'Code copied';
+  @override
+  String get quizChooseMode => 'Choose a mode';
+  @override
+  String get quizLeaderboardTitle => 'This quiz’s board';
+  @override
+  String get quizLeaderboardSubtitle => 'Best run per player';
+  @override
+  String get quizLeaderboardEmpty => 'Nobody has played it yet. Go first.';
+  @override
+  String quizYourBest(String score) => 'Your best · $score';
+  @override
+  String get quizNotPlayedYet => 'You have not played this yet';
+  @override
+  String quizPlayersCount(int count) =>
+      count == 1 ? '1 player' : '$count players';
+  @override
+  String get quizEdit => 'Edit';
+  @override
+  String get quizReport => 'Report';
+  @override
+  String get quizReportTitle => 'Report this quiz';
+  @override
+  String get quizReportOffensive => 'Offensive content';
+  @override
+  String get quizReportWrongAnswers => 'Wrong answers';
+  @override
+  String get quizReportSpam => 'Spam or nonsense';
+  @override
+  String get quizReportCopyright => 'Copied without permission';
+  @override
+  String get quizReportOther => 'Something else';
+  @override
+  String get quizReportSent => 'Thanks — we will take a look.';
+  @override
+  String get quizDraftNotice =>
+      'This is a draft. Publish it to share or challenge with it.';
+
+  @override
+  String get resultsCustomQuiz => 'Custom quiz';
+  @override
+  String get resultsXpSuppressed =>
+      'No XP — you already earned it from your own quiz today.';
+
+  @override
+  String quizError(String code) => switch (code) {
+    'too_few_questions' => 'Add a few more questions before publishing.',
+    'question_limit_exceeded' => editorQuestionLimit,
+    'quiz_limit_reached' => editorQuizLimit,
+    'duplicate_question' => 'This quiz already has that question.',
+    'quiz_has_plays' =>
+      'People have played this quiz — archive it instead of deleting it.',
+    'quiz_not_found' => 'That quiz is no longer available.',
+    'quiz_archived' => 'The author took this quiz down.',
+    'quiz_archived_owner' => 'Restore this quiz before playing it again.',
+    'quiz_not_published' => 'Publish this quiz before playing it.',
+    'quiz_unavailable' => 'This quiz is unavailable while it is reviewed.',
+    'quiz_under_review' => editorHiddenNote,
+    'quiz_empty' => 'This quiz has no questions yet.',
+    'quiz_too_short_to_challenge' =>
+      'A challenge needs at least three questions.',
+    'invalid_code' => studioCodeInvalid,
+    'too_many_drafts' => 'Finish or delete one of your drafts first.',
+    'ai_draft_limit' =>
+      'You have used today’s AI drafts. Premium removes the limit.',
+    'ai_draft_failed' => 'Could not draft questions. Try a clearer topic.',
+    'cannot_report_own' => 'You cannot report your own quiz.',
+    'custom_quizzes_disabled' => 'Quiz creation is unavailable right now.',
+    'mode_unavailable' => 'That mode is no longer available.',
+    _ => matchError(code),
+  };
 }

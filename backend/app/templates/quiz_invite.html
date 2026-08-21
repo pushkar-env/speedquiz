@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpeedQuiz — {{ quiz.title }}</title>
+  <meta name="description" content="{{ quiz.author_name }} made a quiz: {{ quiz.title }}. {{ quiz.question_count }} questions." />
+  <meta property="og:title" content="{{ quiz.title }}" />
+  <meta property="og:description" content="A quiz by {{ quiz.author_name }} · {{ quiz.question_count }} questions" />
+  <meta property="og:type" content="website" />
+  <style>
+    :root {
+      --bg: #0b1210;
+      --fg: #e8f0ec;
+      --muted: #9bb0a4;
+      --accent: #3dd68c;
+      --gold: #ffc94a;
+      --card: #14201a;
+      --line: rgba(61, 214, 140, 0.28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(255,201,74,0.16), transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, rgba(40,120,90,0.22), transparent 50%),
+        var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    main {
+      width: min(420px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 24px;
+    }
+    .brand {
+      letter-spacing: 0.18em;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0 0 16px;
+    }
+    .glyph {
+      width: 64px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      border-radius: 16px;
+      background: rgba(255, 201, 74, 0.14);
+      border: 1px solid rgba(255, 201, 74, 0.28);
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.9rem;
+      letter-spacing: -0.03em;
+      font-weight: 800;
+      line-height: 1.15;
+    }
+    .meta {
+      margin: 10px 0 4px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .desc {
+      margin: 14px 0 0;
+      color: var(--fg);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      opacity: 0.85;
+    }
+    .code {
+      margin: 22px 0 0;
+      text-align: center;
+      font-size: 1.6rem;
+      font-weight: 800;
+      /* Wide tracking: this gets typed into another phone from a screenshot,
+         so the characters have to stay separable. */
+      letter-spacing: 0.35em;
+      text-indent: 0.35em;
+      color: var(--gold);
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(255, 201, 74, 0.1);
+      border: 1px solid rgba(255, 201, 74, 0.3);
+    }
+    .actions { margin-top: 22px; display: grid; gap: 10px; }
+    a.btn {
+      display: block;
+      text-align: center;
+      text-decoration: none;
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    a.primary { background: var(--accent); color: #062015; }
+    .hint {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="brand">SPEEDQUIZ</p>
+    <div class="glyph">{{ quiz.icon }}</div>
+    <h1>{{ quiz.title }}</h1>
+    <p class="meta">
+      A quiz by {{ quiz.author_name }} · {{ quiz.question_count }} question{{ '' if quiz.question_count == 1 else 's' }}
+      {%- if quiz.play_count %} · played {{ quiz.play_count }} time{{ '' if quiz.play_count == 1 else 's' }}{% endif %}
+    </p>
+    {% if quiz.description %}<p class="desc">{{ quiz.description }}</p>{% endif %}
+    <p class="code">{{ quiz.code }}</p>
+    <div class="actions">
+      <a class="btn primary" href="{{ quiz.deep_link }}">Open in SpeedQuiz</a>
+    </div>
+    <p class="hint">
+      No app yet? Install SpeedQuiz, then enter the code above to play this quiz.
+    </p>
+  </main>
+</body>
+</html>

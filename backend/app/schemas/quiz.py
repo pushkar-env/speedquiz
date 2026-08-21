@@ -130,6 +130,14 @@ class QuizResultOut(BaseModel):
     #: Wall time the run lasted. The headline stat for a speedrun.
     duration_ms: int = 0
     xp_earned: int
+    #: True when this run was on a quiz a player wrote, not the curated bank.
+    #: The results screen labels it, and it is the reason the run is absent
+    #: from the weekly leaderboard.
+    is_custom_quiz: bool = False
+    #: XP was withheld because the player has already earned it from *their
+    #: own* quiz inside the cooldown window. A zero with no explanation reads
+    #: as a bug.
+    xp_suppressed: bool = False
     is_personal_best: bool
     previous_best: int
     share_text: str

@@ -471,15 +471,22 @@ async def _append_questions(
     user: Optional[User] = None,
 ) -> list[QuizQuestion]:
     await _maybe_nudge_adaptive_difficulty(db, session)
-    if user is not None:
+    finite_deck = bool((session.config or {}).get("finite_deck"))
+    if user is not None and not finite_deck:
         try:
             await _raise_if_unique_cap(db, user, session.topic_id, session=session)
         except HTTPException:
             return []
 
     allowance = unique_question_allowance(user) if user else None
-    unique_only = allowance is not None and not (
-        session.is_daily_challenge or session.mode == GameMode.DAILY
+    # `unique_only` stops the dealer recycling questions the player has already
+    # seen, which is how the free tier's cap is enforced. On a finite deck it
+    # would instead mean "you may play your own quiz exactly once", so the deck
+    # is always allowed to recycle — every replay reshuffles the same hand.
+    unique_only = (
+        allowance is not None
+        and not finite_deck
+        and not (session.is_daily_challenge or session.mode == GameMode.DAILY)
     )
 
     existing_ids = set(
@@ -501,6 +508,17 @@ async def _append_questions(
     )
     if not questions and not existing_ids:
         raise _empty_bank_error(session_language(session))
+
+    if finite_deck:
+        # A hand-written quiz is played in the order it was written. `_select_
+        # questions` shuffles, which is right for an endless bank of
+        # interchangeable trivia and wrong here — the author arranged these,
+        # and the arrangement is the only thing about the running order they
+        # had any say over. Option positions are still shuffled per run, so
+        # nothing about a replay is memorizable from screen position alone.
+        from app.services.custom_quizzes import question_position
+
+        questions.sort(key=question_position)
 
     created: list[QuizQuestion] = []
     for offset, question in enumerate(questions):
@@ -540,7 +558,10 @@ async def create_session(
         )
 
     topic = await _load_topic(db, payload.topic_id)
-    await _raise_if_unique_cap(db, user, topic.id)
+    # The unique cap meters *our* generated bank. A quiz a player wrote by hand
+    # is a fixed hand they already own, so there is nothing for it to meter.
+    if not topic.is_user_generated:
+        await _raise_if_unique_cap(db, user, topic.id)
 
     profile = user.profile or await db.scalar(
         select(UserProfile).where(UserProfile.user_id == user.id)
@@ -569,6 +590,12 @@ async def create_session(
     )
     difficulty = payload.difficulty
     config: dict = {"version": 1}
+    if topic.is_user_generated:
+        # A player-authored quiz is a **finite deck**: dealt once, ended at the
+        # bottom. Carried on the session rather than re-read from the topic
+        # because every reader of it (`_append_questions`, `submit_answer`)
+        # already holds the session and would otherwise need a join to find out.
+        config["finite_deck"] = True
     if payload.adaptive:
         difficulty = suggested_label_from_ratings(
             stats.skill_ratings if stats else {},
@@ -597,20 +624,27 @@ async def create_session(
     db.add(session)
     await db.flush()
 
-    # Grow thin banks before dealing the first hand (unique runway).
-    from app.services.bank_inventory import ensure_minimum_bank
+    # Grow thin banks before dealing the first hand (unique runway). A
+    # hand-written quiz has no generator behind it, so there is nothing to grow.
+    if not topic.is_user_generated:
+        from app.services.bank_inventory import ensure_minimum_bank
 
-    await ensure_minimum_bank(
-        db,
-        topic,
-        difficulty=difficulty,
-        user=user,
-        language=language,
-    )
+        await ensure_minimum_bank(
+            db,
+            topic,
+            difficulty=difficulty,
+            user=user,
+            language=language,
+        )
 
-    created = await _append_questions(
-        db, session, start_index=0, count=_session_batch_size(), user=user
-    )
+    batch = _session_batch_size()
+    if config.get("finite_deck"):
+        # Deal the whole quiz up front. It is at most
+        # `custom_quiz_max_questions` long, and a mid-run append against a deck
+        # with nothing left in it is a query that can only return zero rows.
+        batch = max(batch, get_settings().custom_quiz_max_questions)
+
+    created = await _append_questions(db, session, start_index=0, count=batch, user=user)
     if not created:
         raise _empty_bank_error(language)
 
@@ -892,6 +926,20 @@ async def submit_answer(
             if session.mode == GameMode.DAILY or session.is_daily_challenge:
                 await _finalize_session(db, user, session)
                 run_ended = True
+            elif (session.config or {}).get("finite_deck"):
+                # A player-authored quiz has no generator behind it and no
+                # more questions to find. One more append in case the author
+                # added to it mid-run; an empty result then ends the run below,
+                # rather than falling through to the recycle path — recycling a
+                # ten-question deck would loop it forever.
+                appended = await _append_questions(
+                    db,
+                    session,
+                    start_index=session.current_question_index,
+                    count=_session_batch_size(),
+                    user=user,
+                )
+                next_qq = appended[0] if appended else None
             else:
                 # Refill session buffer from bank; kick async bank growth if thin.
                 from app.services.bank_inventory import count_active_questions, enqueue_bank_topup
@@ -1038,6 +1086,14 @@ def _run_duration_ms(session: QuizSession) -> int:
         return 0
 
 
+class _SkipLeaderboard(Exception):
+    """Not an error — "this run does not belong on the global board".
+
+    Raised inside the leaderboard block so the skip and the genuine failure
+    path share one exit, rather than duplicating the try/except around an if.
+    """
+
+
 async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) -> None:
     if session.status == QuizSessionStatus.COMPLETED:
         return
@@ -1048,6 +1104,23 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     duration_ms = _run_duration_ms(session)
     accuracy = round(100.0 * session.correct_count / answered, 2) if answered else 0.0
     xp = max(10, session.score // 10) if session.score > 0 else (5 if answered else 0)
+
+    # Loaded here rather than further down because what this run is *worth*
+    # depends on it. A run on a quiz a player wrote is not comparable to a run
+    # on the curated bank — the author knows the answers — so it stays off the
+    # global ladder, out of the adaptive skill rating and out of topic mastery,
+    # and pays XP on your own quiz only once per cooldown window.
+    topic = await _load_topic(db, session.topic_id)
+    from app.services import custom_quizzes as custom_quiz_service
+
+    is_custom_quiz = bool(topic.is_user_generated)
+    xp_suppressed = False
+    if is_custom_quiz and xp > 0:
+        if not await custom_quiz_service.xp_allowed_for_run(
+            db, topic=topic, user_id=user.id
+        ):
+            xp = 0
+            xp_suppressed = True
 
     avg_ms = await db.scalar(
         select(func.coalesce(func.avg(Answer.server_elapsed_ms), 0)).where(
@@ -1073,6 +1146,14 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     previous_best_i = int(previous_best or 0)
     is_pb = session.score > previous_best_i
 
+    # Before the Score row below is added: `note_finished_run` asks whether
+    # this player has finished the quiz before, which is a question about
+    # history, not about the row we are in the middle of writing.
+    if is_custom_quiz:
+        await custom_quiz_service.note_finished_run(
+            db, topic=topic, user_id=user.id, score=session.score
+        )
+
     score_row = Score(
         user_id=user.id,
         session_id=session.id,
@@ -1088,7 +1169,6 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
     )
     db.add(score_row)
 
-    topic = await _load_topic(db, session.topic_id)
     language = session_language(session)
     share_payload = build_share_payload(
         session_id=session.id,
@@ -1113,6 +1193,10 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
         "topic_name": localized_topic_name(topic, language),
         "language": language.value,
         "duration_ms": duration_ms,
+        "is_custom_quiz": is_custom_quiz,
+        # "you already earned XP from your own quiz today" — a silent zero
+        # reads as a bug, and the player would be right to think so.
+        "xp_suppressed": xp_suppressed,
     }
     comparisons = {
         "previous_best": previous_best_i,
@@ -1153,25 +1237,30 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
                     ((stats.average_answer_ms * prev_total) + (average_answer_ms * answered))
                     / (prev_total + answered)
                 )
-        mastery = dict(stats.topic_mastery or {})
-        key = str(session.topic_id)
-        prev = mastery.get(key, {"correct": 0, "total": 0, "percent": 0})
-        correct = int(prev.get("correct", 0)) + session.correct_count
-        total = int(prev.get("total", 0)) + answered
-        mastery[key] = {
-            "correct": correct,
-            "total": total,
-            "percent": round(100.0 * correct / total, 1) if total else 0,
-            "name": topic.name,
-        }
-        stats.topic_mastery = mastery
-        if answered > 0:
-            stats.skill_ratings = update_topic_rating(
-                stats.skill_ratings,
-                topic_id=str(session.topic_id),
-                accuracy_percent=accuracy,
-                session_label=session.difficulty,
-            )
+        # Both skipped for a player-authored quiz. Topic mastery is the
+        # profile's "what am I good at" list, and one entry per quiz a friend
+        # made would bury it; the adaptive rating is worse still — it would set
+        # the difficulty of *real* runs from questions the player wrote.
+        if not is_custom_quiz:
+            mastery = dict(stats.topic_mastery or {})
+            key = str(session.topic_id)
+            prev = mastery.get(key, {"correct": 0, "total": 0, "percent": 0})
+            correct = int(prev.get("correct", 0)) + session.correct_count
+            total = int(prev.get("total", 0)) + answered
+            mastery[key] = {
+                "correct": correct,
+                "total": total,
+                "percent": round(100.0 * correct / total, 1) if total else 0,
+                "name": topic.name,
+            }
+            stats.topic_mastery = mastery
+            if answered > 0:
+                stats.skill_ratings = update_topic_rating(
+                    stats.skill_ratings,
+                    topic_id=str(session.topic_id),
+                    accuracy_percent=accuracy,
+                    session_label=session.difficulty,
+                )
 
     newly_unlocked = []
     if profile:
@@ -1227,8 +1316,15 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
             ctx=ctx,
         )
 
-    # Leaderboards: weekly for all runs; daily board for daily challenge
+    # Leaderboards: weekly for every curated run; daily board for the daily
+    # challenge. A player-authored quiz is excluded outright — a five-question
+    # quiz you wrote the answers to would otherwise be the cheapest route to
+    # the top of the weekly ladder. Each quiz gets its own board instead, at
+    # `GET /custom-quizzes/{id}/leaderboard`.
     try:
+        if is_custom_quiz:
+            raise _SkipLeaderboard
+
         from app.services import leaderboards as lb_service
 
         daily_date = None
@@ -1241,6 +1337,8 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
             weekly=True,
             daily_date=daily_date,
         )
+    except _SkipLeaderboard:
+        pass
     except Exception:
         # Leaderboard must never block session finalize
         pass
@@ -1263,6 +1361,7 @@ async def _finalize_session(db: AsyncSession, user: User, session: QuizSession) 
                 "score": session.score,
                 "accuracy": accuracy,
                 "questions_answered": answered,
+                "custom_quiz": is_custom_quiz,
             },
         )
         if newly_unlocked:
@@ -1347,6 +1446,8 @@ async def get_result(
         average_answer_ms=int(summary.get("average_answer_ms", 0)),
         duration_ms=int(summary.get("duration_ms", 0) or 0),
         xp_earned=score.xp_earned if score else int(summary.get("xp_earned", 0)),
+        is_custom_quiz=bool(summary.get("is_custom_quiz", topic.is_user_generated)),
+        xp_suppressed=bool(summary.get("xp_suppressed", False)),
         is_personal_best=bool(comparisons.get("is_personal_best", False)),
         previous_best=int(comparisons.get("previous_best", 0)),
         share_text=str(share.get("text", "")),

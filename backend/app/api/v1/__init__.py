@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     billing_webhooks,
     catalog,
+    custom_quizzes,
     custom_topics,
     daily,
     entitlements,
@@ -23,6 +24,7 @@ api_router.include_router(auth.router)
 api_router.include_router(catalog.router)
 api_router.include_router(quiz.router)
 api_router.include_router(custom_topics.router)
+api_router.include_router(custom_quizzes.router)
 api_router.include_router(questions.router)
 api_router.include_router(achievements.router)
 api_router.include_router(daily.router)

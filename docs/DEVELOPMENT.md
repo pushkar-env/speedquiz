@@ -466,9 +466,24 @@ Conventions:
 /profile/stats     lifetime accuracy, speed, topic mastery
 /premium           full-screen store (also shown as a mid-game sheet)
 /settings          appearance, sound, haptics, account, sign out
+/studio            quizzes you wrote + quizzes shared with you
+/studio/new        write a quiz
+/studio/quiz/:id   play it, challenge with it, its own leaderboard
+/studio/quiz/:id/edit
+/studio/code/:code redeem a share code (deep-link target)
 /quiz/*            setup → play → results
 /share/results/:id public share card, reachable signed out
 ```
+
+The studio's screens sit on the **root** navigator, not in the tab shell:
+writing a quiz is a destination, and a half-written question must not be
+interruptible by a stray tap on the bottom bar. `QuizEditorScreen` registers
+its own `PopScope` rather than wrapping in `SqBackGuard` — leaving flushes any
+metadata edit that has not been written yet, and two `PopScope`s on one route
+both fire.
+
+See [Player-authored quizzes](../README.md#player-authored-quizzes) for how the
+feature is built server-side.
 
 ---
 

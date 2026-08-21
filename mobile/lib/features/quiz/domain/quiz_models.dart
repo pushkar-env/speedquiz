@@ -282,6 +282,8 @@ class QuizResult extends Equatable {
     required this.previousBest,
     required this.shareText,
     this.durationMs = 0,
+    this.isCustomQuiz = false,
+    this.xpSuppressed = false,
     this.sharePayload = const {},
     this.newAchievements = const [],
     this.level,
@@ -311,6 +313,15 @@ class QuizResult extends Equatable {
   /// Wall time the run lasted — the headline stat for a speedrun.
   final int durationMs;
   final int xpEarned;
+
+  /// The run was on a quiz a player wrote, not the curated bank. It is why the
+  /// score is absent from the weekly leaderboard, so the screen says so.
+  final bool isCustomQuiz;
+
+  /// XP was withheld because the player already earned it from *their own*
+  /// quiz inside the cooldown window. A silent zero reads as a bug.
+  final bool xpSuppressed;
+
   final bool isPersonalBest;
   final int previousBest;
   final String shareText;
@@ -347,6 +358,8 @@ class QuizResult extends Equatable {
       averageAnswerMs: json['average_answer_ms'] as int,
       durationMs: json['duration_ms'] as int? ?? 0,
       xpEarned: json['xp_earned'] as int,
+      isCustomQuiz: json['is_custom_quiz'] as bool? ?? false,
+      xpSuppressed: json['xp_suppressed'] as bool? ?? false,
       isPersonalBest: json['is_personal_best'] as bool,
       previousBest: json['previous_best'] as int,
       shareText: shareText,

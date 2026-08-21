@@ -59,6 +59,10 @@ Notes:
 /profile/stats     lifetime accuracy, speed, topic mastery
 /premium           full-screen store (also shown as a mid-game sheet)
 /settings          appearance, sound, haptics, account, sign out
+/studio            quizzes you wrote + quizzes shared with you
+/studio/new        write a quiz
+/studio/quiz/:id   play it, challenge with it, its own leaderboard
+/studio/code/:code redeem a share code (deep-link target)
 /quiz/*            setup → play → results
 /share/results/:id public share card (reachable signed-out)
 ```
@@ -174,7 +178,8 @@ pytest
 18. **Phase 10** — Screen split, profile customisation, audio, random topic ✅
 19. **Phase 11** — Production subscriptions: monthly/annual, store webhooks, grace + refund handling, premium cosmetics ✅
 20. **Phase 12** — Game feel: living UI, mode cull + survival rework, setup layout ✅
-21. **Next** — Play Console upload (keystore + AAB) → internal test → production
+21. **Phase 13** — Player-authored quizzes: studio, share codes, per-quiz boards ✅
+22. **Next** — Play Console upload (keystore + AAB) → internal test → production
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/RELEASE.md](docs/RELEASE.md).
 
@@ -200,6 +205,92 @@ sign flipped, and sudden death ended most runs on question three. Their enum
 labels remain in the database because `quiz_sessions.mode` and `scores.mode`
 reference them on historical rows; they are simply no longer selectable.
 
+## Player-authored quizzes
+
+Players write their own questions, then play them solo or put them in front of
+a friend. Reachable from Home → **Make your own quiz**.
+
+### How it is built
+
+A custom quiz owns **one hidden `topics` row** and writes ordinary `questions`
+under it. That single decision is why the feature is mostly bookkeeping rather
+than a second game engine: sessions, all three game modes, multiplayer boards,
+scoring, anti-cheat, results and sharing already speak `topic_id`, so none of
+them needed to learn what a custom quiz is.
+
+Two things they *do* need to know, and both travel as flags rather than as a
+branch in every reader:
+
+| Flag | Means |
+|---|---|
+| `topics.is_user_generated` | a **finite deck** — dealt once, run ends at the bottom, no AI top-up, no global ladder |
+| `quiz_sessions.config.finite_deck` | the same fact, stamped on the run so the dealer needs no join |
+
+Draft-ness is a question's own `QuestionStatus`: PENDING while the quiz is a
+draft (the dealer only ever selects ACTIVE), ACTIVE once published. One copy of
+the text, so an authoring table and a published table can never drift.
+
+Solo runs deal the deck **in the order the author arranged it** — options are
+still shuffled per run, so nothing is memorizable by screen position. A
+challenge draws a shared random subset instead, which is what makes a rematch
+worth playing.
+
+### Sharing and access
+
+| Visibility | Who can open it |
+|---|---|
+| `private` | the author |
+| `friends` | the author and their accepted friends |
+| `link` | anyone holding the six-character share code |
+
+Redeeming a code writes a `custom_quiz_access` row, so the code is needed
+**exactly once** — and that table doubles as "quizzes shared with me". Being
+invited to a match on a quiz grants the same access, so an opponent who
+answered its questions can replay it and see its board.
+
+Codes use the room-code alphabet (no vowels, no `0/O` or `1/I`). They travel as
+`speedquiz://quiz/{CODE}` and as `https://<host>/q/{CODE}`, which renders a
+public landing page for anyone who does not have the app yet — title, author
+and size only, never the questions.
+
+### Why a custom run is not worth what a real run is worth
+
+The author knows the answers, so:
+
+- never recorded on the weekly or daily leaderboard,
+- never moves Elo, the adaptive skill rating, or topic mastery,
+- pays XP normally on **someone else's** quiz; on your own, once per cooldown
+  window (`CUSTOM_QUIZ_OWN_XP_COOLDOWN_HOURS`).
+
+Each quiz gets **its own leaderboard** instead — every player's best run, ranked
+in the database by a window function over `ix_scores_topic_score`. That is the
+part players actually want, and it is the reason a quiz gets played twice.
+
+### Limits and moderation
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `CUSTOM_QUIZ_FREE_LIMIT` | 3 | published quizzes a free account may hold |
+| `CUSTOM_QUIZ_FREE_MAX_QUESTIONS` | 20 | questions per quiz, free |
+| `CUSTOM_QUIZ_MAX_QUESTIONS` | 50 | hard ceiling, everyone |
+| `CUSTOM_QUIZ_MIN_QUESTIONS` | 3 | publish floor — also the match floor, so a published quiz is always challengeable |
+| `CUSTOM_QUIZ_AI_DRAFT_DAILY_LIMIT_FREE` | 3 | AI drafting runs per UTC day, free |
+| `CUSTOM_QUIZ_REPORT_HIDE_THRESHOLD` | 3 | distinct reporters that auto-hide a quiz |
+
+**AI drafting** ("Draft with AI") fills the editor with starter questions the
+author then edits — the blank page is where quiz creators lose people. Nothing
+it produces is saved until the author says so. Quota is counted off
+`generation_jobs`, not analytics events, because the analytics provider is
+configurable and can legitimately be a no-op.
+
+**Deleting** is only offered while nobody has played a quiz: the topic cascades
+to every session and score posted on it, so a played quiz is *archived* instead.
+Deleting a question that has already been dealt retires it rather than removing
+the row, for the same reason.
+
+Reports are unique per (quiz, player), so the auto-hide threshold counts
+distinct people rather than distinct taps.
+
 ## Progression & engagement
 
 - Calendar **daily streak** updates on quiz finish; Home 🔥 shows it
@@ -213,6 +304,7 @@ reference them on historical rows; they are simply no longer selectable.
 - **Auth:** landing screen with **Play as Guest** + **Continue with Google** (`POST /auth/google`); Profile links a guest to Google and offers **Sign out** — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#5-google-sign-in)
 - **Onboarding:** a first run picks a language and a name *before* signing in; the answers are held on the device and written to the profile (`display_name`, `app_language`, `quiz_language`, `onboarding_completed`) the moment a session exists, retrying on the next launch if that write fails
 - **Subscriptions:** monthly + annual auto-renewing, verified against Play `subscriptionsv2` and the App Store Server API, with store webhooks driving renewals, cancellations and refunds — see [Subscriptions](#subscriptions)
+- **Custom quizzes:** `GET/POST /api/v1/custom-quizzes`, `POST /{id}/publish`, `/{id}/start`, `/{id}/challenge`, `/{id}/leaderboard` — see [Player-authored quizzes](#player-authored-quizzes)
 - **Share:** public `GET /api/v1/share/results/{id}`; landing `GET /r/{id}`; `speedquiz://` + optional `SHARE_PUBLIC_BASE_URL`
 - **App Links:** `GET /.well-known/assetlinks.json` + `apple-app-site-association`; package `com.speedquiz.app`; set fingerprints + `APP_LINK_IOS_APP_ID` and point DNS at the API when ready
 

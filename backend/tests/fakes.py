@@ -19,6 +19,19 @@ class _Scalars:
     def all(self) -> list[Any]:
         return list(self._rows)
 
+    def first(self) -> Any:
+        return self._rows[0] if self._rows else None
+
+    def scalars(self) -> "_Scalars":
+        """Stand in for a Result as well as its scalar view.
+
+        `execute()` here returns rows already, so `.scalars()` is the identity
+        — but service code written against a real session says
+        ``(await db.execute(...)).scalars().all()``, and the fake exists to let
+        that code run unchanged.
+        """
+        return self
+
     def __iter__(self):
         return iter(self._rows)
 

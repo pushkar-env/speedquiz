@@ -222,6 +222,33 @@ class Settings(BaseSettings):
     #: only a genuinely empty match reaches the limit.
     match_abandon_rounds: int = 2
 
+    # --- Player-authored quizzes -----------------------------------------
+    custom_quiz_enabled: bool = True
+    #: Published quizzes a free account may hold. Archiving one frees a slot.
+    #: Drafts are not counted — an unfinished quiz is not content anyone can
+    #: reach, and charging for it just teaches players not to start.
+    custom_quiz_free_limit: int = 3
+    #: Hard ceiling on questions in one quiz, for everyone. Above this the
+    #: editor stops being a form and the session stops being a quiz.
+    custom_quiz_max_questions: int = 50
+    #: Questions a free account may put in one quiz.
+    custom_quiz_free_max_questions: int = 20
+    #: Below this a quiz cannot be published: it is also the floor a
+    #: multiplayer board needs, so publishing guarantees challengeable.
+    custom_quiz_min_questions: int = 3
+    #: AI-drafted questions per request, and fresh drafting runs per UTC day
+    #: for a free account. Premium is unlimited, mirroring custom AI topics.
+    custom_quiz_ai_draft_max: int = 10
+    custom_quiz_ai_draft_daily_limit_free: int = 3
+    #: Distinct reporters that auto-hide a quiz pending review. Low on purpose:
+    #: these are link-shared, so three unrelated people objecting is a lot.
+    custom_quiz_report_hide_threshold: int = 3
+    #: How often finishing your *own* quiz can pay XP. Without this an author
+    #: has a private, infinitely repeatable XP faucet they wrote the answers to.
+    custom_quiz_own_xp_cooldown_hours: int = 24
+    #: Rows returned by one quiz's leaderboard.
+    custom_quiz_leaderboard_size: int = 25
+
     # --- Realtime channel -------------------------------------------------
     #: Events retained per match. A client resuming after a drop replays from
     #: its last id; anything older than this is recovered by refetching state.

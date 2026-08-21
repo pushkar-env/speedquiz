@@ -273,6 +273,40 @@ class DevicePlatform(str, enum.Enum):
     IOS = "ios"
 
 
+class CustomQuizVisibility(str, enum.Enum):
+    """Who may open a player-authored quiz.
+
+    Deliberately not a public tier. A browsable feed of user content needs
+    screening on publish, a report queue and someone to work it; shipping the
+    tier without that machinery is how a quiz app becomes a moderation
+    incident. ``LINK`` covers the sharing the feature actually needs — the
+    author decides who gets the code.
+    """
+
+    #: Only the author.
+    PRIVATE = "private"
+    #: The author and anyone they have an accepted friendship with.
+    FRIENDS = "friends"
+    #: Anyone holding the share code. Access, once used, is remembered in
+    #: ``custom_quiz_access`` so the code is needed exactly once.
+    LINK = "link"
+
+
+class CustomQuizStatus(str, enum.Enum):
+    #: Being written. Its questions sit at PENDING so the dealer skips them.
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    #: Author retired it. Existing results survive; it can no longer be started.
+    ARCHIVED = "archived"
+    #: Pulled by moderation once reports crossed the auto-hide threshold. Only
+    #: the author can still see it, and only to read the reason.
+    HIDDEN = "hidden"
+
+
+#: Statuses a quiz can be started from.
+PLAYABLE_QUIZ_STATUSES = frozenset({CustomQuizStatus.PUBLISHED})
+
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
@@ -442,6 +476,17 @@ class Topic(Base, TimestampMixin):
     name_i18n: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     #: Localized descriptions keyed by language code.
     description_i18n: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    #: A bank a *player wrote by hand*, owned by one ``custom_quizzes`` row.
+    #:
+    #: Distinct from ``is_custom`` (an AI bank a player asked for) even though
+    #: both are set on these topics: ``is_custom`` is what makes the generation
+    #: watermark leave the bank alone, while this is what makes gameplay treat
+    #: it as a **finite deck** — no reshuffling past the last question, no
+    #: global leaderboard, no skill rating. Two different questions, so two
+    #: different flags rather than one overloaded one.
+    is_user_generated: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -491,6 +536,156 @@ class CustomTopic(Base, TimestampMixin):
     #: Language the generated bank is written in. Part of `cache_key` too, so
     #: the same prompt in two languages produces two banks, not one reused one.
     language: Mapped[str] = language_column()
+
+
+class CustomQuiz(Base, TimestampMixin):
+    """One quiz a player wrote themselves.
+
+    The rows here are the *shell* — title, share code, visibility, counters.
+    The questions live in the ordinary ``questions`` table under a hidden
+    ``topics`` row that this quiz owns, which is the whole point of the design:
+    every downstream system already speaks topic_id, so a hand-written quiz
+    gets sessions, the three game modes, multiplayer boards, results, sharing
+    and anti-cheat without any of them learning a new concept.
+
+    A question's *draft-ness* is its ``QuestionStatus``: PENDING while the quiz
+    is a draft (the dealer only ever selects ACTIVE), ACTIVE once published.
+    That keeps one copy of the text rather than an authoring table and a
+    published table that can drift apart.
+    """
+
+    __tablename__ = "custom_quizzes"
+    __table_args__ = (
+        # "My quizzes", newest first — the first screen the feature opens on.
+        Index("ix_custom_quizzes_owner_status", "owner_user_id", "status"),
+        Index("ix_custom_quizzes_owner_created", "owner_user_id", "created_at"),
+        CheckConstraint(
+            "question_count >= 0 AND play_count >= 0", name="ck_custom_quiz_counters"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: The bank this quiz owns. Created with the quiz and deleted with it —
+    #: cascading, because a topic with no quiz in front of it is unreachable
+    #: content that would still show up in every inventory count.
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("topics.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+
+    title: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(280))
+    #: A single emoji. Stored wide enough for a ZWJ sequence.
+    icon: Mapped[str] = mapped_column(String(16), default="🧠", nullable=False)
+    #: Language the questions are written in. Fixed after the first question is
+    #: added — a bank that mixes languages is unplayable in either.
+    language: Mapped[str] = language_column()
+
+    visibility: Mapped[CustomQuizVisibility] = mapped_column(
+        pg_enum(CustomQuizVisibility, "custom_quiz_visibility"),
+        default=CustomQuizVisibility.PRIVATE,
+        nullable=False,
+    )
+    status: Mapped[CustomQuizStatus] = mapped_column(
+        pg_enum(CustomQuizStatus, "custom_quiz_status"),
+        default=CustomQuizStatus.DRAFT,
+        nullable=False,
+    )
+    #: Share code, minted on first publish and kept stable afterwards so a link
+    #: already sent to a friend keeps working across an unpublish/republish.
+    code: Mapped[Optional[str]] = mapped_column(String(12), unique=True, index=True)
+
+    #: Playable questions. Denormalized so a list of quizzes is one query.
+    question_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: The author's suggested setup. The player can still choose otherwise.
+    default_mode: Mapped[GameMode] = mapped_column(
+        pg_enum(GameMode, "game_mode", create_constraint=False),
+        default=GameMode.CASUAL,
+        nullable=False,
+    )
+    default_difficulty: Mapped[DifficultyLabel] = mapped_column(
+        pg_enum(DifficultyLabel, "difficulty_label", create_constraint=False),
+        default=DifficultyLabel.MEDIUM,
+        nullable=False,
+    )
+
+    play_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Distinct players who have finished a run. Incremented on a player's
+    #: first finish, which is the only cheap way to have the number at all.
+    player_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Top score anyone has posted, for the list row. The full ladder is a
+    #: query over ``scores``; this is just the headline.
+    top_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    #: Distinct players who have reported it. Crossing the configured threshold
+    #: flips `status` to HIDDEN without waiting for a human.
+    report_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    moderation_note: Mapped[Optional[str]] = mapped_column(String(255))
+
+
+class CustomQuizAccess(Base):
+    """A player's standing permission to open one quiz — and their library.
+
+    Written when someone redeems a share code or is invited to a match on a
+    quiz. Two jobs in one row: the code is then needed exactly once (a friend
+    who played yesterday does not have to find the message again), and "quizzes
+    shared with me" is a plain indexed read rather than a scan of match history.
+    """
+
+    __tablename__ = "custom_quiz_access"
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "user_id", name="uq_custom_quiz_access"),
+        # The player's library, newest first.
+        Index("ix_custom_quiz_access_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("custom_quizzes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    #: code | invite — how they got in. Kept for support and for analytics on
+    #: which sharing path actually works.
+    source: Mapped[str] = mapped_column(String(16), default="code", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CustomQuizReport(Base):
+    """One player's report of one quiz.
+
+    Unique per (quiz, player) so ``report_count`` counts distinct people rather
+    than distinct taps — the auto-hide threshold is meaningless otherwise, and
+    a single motivated account could bury anyone's quiz.
+    """
+
+    __tablename__ = "custom_quiz_reports"
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "user_id", name="uq_custom_quiz_report_once"),
+        Index("ix_custom_quiz_reports_status", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("custom_quizzes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    details: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Question(Base, TimestampMixin):

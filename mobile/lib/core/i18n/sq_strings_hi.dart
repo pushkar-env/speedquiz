@@ -1531,4 +1531,313 @@ class SqStringsHi extends SqStrings {
         'rate_limited' => 'ज़रा धीरे।',
         _ => errorNetwork,
       };
+
+  // --- Quiz studio (player-authored quizzes) -----------------------------
+  @override
+  String get studioTitle => 'क्विज़ स्टूडियो';
+  @override
+  String get studioHeadline => 'अपनी क्विज़ बनाएँ।\nदोस्तों को चुनौती दें।';
+  @override
+  String get studioBody =>
+      'आपके सवाल, आपके जवाब। अकेले खेलें या किसी दोस्त के सामने रखें।';
+  @override
+  String get studioMine => 'आपकी क्विज़';
+  @override
+  String get studioShared => 'आपके साथ साझा';
+  @override
+  String get studioSharedSubtitle => 'दोस्तों की भेजी हुई क्विज़';
+  @override
+  String get studioEmptyTitle => 'अभी यहाँ कुछ नहीं';
+  @override
+  String get studioEmptyBody =>
+      'अपनी पहली क्विज़ बनाएँ, या किसी दोस्त का कोड डालकर उसकी क्विज़ खोलें।';
+  @override
+  String get studioCreate => 'क्विज़ बनाएँ';
+  @override
+  String get studioNewQuiz => 'नई क्विज़';
+  @override
+  String get studioOpenWithCode => 'कोड से खोलें';
+  @override
+  String get studioCodeHint => 'जैसे BCD234';
+  @override
+  String get studioCodeInvalid => 'यह कोड सही नहीं लग रहा।';
+  @override
+  String get studioOpen => 'खोलें';
+  @override
+  String get studioCouldNotLoad => 'आपकी क्विज़ लोड नहीं हो सकीं।';
+  @override
+  String studioSlotsLeft(int remaining, int total) =>
+      '$total में से $remaining स्लॉट बाकी';
+  @override
+  String get studioSlotsUnlimited => 'असीमित क्विज़';
+  @override
+  String get studioSlotsNone => 'सभी स्लॉट भर गए';
+  @override
+  String get studioSlotsNoneBody =>
+      'किसी एक को आर्काइव करें, या असीमित क्विज़ के लिए प्रीमियम लें।';
+
+  @override
+  String get homeMakeQuiz => 'अपनी क्विज़ बनाएँ';
+  @override
+  String get homeMakeQuizBody => 'सवाल आप लिखें, दोस्तों को चुनौती दें';
+
+  @override
+  String get quizStatusDraft => 'ड्राफ़्ट';
+  @override
+  String get quizStatusPublished => 'लाइव';
+  @override
+  String get quizStatusArchived => 'आर्काइव';
+  @override
+  String get quizStatusHidden => 'समीक्षा में';
+  @override
+  String get quizVisibilityPrivate => 'सिर्फ़ मैं';
+  @override
+  String get quizVisibilityPrivateBody => 'इसे सिर्फ़ आप खेल सकते हैं';
+  @override
+  String get quizVisibilityFriends => 'दोस्त';
+  @override
+  String get quizVisibilityFriendsBody => 'आपकी दोस्तों की सूची में जो भी हैं';
+  @override
+  String get quizVisibilityLink => 'जिसके पास कोड हो';
+  @override
+  String get quizVisibilityLinkBody => 'कोड भेजिए और वे खेल सकते हैं';
+  @override
+  String quizStatLine(int questions, int plays) =>
+      '${questionsCount(questions)} · $plays बार खेली गई';
+  @override
+  String quizByAuthor(String name) => '$name की बनाई';
+  @override
+  String get quizNoPlaysYet => 'अभी किसी ने नहीं खेली';
+
+  @override
+  String get editorNewTitle => 'नई क्विज़';
+  @override
+  String get editorEditTitle => 'क्विज़ बदलें';
+  @override
+  String get editorTitleLabel => 'नाम';
+  @override
+  String get editorTitleHint => '2000 के दशक की बॉलीवुड फ़िल्में';
+  @override
+  String get editorDescriptionLabel => 'विवरण';
+  @override
+  String get editorDescriptionHint => 'यह क्विज़ किस बारे में है? (वैकल्पिक)';
+  @override
+  String get editorIconLabel => 'आइकन';
+  @override
+  String get editorVisibilityLabel => 'कौन खेल सकता है';
+  @override
+  String get editorDefaultsLabel => 'सुझाई गई सेटिंग';
+  @override
+  String get editorDefaultsSubtitle =>
+      'खिलाड़ी यहीं से शुरू करेंगे। वे इसे बदल भी सकते हैं।';
+  @override
+  String get editorQuestionsLabel => 'सवाल';
+  @override
+  String editorQuestionsCounter(int used, int max) => '$used / $max';
+  @override
+  String get editorAddQuestion => 'सवाल जोड़ें';
+  @override
+  String get editorAiDraft => 'AI से लिखवाएँ';
+  @override
+  String get editorNoQuestionsTitle => 'अभी कोई सवाल नहीं';
+  @override
+  String get editorNoQuestionsBody =>
+      'खुद लिखें, या AI से कुछ लिखवाकर उनमें बदलाव करें।';
+  @override
+  String get editorPublish => 'प्रकाशित करें';
+  @override
+  String get editorPublished => 'आपकी क्विज़ लाइव है।';
+  @override
+  String get editorUnpublish => 'ड्राफ़्ट में लौटाएँ';
+  @override
+  String get editorUnpublished => 'ड्राफ़्ट में लौटा दी गई। अब कोई शुरू नहीं कर सकता।';
+  @override
+  String get editorArchive => 'आर्काइव करें';
+  @override
+  String get editorArchived => 'आर्काइव हो गई। स्कोर सुरक्षित हैं।';
+  @override
+  String get editorRestore => 'वापस लाएँ';
+  @override
+  String get editorDelete => 'क्विज़ हटाएँ';
+  @override
+  String get editorDeleteTitle => 'यह क्विज़ हटानी है?';
+  @override
+  String get editorDeleteBody =>
+      'क्विज़ और उसके सारे सवाल हमेशा के लिए चले जाएँगे। यह वापस नहीं होगा।';
+  @override
+  String get editorSaveChanges => 'सहेजें';
+  @override
+  String get editorSaved => 'सहेज लिया';
+  @override
+  String get editorNeedTitle => 'पहले क्विज़ का नाम रखें।';
+  @override
+  String editorNeedQuestions(int minimum) =>
+      'प्रकाशित करने के लिए कम से कम ${questionsCount(minimum)} चाहिए।';
+  @override
+  String get editorQuestionLimit =>
+      'यह क्विज़ भर चुकी है। प्रीमियम में सीमा बढ़ जाती है।';
+  @override
+  String get editorQuizLimit =>
+      'आपके सारे स्लॉट भर गए हैं। किसी एक को आर्काइव करें, या प्रीमियम लें।';
+  @override
+  String get editorDiscardTitle => 'यह क्विज़ छोड़ दें?';
+  @override
+  String get editorDiscardBody =>
+      'इसमें अभी कोई सवाल नहीं है, इसलिए कुछ सहेजा नहीं जाएगा।';
+  @override
+  String get editorKeepEditing => 'बनाते रहें';
+  @override
+  String get editorDiscard => 'छोड़ दें';
+  @override
+  String get editorReorderHint => 'क्रम बदलने के लिए दबाकर खींचें';
+  @override
+  String get editorRetiredNote =>
+      'यह खेली जा चुकी है, इसलिए हटाने पर भी सबके स्कोर सुरक्षित रहेंगे।';
+  @override
+  String get editorHiddenNote =>
+      'समीक्षा पूरी होने तक यह क्विज़ बंद है। अभी आप इसमें बदलाव नहीं कर सकते।';
+  @override
+  String get editorLanguageLocked =>
+      'सवाल उसी भाषा में लिखे जाते हैं जो आपने क्विज़ बनाते समय चुनी थी।';
+
+  @override
+  String get questionEditorNew => 'नया सवाल';
+  @override
+  String get questionEditorEdit => 'सवाल बदलें';
+  @override
+  String get questionPromptLabel => 'सवाल';
+  @override
+  String get questionPromptHint => '2004 में सर्वश्रेष्ठ फ़िल्म कौन-सी थी?';
+  @override
+  String get questionOptionsLabel => 'जवाब';
+  @override
+  String get questionOptionsHint => 'सही जवाब पर गोले को टैप करें';
+  @override
+  String questionOptionHint(int index) => 'जवाब ${index + 1}';
+  @override
+  String get questionExplanationLabel => 'व्याख्या';
+  @override
+  String get questionExplanationHint => 'जवाब देने के बाद दिखेगी (वैकल्पिक)';
+  @override
+  String get questionDifficultyLabel => 'कठिनाई';
+  @override
+  String get questionNeedPrompt => 'पहले सवाल लिखें।';
+  @override
+  String get questionNeedOptions => 'चारों जवाब भरने ज़रूरी हैं।';
+  @override
+  String get questionDuplicateOptions => 'दो जवाब एक जैसे हैं।';
+  @override
+  String get questionDeleteTitle => 'यह सवाल हटाना है?';
+  @override
+  String get questionDeleteBody => 'नए रन में यह तुरंत आना बंद हो जाएगा।';
+  @override
+  String get questionMarkCorrect => 'सही जवाब चुनें';
+  @override
+  String get questionCorrect => 'सही';
+
+  @override
+  String get aiDraftTitle => 'AI से लिखवाएँ';
+  @override
+  String get aiDraftBody =>
+      'बताइए क्विज़ किस बारे में है और AI कुछ शुरुआती सवाल लिख देगा। सहेजने से पहले हर सवाल आप बदल सकते हैं।';
+  @override
+  String get aiDraftHint => '2000 के दशक की बॉलीवुड फ़िल्में';
+  @override
+  String get aiDraftCount => 'कितने';
+  @override
+  String get aiDraftGenerate => 'सवाल लिखवाएँ';
+  @override
+  String get aiDraftWorking => 'सवाल लिखे जा रहे हैं…';
+  @override
+  String aiDraftAddAll(int count) => 'सभी ${questionsCount(count)} जोड़ें';
+  @override
+  String aiDraftRemaining(int remaining) => 'आज $remaining AI ड्राफ़्ट बाकी';
+  @override
+  String get aiDraftUnlimited => 'असीमित AI ड्राफ़्ट';
+  @override
+  String get aiDraftReviewNote => 'प्रकाशित करने से पहले हर सवाल जाँच लें।';
+  @override
+  String get aiDraftNeedPrompt => 'पहले बताइए क्विज़ किस बारे में है।';
+
+  @override
+  String get quizPlaySolo => 'अकेले खेलें';
+  @override
+  String get quizChallengeFriend => 'दोस्त को चुनौती दें';
+  @override
+  String get quizOpenRoom => 'रूम बनाएँ';
+  @override
+  String get quizShare => 'साझा करें';
+  @override
+  String quizShareMessage(String title, String code) =>
+      '“$title” में मेरा स्कोर तोड़कर दिखाओ — SpeedQuiz खोलो और कोड $code डालो';
+  @override
+  String get quizCodeCopied => 'कोड कॉपी हो गया';
+  @override
+  String get quizChooseMode => 'मोड चुनें';
+  @override
+  String get quizLeaderboardTitle => 'इस क्विज़ की लीडरबोर्ड';
+  @override
+  String get quizLeaderboardSubtitle => 'हर खिलाड़ी का सबसे अच्छा रन';
+  @override
+  String get quizLeaderboardEmpty => 'अभी किसी ने नहीं खेली। पहले आप खेलिए।';
+  @override
+  String quizYourBest(String score) => 'आपका सर्वश्रेष्ठ · $score';
+  @override
+  String get quizNotPlayedYet => 'आपने इसे अभी तक नहीं खेला';
+  @override
+  String quizPlayersCount(int count) => '$count खिलाड़ी';
+  @override
+  String get quizEdit => 'बदलें';
+  @override
+  String get quizReport => 'रिपोर्ट';
+  @override
+  String get quizReportTitle => 'इस क्विज़ की रिपोर्ट करें';
+  @override
+  String get quizReportOffensive => 'आपत्तिजनक सामग्री';
+  @override
+  String get quizReportWrongAnswers => 'जवाब ग़लत हैं';
+  @override
+  String get quizReportSpam => 'स्पैम या बेतुका';
+  @override
+  String get quizReportCopyright => 'बिना अनुमति कॉपी किया';
+  @override
+  String get quizReportOther => 'कुछ और';
+  @override
+  String get quizReportSent => 'धन्यवाद — हम इसे देखेंगे।';
+  @override
+  String get quizDraftNotice =>
+      'यह ड्राफ़्ट है। साझा करने या चुनौती देने के लिए इसे प्रकाशित करें।';
+
+  @override
+  String get resultsCustomQuiz => 'अपनी क्विज़';
+  @override
+  String get resultsXpSuppressed =>
+      'XP नहीं मिला — आज अपनी ही क्विज़ से आप इसे पहले ही ले चुके हैं।';
+
+  @override
+  String quizError(String code) => switch (code) {
+    'too_few_questions' => 'प्रकाशित करने से पहले कुछ और सवाल जोड़ें।',
+    'question_limit_exceeded' => editorQuestionLimit,
+    'quiz_limit_reached' => editorQuizLimit,
+    'duplicate_question' => 'यह सवाल इस क्विज़ में पहले से है।',
+    'quiz_has_plays' =>
+      'लोग इसे खेल चुके हैं — हटाने के बजाय इसे आर्काइव करें।',
+    'quiz_not_found' => 'यह क्विज़ अब उपलब्ध नहीं है।',
+    'quiz_archived' => 'लेखक ने यह क्विज़ हटा ली है।',
+    'quiz_archived_owner' => 'दोबारा खेलने के लिए पहले इसे वापस लाएँ।',
+    'quiz_not_published' => 'खेलने के लिए पहले इसे प्रकाशित करें।',
+    'quiz_unavailable' => 'समीक्षा पूरी होने तक यह क्विज़ उपलब्ध नहीं है।',
+    'quiz_under_review' => editorHiddenNote,
+    'quiz_empty' => 'इस क्विज़ में अभी कोई सवाल नहीं है।',
+    'quiz_too_short_to_challenge' => 'चुनौती के लिए कम से कम तीन सवाल चाहिए।',
+    'invalid_code' => studioCodeInvalid,
+    'too_many_drafts' => 'पहले अपना कोई एक ड्राफ़्ट पूरा करें या हटाएँ।',
+    'ai_draft_limit' =>
+      'आज के AI ड्राफ़्ट ख़त्म हो गए। प्रीमियम में कोई सीमा नहीं।',
+    'ai_draft_failed' => 'सवाल नहीं लिखे जा सके। विषय और साफ़ बताएँ।',
+    'cannot_report_own' => 'आप अपनी ही क्विज़ की रिपोर्ट नहीं कर सकते।',
+    'custom_quizzes_disabled' => 'अभी क्विज़ बनाना उपलब्ध नहीं है।',
+    'mode_unavailable' => 'यह मोड अब उपलब्ध नहीं है।',
+    _ => matchError(code),
+  };
 }

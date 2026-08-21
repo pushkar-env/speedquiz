@@ -41,7 +41,11 @@ def build_aasa_payload(*, app_id: str) -> dict:
             "details": [
                 {
                     "appID": app_id,
-                    "paths": ["/r/*", "/share/results/*"],
+                    # `/q/*` is a custom-quiz share code. It sits alongside
+                    # the result paths rather than replacing them: both are
+                    # links a player sends to a friend, and an install that
+                    # verifies one must verify the other.
+                    "paths": ["/r/*", "/share/results/*", "/q/*"],
                 }
             ],
         }
