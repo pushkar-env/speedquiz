@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:speedquiz/core/config/app_config.dart';
 
 /// One piece of a question's content.
 ///
@@ -58,12 +59,27 @@ class ExamAsset extends Equatable {
     this.altText,
   });
 
+  /// Resolve an asset URL as the server handed it over.
+  ///
+  /// The two asset stores return different shapes and both are legitimate: R2
+  /// returns an absolute URL on its own hostname, while the local store
+  /// returns a path relative to the API (`/static/figures/...`). Image loaders
+  /// need an absolute URL, so the relative form is joined to the API base
+  /// here rather than at every call site — and getting this wrong is invisible
+  /// until a real device shows an empty box where the diagram should be.
+  static String resolveUrl(String raw) {
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final base = AppConfig.apiBaseUrl;
+    return raw.startsWith('/') ? '$base$raw' : '$base/$raw';
+  }
+
   factory ExamAsset.fromJson(Map<String, dynamic> json) {
     final variants =
         (json['variants'] as Map?)?.cast<String, dynamic>() ?? const {};
     String urlFor(String name) {
       final entry = (variants[name] as Map?)?.cast<String, dynamic>();
-      return entry?['url'] as String? ?? '';
+      return resolveUrl(entry?['url'] as String? ?? '');
     }
 
     final light = urlFor('light');

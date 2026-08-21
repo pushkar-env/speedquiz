@@ -187,7 +187,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               final soon = visible.where((t) => !t.isPlayable).toList();
               final groups = groupTopics(ready);
               final trending = ready.where((t) => t.isTrending).toList();
-              final categories = groupTopics(all).map((g) => g.category).toList();
+              final categories = groupTopics(
+                all,
+              ).map((g) => g.category).toList();
 
               return RefreshIndicator(
                 onRefresh: () async {
@@ -240,6 +242,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         ),
                       ),
                     ),
+                    // Exam mode is a different kind of thing from a topic, so
+                    // it gets its own entry above the catalog rather than a
+                    // card inside it. Hidden while searching: a query is a
+                    // search of the topic catalog, and this is not in it.
+                    if (!_filtering && _query.isEmpty)
+                      const SliverToBoxAdapter(child: _ExamModeCard()),
                     SliverToBoxAdapter(
                       child: _CategoryRail(
                         categories: categories,
@@ -280,10 +288,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                           glyph: '🔥',
                         ),
                         SliverToBoxAdapter(
-                          child: _TrendingRail(
-                            topics: trending,
-                            onTap: _open,
-                          ),
+                          child: _TrendingRail(topics: trending, onTap: _open),
                         ),
                       ],
                       for (final group in groups) ...[
@@ -319,6 +324,66 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 }
 
 /// Dice button that drops the player into a random topic.
+/// Entry point into exam mode.
+///
+/// Reads deliberately calmer than the topic cards around it — a three-hour JEE
+/// paper is a different commitment from a fifteen-second Survival round, and
+/// the card should set that expectation before the tap, not after.
+class _ExamModeCard extends StatelessWidget {
+  const _ExamModeCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.sq;
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.xs,
+        AppSpacing.lg,
+        AppSpacing.sm,
+      ),
+      child: SqSurface(
+        onTap: () {
+          Haptics.tap();
+          context.push(Routes.exams);
+        },
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: p.accentWash(),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.school_outlined, color: p.accent, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Mock Tests', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Full-length past papers, timed and scored',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: p.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: p.textFaint),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SurpriseButton extends StatelessWidget {
   const _SurpriseButton({required this.onTap});
 
@@ -399,9 +464,8 @@ class _CategoryRail extends StatelessWidget {
               label: category.name,
               glyph: category.icon,
               selected: selected == category.slug,
-              onTap: () => onSelect(
-                selected == category.slug ? null : category.slug,
-              ),
+              onTap: () =>
+                  onSelect(selected == category.slug ? null : category.slug),
             ),
           ],
         ],
@@ -501,11 +565,7 @@ class _SearchField extends StatelessWidget {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({
-    required this.title,
-    required this.glyph,
-    this.count,
-  });
+  const _SectionLabel({required this.title, required this.glyph, this.count});
 
   final String title;
   final String glyph;
@@ -595,8 +655,9 @@ class _TopicGrid extends StatelessWidget {
           crossAxisSpacing: 12,
           // Taller tiles in Devanagari: the same two lines of text occupy a
           // taller line box, and a fixed ratio that fits English clips it.
-          childAspectRatio:
-              context.appLanguage.script == SqScript.devanagari ? 1.06 : 1.22,
+          childAspectRatio: context.appLanguage.script == SqScript.devanagari
+              ? 1.06
+              : 1.22,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) => SqStagger(

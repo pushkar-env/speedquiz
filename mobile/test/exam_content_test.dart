@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:speedquiz/core/config/app_config.dart';
 import 'package:speedquiz/core/theme/app_theme.dart';
 import 'package:speedquiz/features/exams/domain/exam_models.dart';
 import 'package:speedquiz/features/exams/presentation/widgets/content_view.dart';
@@ -64,6 +65,42 @@ void main() {
       expect(asset.darkUrl, asset.lightUrl);
     });
 
+    test('a relative url is joined to the API base', () {
+      // The local asset store returns "/static/figures/..."; image loaders
+      // need an absolute URL, and the failure is invisible until a real
+      // device shows an empty box where the diagram should be.
+      final asset = ExamAsset.fromJson({
+        'checksum': 'x',
+        'width': 10,
+        'height': 10,
+        'variants': {
+          'light': {'url': '/static/figures/ab/abc.light.png'},
+          'dark': {'url': '/static/figures/ab/abc.dark.png'},
+        },
+      });
+      expect(asset.lightUrl, startsWith(AppConfig.apiBaseUrl));
+      expect(asset.lightUrl, endsWith('/static/figures/ab/abc.light.png'));
+      expect(Uri.parse(asset.lightUrl).hasScheme, isTrue);
+    });
+
+    test('an absolute url is left alone', () {
+      // R2 returns a full URL on its own hostname; prefixing it would break it.
+      const remote = 'https://figures.example.test/ab/abc.light.png';
+      final asset = ExamAsset.fromJson({
+        'checksum': 'x',
+        'width': 10,
+        'height': 10,
+        'variants': {
+          'light': {'url': remote},
+        },
+      });
+      expect(asset.lightUrl, remote);
+    });
+
+    test('an empty url stays empty rather than becoming the bare base', () {
+      expect(ExamAsset.resolveUrl(''), '');
+    });
+
     test('aspect ratio survives a zero dimension', () {
       final asset = ExamAsset.fromJson({
         'checksum': 'x',
@@ -77,15 +114,17 @@ void main() {
 
   group('ContentView', () {
     testWidgets('renders prose around inline maths', (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(
-          blocks: [
-            TextBlock(text: r'The value of $\frac{13}{32}MR^2$ is required.'),
-          ],
-          figures: {},
-          assets: {},
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [
+              TextBlock(text: r'The value of $\frac{13}{32}MR^2$ is required.'),
+            ],
+            figures: {},
+            assets: {},
+          ),
         ),
-      ));
+      );
 
       // The prose survives as real text; the maths becomes a widget span, so
       // it is deliberately not asserted as a string.
@@ -94,42 +133,49 @@ void main() {
     });
 
     testWidgets('an escaped dollar stays literal', (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(
-          blocks: [TextBlock(text: r'A price of \$40 per unit.')],
-          figures: {},
-          assets: {},
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [TextBlock(text: r'A price of \$40 per unit.')],
+            figures: {},
+            assets: {},
+          ),
         ),
-      ));
+      );
 
       expect(find.text(r'A price of $40 per unit.'), findsOneWidget);
     });
 
-    testWidgets('an unmatched dollar does not swallow the sentence',
-        (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(
-          blocks: [TextBlock(text: r'Cost is $40 and rising')],
-          figures: {},
-          assets: {},
+    testWidgets('an unmatched dollar does not swallow the sentence', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [TextBlock(text: r'Cost is $40 and rising')],
+            figures: {},
+            assets: {},
+          ),
         ),
-      ));
+      );
 
       expect(find.textContaining('Cost is'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('places a figure that resolves', (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(
-          blocks: [
-            TextBlock(text: 'A uniform disc, as shown.'),
-            FigureBlock(ref: 'fig1'),
-          ],
-          figures: {'fig1': 'abc123'},
-          assets: {'abc123': _asset},
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [
+              TextBlock(text: 'A uniform disc, as shown.'),
+              FigureBlock(ref: 'fig1'),
+            ],
+            figures: {'fig1': 'abc123'},
+            assets: {'abc123': _asset},
+          ),
         ),
-      ));
+      );
       await tester.pump();
 
       expect(find.text('A uniform disc, as shown.'), findsOneWidget);
@@ -139,42 +185,47 @@ void main() {
       );
     });
 
-    testWidgets('a dangling figure ref renders nothing rather than an error',
-        (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(
-          blocks: [
-            TextBlock(text: 'Stem text.'),
-            FigureBlock(ref: 'fig9'),
-          ],
-          figures: {},
-          assets: {},
+    testWidgets('a dangling figure ref renders nothing rather than an error', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [
+              TextBlock(text: 'Stem text.'),
+              FigureBlock(ref: 'fig9'),
+            ],
+            figures: {},
+            assets: {},
+          ),
         ),
-      ));
+      );
 
       expect(find.text('Stem text.'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('empty blocks collapse', (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(blocks: [], figures: {}, assets: {}),
-      ));
+      await tester.pumpWidget(
+        _host(const ContentView(blocks: [], figures: {}, assets: {})),
+      );
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('lays out in dark theme', (tester) async {
-      await tester.pumpWidget(_host(
-        const ContentView(
-          blocks: [
-            TextBlock(text: r'Find $I$ for the remaining part.'),
-            FigureBlock(ref: 'fig1'),
-          ],
-          figures: {'fig1': 'abc123'},
-          assets: {'abc123': _asset},
+      await tester.pumpWidget(
+        _host(
+          const ContentView(
+            blocks: [
+              TextBlock(text: r'Find $I$ for the remaining part.'),
+              FigureBlock(ref: 'fig1'),
+            ],
+            figures: {'fig1': 'abc123'},
+            assets: {'abc123': _asset},
+          ),
+          brightness: Brightness.dark,
         ),
-        brightness: Brightness.dark,
-      ));
+      );
       await tester.pump();
 
       expect(tester.takeException(), isNull);
@@ -184,10 +235,7 @@ void main() {
   group('QuestionResponse', () {
     test('a numeric zero counts as an answer', () {
       // 0 is a legitimate answer. A falsy check here would silently discard it.
-      const response = QuestionResponse(
-        examQuestionId: 'q1',
-        numericValue: 0,
-      );
+      const response = QuestionResponse(examQuestionId: 'q1', numericValue: 0);
       expect(response.hasAnswer, isTrue);
     });
 

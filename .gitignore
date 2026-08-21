@@ -120,5 +120,13 @@ tools/ingest/data/inbox/
 tools/ingest/data/work/
 tools/ingest/data/out/
 
-# Figures written by the local asset store. Production serves these from R2.
-backend/static/figures/
+# Figures written by the local asset store.
+#
+# Deliberately NOT ignored while the local store is in use: the manifest points
+# at /static/figures/..., so the files have to ship with the backend or every
+# diagram 404s on the device. One paper is ~1.7MB, which git handles fine.
+#
+# This does not scale -- ten exams x ten years is hundreds of MB of binaries in
+# history. Before ingesting past a handful of papers, switch to R2
+# (INGEST_ASSET_STORE=r2, see tools/ingest/README.md) and restore this rule:
+# backend/static/figures/
